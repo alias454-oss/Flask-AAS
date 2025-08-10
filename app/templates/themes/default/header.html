@@ -1,0 +1,27 @@
+<header class="site-header">
+  <div class="container header-flex">
+    <h1 class="logo">
+      <a href="{{ url_for('index.index') }}" class="logo__link">{{ env.site_name or "Default Site" }}</a>
+    </h1>
+    <nav class="menu">
+      <ul class="menu__list">
+        <li class="menu__item"><a class="menu__link" href="{{ url_for('index.index') }}">Home</a></li>
+        <li class="menu__item"><a class="menu__link" href="{{ url_for('about.about') }}">About</a></li>
+
+        {% if current_user.is_authenticated %}
+          {% if current_user.is_admin %}
+            <li class="menu__item"><a class="menu__link" href="{{ url_for('admin.admin_home') }}">Admin</a></li>
+          {% else %}
+            <li class="menu__item"><a class="menu__link" href="{{ url_for('dashboard.dashboard') }}">Dashboard</a></li>
+          {% endif %}
+          <li class="menu__item"><a class="menu__link" href="{{ url_for('logout.logout') }}">Logout</a></li>
+        {% else %}
+          <li class="menu__item"><a class="menu__link" href="{{ url_for('login.login') }}">Login</a></li>
+          {% if env.allow_registration %}
+            <li class="menu__item"><a href="{{ url_for('register.register') }}">Register</a></li>
+          {% endif %}
+        {% endif %}
+      </ul>
+    </nav>
+  </div>
+</header>

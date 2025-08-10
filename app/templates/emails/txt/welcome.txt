@@ -1,0 +1,19 @@
+Welcome, {{ username }}!
+
+You’ve been invited to join {{ config.SITE_NAME }}.
+
+{% if temp_password %}
+Your temporary password is:
+{{ temp_password }}
+
+Please log in and change it as soon as possible.
+{% endif %}
+
+Click the link below to log in:
+{{ invite_link }}
+
+If that doesn't work, copy and paste the URL into your browser.
+
+Glad to have you with us!
+
+– The {{ config.SITE_NAME }} Team

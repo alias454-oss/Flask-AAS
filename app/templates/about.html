@@ -1,0 +1,17 @@
+<!-- templates/about.html -->
+{% extends tpl_path ~ "/base.html" %}
+
+{% block header %}
+  {% include tpl_path ~ "/header.html" %}
+{% endblock %}
+
+{% set sidebar_position = 'right' %}  {# or 'left' #}
+
+{% block content %}
+  <h2>About</h2>
+  <p>About {{ env.site_name }}</p>
+{% endblock %}
+
+{% block footer %}
+  {% include tpl_path ~ "/footer.html" %}
+{% endblock %}

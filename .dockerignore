@@ -1,0 +1,29 @@
+# Environment
+.env
+.venv/
+venv/
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Thanks mac
+.DS_Store
+
+# git internals
+.git/
+.gitignore
+
+# IDE/editor specific
+.continue/
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Database / migration
+instance/
+migrations/
+
+*scratch*

@@ -1,0 +1,109 @@
+<!-- templates/privacy.html -->
+{% extends tpl_path ~ "/base.html" %}
+
+{% block header %}
+  {% include tpl_path ~ "/header.html" %}
+{% endblock %}
+
+{% set sidebar_position = 'right' %}  {# or 'left' #}
+
+{% block content %}
+  <h2>Privacy Statement for {{ env.site_name }}</h2>
+  <p>Your privacy on the Internet is of the utmost importance to us. Because we gather certain types of information
+  about the users of {{ env.site_name }}'s sites and services, we believe you should understand {{ env.site_name }}'s
+  policies regarding the collection and use of that information. This privacy statement discloses what information we
+  gather, how we use it, and how you can correct or change it.
+  </p>
+
+  <h2>Information Gathered by {{ env.site_name }}</h2>
+  <p>For visitors to our website, subscribers to our newsletters, and clients or prospective clients of our services
+  (collectively referred to as "User" or "Users"), we log standard technical information such as your IP address.
+  We use this information to help diagnose issues with our services and to administer our website. For example,
+  your IP address may be used to help identify you and your account, and to gather broad demographic data.
+  </p>
+
+  <p>Our site uses cookies to keep track of your account and to deliver content tailored to you.
+  </p>
+
+  <p>{{ env.site_name }} may require registration for some services, and our website may include order forms
+  or surveys. In order to provide services to you, we may ask for contact information (such as name and email address),
+  financial information (such as credit card or account numbers), and demographic data (such as zip code and age).
+  </p>
+
+  <h2>{{ env.site_name }}'s Use of Information</h2>
+  <p>We may use your contact information to send updates about our company or our advertisers. You may opt out of
+  such mailings (see "Client Prospects and Subscribers" below). We use financial information to bill you for products
+  and services. We also collect demographic and profile data to tailor your experience on our site, show content we
+  believe is relevant, and present content according to your preferences. We may share aggregate (non-personal) data
+  with third parties, including advertisers.
+  </p>
+
+  <p>{{ env.site_name }} may also disclose your personal information, the contents of your communications,
+  and/or your contact or financial information if required to do so by law, or with your consent, or in the good
+  faith belief that such action is necessary:
+  </p>
+  <ol>
+    <li>to comply with legal obligations or respond to legal process served on {{ env.site_name }};</li>
+    <li>to protect and defend the rights or property of {{ env.site_name }} or others; or</li>
+    <li>to assist, under urgent circumstances, in investigations involving securities law violations or other serious matters.</li>
+  </ol>
+
+  <p>It is possible that as our business evolves, {{ env.site_name }} may be acquired. In such a transaction,
+  your information may be transferred to the acquiring entity.
+  </p>
+
+  <h2>Advertisers and Other Third Parties</h2>
+  <p>This site may contain links to other websites. {{ env.site_name }} is not responsible for the privacy practices
+  or content of those external sites.
+  </p>
+
+  <p>We use third-party ad companies to display some advertisements on our site. These ads may contain cookies.
+  While we use cookies in other parts of our website, cookies received through banner ads are managed by the
+  third-party ad companies, and we do not have access to that data. The privacy practices of companies that provide
+  services or ads on our site are not covered by this Privacy Statement. Please contact those companies directly for
+  more information about their practices.
+  </p>
+
+  <h2>Changes to Our Policies</h2>
+  <p>{{ env.site_name }}'s Privacy Statement may be updated from time to time. If we make any significant changes,
+  we will notify you by sending an email to the address you provided, or by posting a notice on this website.
+  Your continued use of the site after such changes constitutes your acceptance of the updated policies.
+  </p>
+
+  <h2>Security</h2>
+  <p>We implement industry-standard security measures to protect against loss, misuse, or alteration
+  of the information under our control. However, we cannot guarantee complete security.
+  </p>
+
+  <h2>Use by Minors Prohibited</h2>
+  <p>{{ env.site_name }} is not intended for use by anyone under the age of 18. We comply with the Children's
+  Online Privacy Protection Act (COPPA) and do not permit registration or use by anyone under the age of 13.
+  </p>
+
+  <h2>International Users</h2>
+  <p>If you are an international user, by registering with {{ env.site_name }} or using our services,
+  you agree that we may collect, use, and transfer your information as described in this Privacy Statement.
+  If you reside in the European Union or other jurisdictions that grant access rights under law, you may access
+  your information or request corrections or updates in accordance with applicable law by contacting us.
+  </p>
+
+  <h2>Clients</h2>
+  <p>Clients who have registered to use our services can change or update their account information
+  and preferences by visiting <a href="member.php">your account page</a>.
+  </p>
+
+  <h2>Client Prospects</h2>
+  <p>From time to time, we may email prospective clients who we believe might be interested in our services
+  due to their involvement in public relations, investor relations, or related fields. Prospects can opt
+  out of these communications at any time simply by replying to the email and indicating their preference.
+  </p>
+
+  <h2>Contacting the Website</h2>
+  <p>If you have any questions about this Privacy Statement, the practices of {{ env.site_name }}, or your
+  interactions with this website, please contact us.
+  </p>
+{% endblock %}
+
+{% block footer %}
+  {% include tpl_path ~ "/footer.html" %}
+{% endblock %}

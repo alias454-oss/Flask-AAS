@@ -1,0 +1,30 @@
+<!-- templates/mfa/verify.html -->
+{% extends tpl_path ~ "/base.html" %}
+
+{% block header %}
+  {% include tpl_path ~ "/header.html" %}
+{% endblock %}
+
+{% block content %}
+  <h2>Two-Factor Authentication</h2>
+    <form method="post" novalidate>
+      <fieldset>
+        <legend>Verify MFA Token</legend>
+          {{ form.hidden_tag() }}
+
+          <div class="form-group">
+            {{ form.code.label(class_='required') }} {{ form.code(class_='form-control') }}
+            {% if form.code.errors %}
+              <span class="text-danger">{{ form.code.errors[0] }}</span>
+            {% endif %}
+          </div>
+          <div class="form-group">
+            {{ form.submit(class_='btn btn-primary') }}
+          </div>
+      </fieldset>
+    </form>
+{% endblock %}
+
+{% block footer %}
+  {% include tpl_path ~ "/footer.html" %}
+{% endblock %}

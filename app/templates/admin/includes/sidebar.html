@@ -1,0 +1,48 @@
+<div class="sidebar-content">
+  <h3>Account Menu</h3>
+	<ul>
+      <li><a href="{{ url_for('dashboard.dashboard') }}">Member Home</a></li>
+      <li><a href="{{ url_for('account.account') }}">Manage Account</a></li>
+      <li><a href="{{ url_for('reset.change_password') }}">Change Password</a></li>
+        {% if env.use_mfa %}
+          {% if not current_user.mfa_enabled %}
+            <li><a href="{{ url_for('mfa.mfa_setup') }}">Setup MFA</a></li>
+          {% else %}
+            <li><a href="{{ url_for('mfa.mfa_disable') }}">Manage MFA</a></li>
+          {% endif %}
+        {% endif %}
+		<li><a href="{{ url_for('logout.logout') }}">Logout</a></li>
+	</ul>
+
+    <h3>Your Info</h3>
+    <ul>
+      <li><strong>User:</strong> {{ current_user.username }}</li>
+      <li><strong>Joined:</strong> {{ current_user.created_at.strftime('%Y-%m-%d') }}</li>
+      <li><strong>Role(s):</strong> {{ current_user.roles | map(attribute='name') | join(', ') }}</li>
+      <li><strong>MFA:</strong>
+        {% if current_user.mfa_enabled %}
+          Enabled
+        {% else %}
+          Disabled
+        {% endif %}
+      </li>
+    </ul>
+
+    <h3>Admin Menu</h3>
+    <ul>
+      <li><a href="{{ url_for('admin.admin_home') }}">Admin Home</a></li>
+      <li><a href="{{ url_for('settings.settings') }}">Site Settings</a></li>
+      <li><a href="{{ url_for('register.register') }}">Register User</a></li>
+      <li><a href="{{ url_for('users.list_users') }}">View Users</a></li>
+    </ul>
+
+    <h3>Quick Stats {{ version }}</h3>
+    <ul>
+      <li>Total Users: {{ total_registered_user_count }}</li>
+      <li>Pending Users: {{ total_pending_user_count }}</li>
+      <li>Total Sellers: {{ total_sellers_user_count }}</li>
+      <li>Online Users: {{ total_online_user_count }}</li>
+      <li>Online Guests: {{ total_guest_online_user_count }}</li>
+      {# Add additional stats here #}
+    </ul>
+  </div>

@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Welcome to {{ config.SITE_NAME }}</title>
+</head>
+<body style="font-family: sans-serif; background: #f9f9f9; color: #333;">
+  <div style="max-width: 600px; margin: 30px auto; padding: 20px; background: white; border-radius: 5px;">
+    <h1>Welcome, {{ username }}!</h1>
+    <p>You’ve been invited to join <strong>{{ config.SITE_NAME }}</strong>.</p>
+
+    {% if temp_password %}
+      <p>Your temporary password is:</p>
+      <p style="font-family: monospace; background: #eee; padding: 10px; border-radius: 3px;">{{ temp_password }}</p>
+      <p>Be sure to change it after your first login.</p>
+    {% endif %}
+
+    <p><a href="{{ invite_link }}" style="background: #007bff; color: white; padding: 10px 20px; text-decoration: none; border-radius: 4px;">Log In</a></p>
+
+    <p>If the button doesn't work, you can also copy and paste this URL into your browser:</p>
+    <p><a href="{{ invite_link }}">{{ invite_link }}</a></p>
+
+    <p>Glad to have you with us!<br>– The {{ config.SITE_NAME }} Team</p>
+  </div>
+</body>
+</html>

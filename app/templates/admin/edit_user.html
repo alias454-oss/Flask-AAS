@@ -1,0 +1,93 @@
+<!-- templates/admin/edit_user.html -->
+{% if current_user.is_authenticated and current_user.is_admin %}
+{% extends "admin/includes/base.html" %}
+
+{% block header %}
+  {% include "admin/includes/header.html" %}
+{% endblock %}
+
+{% block content %}
+  <h2>Edit User: {{ user.username }}</h2>
+
+  <form method="POST" id="admin-edit-user-form" novalidate>
+    {{ form.hidden_tag() }}
+
+    <fieldset>
+      <legend>Account Details</legend>
+        <div class="form-group">
+          {{ form.username.label }} {{ form.username(size=30, maxlength=30, class_='form-control') }}
+          {% if form.username.errors %}
+            <span class="text-danger">{{ form.username.errors[0] }}</span>
+          {% endif %}
+        </div>
+
+        <div class="form-group">
+          {{ form.email.label }} {{ form.email(size=35, maxlength=50, class_='form-control') }}
+          {% if form.email.errors %}
+            <span class="text-danger">{{ form.email.errors[0] }}</span>
+          {% endif %}
+        </div>
+
+        <div class="form-group">
+          <label>{{ form.roles.label }}</label>
+          {% for subfield in form.roles %}
+            <div class="form-check">
+              {{ subfield() }}
+              <label class="form-check-label" for="{{ subfield.id }}">{{ subfield.label.text }}</label>
+            </div>
+          {% endfor %}
+        </div>
+
+        {% if env.use_user_approval %}
+        <div class="form-group">
+          <label>{{ form.activated() }} {{ form.activated.label.text }}</label>
+          <label>{{ form.approved() }} {{ form.approved.label.text }}</label>
+        </div>
+        {% endif %}
+    </fieldset>
+
+    <fieldset>
+      <legend>Personal Information</legend>
+        <div class="form-group">{{ form.company_name.label }} {{ form.company_name(size=30, class_='form-control') }}</div>
+        <div class="form-group">{{ form.first_name.label }} {{ form.first_name(size=30, class_='form-control') }}</div>
+        <div class="form-group">{{ form.last_name.label }} {{ form.last_name(size=30, class_='form-control') }}</div>
+        <div class="form-group">{{ form.phone.label }} {{ form.phone(size=30, class_='form-control') }}</div>
+        <div class="form-group">{{ form.alt_phone.label }} {{ form.alt_phone(size=30, class_='form-control') }}</div>
+        <div class="form-group">{{ form.fax.label }} {{ form.fax(size=30, class_='form-control') }}</div>
+    </fieldset>
+
+    {% if env.use_user_location %}
+    <fieldset>
+      <legend>Location</legend>
+        <div class="form-group">{{ form.country.label }} {{ form.country(size=10, class_='form-control') }}</div>
+        <div class="form-group">{{ form.state.label }} {{ form.state(size=30, class_='form-control') }}</div>
+        <div class="form-group">{{ form.city.label }} {{ form.city(size=30, class_='form-control') }}</div>
+        <div class="form-group">{{ form.address.label }} {{ form.address(size=60, class_='form-control') }}</div>
+        <div class="form-group">{{ form.zip.label }} {{ form.zip(size=10, class_='form-control') }}</div>
+    </fieldset>
+    {% endif %}
+
+    <fieldset>
+      <legend>Notes</legend>
+        <div class="form-group">
+          {{ form.notes.label }}<br>
+          {{ form.notes(rows=4, class_='form-control') }}
+        </div>
+
+        <div class="form-group">
+          {{ form.admin_notes.label }}<br>
+          {{ form.admin_notes(rows=4, class_='form-control') }}
+        </div>
+    </fieldset>
+
+    <div class="form-group mt-4">
+      {{ form.submit(class_="btn btn-primary") }}
+      <a href="{{ url_for('users.list_users') }}" class="btn btn-secondary ml-2">Back to Users</a>
+    </div>
+  </form>
+{% endblock %}
+
+{% block footer %}
+  {% include "admin/includes/footer.html" %}
+{% endblock %}
+{% endif %}

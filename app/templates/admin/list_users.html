@@ -1,0 +1,106 @@
+<!-- templates/admin/list_user.html -->
+{% if current_user.is_authenticated and current_user.is_admin %}
+{% extends "admin/includes/base.html" %}
+
+{% block header %}
+  {% include "admin/includes/header.html" %}
+{% endblock %}
+
+{% block content %}
+<h2>Welcome to the Admin Center</h2>
+<hr />
+<p>Showing {{ paginate.first }} - {{ paginate.last }} of {{ paginate.total }} users displayed.</p>
+
+<div class="user-list">
+  {% for user in users %}
+  <div class="user-card">
+    <div class="user-meta">
+      <div class="meta-left">
+        <strong>User:</strong> {{ user.username }} (ID: {{ user.id }})
+      </div>
+      <div class="meta-right">
+        <strong>Registered:</strong> {{ user.reg_date.strftime('%Y-%m-%d') }}
+      </div>
+    </div>
+
+    <div class="user-content">
+      <div class="user-avatar">
+        <a href="{{ url_for('users.edit_user', user_id=user.id) }}">
+          <img src="{{ url_for('static', filename=user.image if user.image else 'images/no_user.jpg') }}"
+               alt="{{ user.first_name }} {{ user.last_name }}"
+               title="{{ user.first_name }} {{ user.last_name }}" />
+        </a>
+      </div>
+
+      <div class="user-info">
+        <p>
+          <strong>{{ user.first_name }} {{ user.last_name }}</strong><br />
+          <strong>Last Active:</strong> {{ user.last_active.strftime('%Y-%m-%d %H:%M') }}<br />
+
+          {% if env.use_user_approval %}
+            <strong>Status:</strong>
+          {% if user.activated %}
+            <span class="status activated">Activated</span>
+          {% else %}
+            <span class="status pending">Not Activated</span>
+          {% endif %} |
+          {% if user.approved %}
+            <span class="status activated">Approved</span>
+          {% else %}
+            <span class="status pending">Not Approved</span>
+          {% endif %}
+          {% endif %}
+        </p>
+
+        <div class="user-actions">
+          <a href="{{ url_for('users.edit_user', user_id=user.id) }}" class="button-link">
+            <img src="{{ url_for('static', filename='images/id_card_view.gif') }}" alt="View" /> View Full Details
+          </a>
+
+          <a href="#" onclick="
+              if(confirm('Are you sure you want to delete this user?')) {
+                fetch('{{ url_for('users.delete_user', user_id=user.id) }}', {
+                  method: 'POST',
+                  headers: { 'X-CSRFToken': '{{ csrf_token() }}' }
+                }).then(() => location.reload());
+              }
+              return false;" class="button-link danger">
+            <img src="{{ url_for('static', filename='images/exit.gif') }}" alt="Delete" /> Delete User
+          </a>
+        </div>
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+
+<p>Showing {{ paginate.first }} - {{ paginate.last }} of {{ paginate.total }} users displayed.</p>
+<hr />
+
+<div id="paginate">
+  <p>
+    {% if paginate.has_prev %}
+      <a href="{{ url_for('users.list_users', page=paginate.prev_num) }}">Prev</a>
+    {% endif %}
+    {% for page_num in paginate.iter_pages() %}
+      {% if page_num %}
+        {% if page_num == paginate.page %}
+          <strong>{{ page_num }}</strong>
+        {% else %}
+          <a href="{{ url_for('users.list_users', page=page_num) }}">{{ page_num }}</a>
+        {% endif %}
+      {% else %}
+      &hellip;
+      {% endif %}
+    {% endfor %}
+    {% if paginate.has_next %}
+      <a href="{{ url_for('users.list_users', page=paginate.next_num) }}">Next</a>
+    {% endif %}
+  </p>
+</div>
+{% endblock %}
+
+{% block footer %}
+  {% include "admin/includes/footer.html" %}
+{% endblock %}
+{% endif %}

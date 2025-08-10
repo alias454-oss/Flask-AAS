@@ -1,0 +1,19 @@
+<!-- templates/account/account.html -->
+{% extends tpl_path ~ "/base.html" %}
+
+{% block header %}
+  {% include tpl_path ~ "/header.html" %}
+{% endblock %}
+
+{% block content %}
+  <h2>Manage Account</h2>
+  <p>Welcome, {{ current_user.username }}</p>
+
+  <h3>About You:</h3>
+  <p>{{ current_user.first_name }} {{ current_user.last_name }}<br />
+  </p>
+{% endblock %}
+
+{% block footer %}
+  {% include tpl_path ~ "/footer.html" %}
+{% endblock %}

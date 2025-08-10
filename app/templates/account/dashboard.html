@@ -1,0 +1,31 @@
+<!-- templates/account/dashboard.html -->
+{% extends tpl_path ~ "/base.html" %}
+
+{% block header %}
+  {% include tpl_path ~ "/header.html" %}
+{% endblock %}
+
+{% block content %}
+  <h2>Account Dashboard</h2>
+  <p>Welcome, {{ current_user.username }}</p>
+
+  <h3>Profile Information</h3>
+  <p>
+    <strong>Name:</strong> {{ current_user.first_name }} {{ current_user.last_name }}<br />
+    <strong>Phone:</strong> {{ current_user.phone if current_user.phone else NO_INFO }}<br />
+    <strong>Alt Phone:</strong> {{ current_user.alt_phone if current_user.alt_phone else NO_INFO }}<br />
+    <strong>Fax:</strong> {{ current_user.fax if current_user.fax else NO_INFO }}<br />
+    {% if env.use_user_location %}
+      <strong>Address:</strong> {{ current_user.address if current_user.address else NO_INFO }}<br />
+      <strong>City:</strong> {{ current_user.city if current_user.city else NO_INFO }}<br />
+      <strong>State:</strong> {{ current_user.state if current_user.state else NO_INFO }}<br />
+      <strong>ZIP:</strong> {{ current_user.zip if current_user.zip else NO_INFO }}<br />
+    {% endif %}
+    <strong>Registered On:</strong> {{ current_user.created_at.strftime('%Y-%m-%d') }}<br />
+    <strong>Roles:</strong> {{ current_user.roles | map(attribute='name') | join(', ') }}
+  </p>
+{% endblock %}
+
+{% block footer %}
+  {% include tpl_path ~ "/footer.html" %}
+{% endblock %}

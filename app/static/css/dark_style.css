@@ -1,0 +1,98 @@
+/* Base Light Mode Styles */
+body {
+  font-family: sans-serif;
+  background-color: #f8f9fa;
+  color: #212529;
+  margin: 0;
+  padding: 0;
+}
+
+header, footer {
+  background-color: #343a40;
+  color: #fff;
+  padding: 1rem;
+  text-align: center;
+}
+
+header {
+  border-bottom: 1px solid #333;
+  background-color: #1f1f1f;
+  color: #e0e0e0;
+}
+
+.nav-tabs .nav-link {
+  color: #e0e0e0;
+}
+
+.nav-tabs .nav-link.active,
+.nav-tabs .nav-link:hover {
+  background-color: #3a3a3a;
+  border-color: #444 #444 #1f1f1f;
+}
+
+nav {
+  display: flex;
+  justify-content: center;
+  background-color: #495057;
+}
+
+nav a {
+  color: #fff;
+  padding: 1rem;
+  text-decoration: none;
+  transition: background 0.3s;
+}
+
+nav a:hover {
+  background-color: #6c757d;
+}
+
+main {
+  padding: 2rem;
+  max-width: 960px;
+  margin: 0 auto;
+}
+
+.container {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.card {
+  background: #fff;
+  border-radius: 8px;
+  padding: 1rem;
+  box-shadow: 0 0 10px rgba(0,0,0,0.1);
+  flex: 1 1 calc(33.333% - 2rem);
+}
+
+/* Dark Mode Support */
+@media (prefers-color-scheme: dark) {
+  body {
+    background-color: #121212;
+    color: #e0e0e0;
+  }
+
+  header, footer {
+    background-color: #1f1f1f;
+    color: #e0e0e0;
+  }
+
+  nav {
+    background-color: #2c2c2c;
+  }
+
+  nav a {
+    color: #e0e0e0;
+  }
+
+  nav a:hover {
+    background-color: #3a3a3a;
+  }
+
+  .card {
+    background: #1e1e1e;
+    box-shadow: 0 0 10px rgba(255,255,255,0.05);
+  }
+}

@@ -1,0 +1,47 @@
+<!-- templates/index.html -->
+{% extends tpl_path ~ "/base.html" %}
+
+{% block header %}
+  {% include tpl_path ~ "/header.html" %}
+{% endblock %}
+
+{% block content %}
+    <h2>Flask-Based Login & User Management System</h2>
+    <p>This system started life as a basic PHP login utility, originally tied to the Open Auto Classifieds project.
+      This system covers the basics and then some: authentication, roles, audit logging, password resets,
+      and a few other bells and whistles.
+    </p>
+
+    <p>Features this new system includes:</p>
+    <ul>
+        <li>Built with Flask and Jinja2 templates</li>
+        <li>Clean and modular architecture with clear separation of concerns</li>
+        <li>Role-based access control with flexible user/role management</li>
+        <li>Session-based login with optional "remember me" functionality</li>
+        <li>Admin dashboard with user management and settings control</li>
+        <li>Comprehensive audit logging of user and admin actions</li>
+        <li>Password reset, email verification, and user settings management</li>
+        <li>CSRF protection enabled globally</li>
+        <li>Optional pluggable abuse detection with rate limiting and lockouts</li>
+        <li>Dynamic sitemap and robots.txt routes for SEO optimization</li>
+        <li>Captcha integration for enhanced bot protection</li>
+        <li>Simple, responsive layout using modern HTML and CSS</li>
+        <li>Designed to be practical and straightforward for real usage</li>
+    </ul>
+
+    <h2>To get started, check the <code>README</code> or <code>docs/</code> folder for setup instructions.</h2>
+    <p>The original login app worked well over the years, however, I recently found myself wanting a more modern,
+      secure, and flexible system. So I did what anyone eventually does: I rebuilt it from scratch in a stack I knew
+      nothing about. If you like saving time vs. reinventing the wheel, then this might be a good fit. It’s not
+      perfect but it is mostly solid. It is a good foundation to build on while still having control, so give it a shot.
+    </p>
+
+    <p>This system keeps external dependencies to a minimum. preferring to leave feature extensions, integrations,
+      and extra bells and whistles up to you. That way, it stays simple and lightweight out of the box, making it
+      easier to adapt and build exactly what you need without wrestling with unnecessary complexity.
+    </p>
+{% endblock %}
+
+{% block footer %}
+  {% include tpl_path ~ "/footer.html" %}
+{% endblock %}

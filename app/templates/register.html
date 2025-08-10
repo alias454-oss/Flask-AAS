@@ -1,0 +1,124 @@
+<!-- templates/register.html -->
+{% extends tpl_path ~ "/base.html" %}
+
+{% block header %}
+  {% include tpl_path ~ "/header.html" %}
+{% endblock %}
+
+  {% block content %}
+    <h2>Register</h2>
+    <p>Create a new account</p>
+
+    <form method="POST" action="" novalidate>
+        {{ form.hidden_tag() }}
+
+        <fieldset>
+          <legend>Account Details</legend>
+          <div class="form-group">
+            {{ form.username.label(class_='required') }} {{ form.username(size=30, maxlength=30, class_='form-control') }}
+            {% if form.username.errors or error_flags.user_error%}
+              <span class="text-danger">{{ form.username.errors[0] }}</span>
+            {% endif %}
+          </div>
+          <div class="form-group">
+            {{ form.password.label(class_='required') }} {{ form.password(id='password', size=30, maxlength=30, class_='form-control', autocomplete='new-password') }}
+            <meter id="strengthMeter" min="0" max="4" value="0" class="mt-1 mb-1 w-100"></meter>
+            <small id="strengthText">Enter a password</small><br>
+            {% if form.password.errors %}
+              <span class="text-danger">{{ form.password.errors[0] }}</span>
+            {% endif %}
+          </div>
+          <div class="form-group">
+            {{ form.email.label(class_='required') }} {{ form.email(type='email', size=35, maxlength=50, class_='form-control') }}
+            {% if form.email.errors or error_flags.mail_error %}
+              <span class="text-danger">{{ form.email.errors[0] }}</span>
+            {% endif %}
+          </div>
+        </fieldset>
+
+        <fieldset>
+          <legend>Personal Information</legend>
+          <div class="form-group">{{ form.company_name.label }} {{ form.company_name(size=30, class_='form-control') }}</div>
+          <div class="form-group">
+            {{ form.first_name.label }} {{ form.first_name(size=30, class_='form-control') }}
+            {% if form.first_name.errors %}
+              <span class="text-danger">{{ form.first_name.errors[0] }}</span>
+            {% endif %}
+          </div>
+          <div class="form-group">
+            {{ form.last_name.label }} {{ form.last_name(size=30, class_='form-control') }}
+            {% if form.last_name.errors %}
+              <span class="text-danger">{{ form.last_name.errors[0] }}</span>
+            {% endif %}
+          </div>
+          <div class="form-group">
+            {{ form.phone.label }} {{ form.phone(type='tel', size=30, class_='form-control') }}
+            {% if form.phone.errors %}
+              <span class="text-danger">{{ form.phone.errors[0] }}</span>
+            {% endif %}
+          </div>
+        </fieldset>
+
+        {% if env.use_user_location %}
+        <fieldset>
+          <legend>Location</legend>
+            <div class="form-group">{{ form.country.label }} {{ form.country(size=10, class_='form-control') }}</div>
+            <div class="form-group">{{ form.state.label }} {{ form.state(size=30, class_='form-control') }}</div>
+            <div class="form-group">{{ form.city.label }} {{ form.city(size=30, class_='form-control') }}</div>
+            <div class="form-group">{{ form.address.label }} {{ form.address(size=60, class_='form-control') }}</div>
+            <div class="form-group">{{ form.zip.label }} {{ form.zip(size=10, class_='form-control') }}</div>
+        </fieldset>
+        {% endif %}
+
+        <fieldset>
+          <legend>Verification</legend>
+            <div class="form-group">
+              <div class="checkbox-inline">
+                <label for="{{ form.agree.id }}">
+                  {{ form.agree() }}
+                    I agree to the
+                    <a href="{{ url_for('tos.tos') }}" target="_blank" rel="noopener noreferrer">
+                      Terms of Service
+                    </a>
+                </label>
+              </div>
+              {% if form.agree.errors %}
+                <span class="text-danger">{{ form.agree.errors[0] }}</span>
+              {% endif %}
+            </div>
+
+            {% if env.use_captcha %}
+            <div class="form-group">
+              <img src="{{ url_for('captcha.captcha_image') }}" alt="CAPTCHA Image" id="captcha-image" />
+              <button id="reload-captcha" class="btn btn-primary" type="button">Reload CAPTCHA</button>
+            </div>
+            <div class="form-group">
+              {{ form.captcha.label(class_='required') }} {{ form.captcha(size=32) }}
+              {% if form.captcha.errors %}
+                {% for error in form.captcha.errors %}
+                  <div class="text-danger">{{ error }}</div>
+                {% endfor %}
+              {% endif %}
+            </div>
+            <script nonce="{{ nonce }}">
+            document.getElementById('reload-captcha').addEventListener('click', function () {
+              document.getElementById('captcha-image').src = "{{ url_for('captcha.captcha_image') }}?" + Date.now();
+            });
+            </script>
+          {% endif %}
+        </fieldset>
+
+        <div class="form-group">
+          {{ form.submit(class_="btn btn-primary") }}
+          <a href="{{ url_for('login.login') }}">Back to Login</a>
+        </div>
+        <input type="text" name="nobot_check" class="hidden-field" autocomplete="off" tabindex="-1" />
+    </form>
+
+  <script src="{{ url_for('static', filename='js/pw_strength_meter.js') }}"></script>
+  {% endblock %}
+
+{% block footer %}
+  {% include tpl_path ~ "/footer.html" %}
+{% endblock %}
+

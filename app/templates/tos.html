@@ -1,0 +1,175 @@
+<!-- templates/tos.html -->
+{% extends tpl_path ~ "/base.html" %}
+
+{% block header %}
+  {% include tpl_path ~ "/header.html" %}
+{% endblock %}
+
+{% block content %}
+  <h2>Website User Agreement for {{ env.site_name }}</h2>
+
+  <p><strong>
+  Please read this document carefully before accessing or using {{ site_url }} (referred to as "the Site").
+  </strong></p>
+
+  <p><strong>
+  By accessing or using the Site, you agree to be bound by the terms and conditions set forth below.
+  If you do not agree, you must not use the Site. {{ env.site_name }} may update these terms at any time,
+  and updates will be effective upon posting. Continued use of the Site constitutes acceptance of any changes.
+  </strong></p>
+
+  <h2>Limitation of liability</h2>
+  <p>
+  In no event will {{ env.site_name }} be liable for any incidental, consequential, or indirect damages
+  (including but not limited to loss of profits, business interruption, or data loss) arising from the use or inability
+  to use the Site or its services, even if {{ env.site_name }} has been advised of the possibility of such damages.
+  Some jurisdictions do not allow exclusions or limitations of liability, so the above may not apply to you.
+  In those cases, {{ env.site_name }}'s liability is limited to the extent permitted by law.
+  </p>
+
+  <h3>1. Copyright, licenses and idea submissions</h3>
+  <p>All content on the Site is protected by domestic and international copyright and trademark laws.
+  The intellectual property is owned by {{ env.site_name }}, its affiliates, or licensed third parties.
+  You may not modify, copy, reproduce, republish, upload, post, transmit, or distribute any material from the Site
+  (including text, graphics, code, and software) unless expressly permitted.
+  </p>
+
+  <p>You may print and download portions of material from the different areas of the site solely for your own non-commercial
+  use, provided that you agree not to change or delete any copyright or proprietary notices from the materials.
+  You agree to grant to {{ env.site_name }} a non-exclusive, royalty-free license to use submissions solely for the
+  operation and improvement of the site and its related services. This includes the right to display content you
+  voluntarily post in public areas, such as forums or feedback tools, including for promotional purposes, without modifying
+  the meaning or context of your submission. Submissions not intended for public view — including private messages, emails,
+  or form submissions marked private — will never be used or shared.
+  </p>
+
+  <h3>2. Trademarks</h3>
+  <p>{{ env.site_name }} and any other names associated with {{ env.site_name }}, including site names,
+  events, publications, and services referenced on the site, are the exclusive trademarks or service marks of {{ env.site_name }}.
+  This includes the "look and feel" of the site—its layout, colors, and visual elements. Any use of {{ env.site_name }} trademarks
+  is strictly prohibited without prior written permission. Other product and company names mentioned may be trademarks of their respective owners.
+  </p>
+
+  <h3>3. Use of the site</h3>
+  <p>You understand that, except for information, products, or services clearly identified as being supplied
+  by {{ env.site_name }}, {{ env.site_name }} does not operate, control, or endorse any third-party information,
+  products, or services on the internet. Except where identified otherwise, all information available through the site or internet generally
+  is offered by third parties not affiliated with {{ env.site_name }}. You also understand that {{ env.site_name }}
+  does not guarantee that files available for download will be free from viruses, malware, or other harmful elements.
+  You are responsible for implementing safeguards to protect your systems and data.
+  </p>
+
+  <p>In connection with your use of the site, you agree you will not:
+  </p>
+  <ul>
+    <li>a) Transmit any material that is unlawful, threatening, abusive, harassing, defamatory, vulgar, or otherwise objectionable, or that invades another’s privacy.</li>
+    <li>b) Impersonate any person or entity, including a {{ env.site_name }} representative, or misrepresent your affiliation with any person or organization.</li>
+    <li>c) Post or transmit any material you are not authorized to share under law or agreements.</li>
+    <li>d) Post or transmit any material containing viruses or malicious code.</li>
+    <li>e) Remove legal notices or proprietary labels from any uploaded content.</li>
+    <li>f) Use the site’s communication features to disrupt service or inconvenience others.</li>
+    <li>g) Send unsolicited advertisements or engage in unauthorized solicitations.</li>
+    <li>h) Violate any applicable laws or regulations.</li>
+    <li>i) Upload material that infringes on intellectual property rights of others.</li>
+    <li>j) Tamper with or delete content posted by others.</li>
+    <li>k) Frame or mirror the site without written permission.</li>
+    <li>l) Register or subscribe others for services without their authorization.</li>
+  </ul>
+
+  <p>You assume full responsibility for your use of the site and the internet. {{ env.site_name }} provides the site
+  “as is” and disclaims all warranties—express or implied—including but not limited to merchantability, fitness for a
+  particular purpose, or non-infringement. {{ env.site_name }} is not liable for any damages arising directly or indirectly
+  from your use of the site or its content. You understand that the internet contains unedited materials, some of which
+  may be offensive or inappropriate, and you access them at your own risk. {{ env.site_name }} has no control over and
+  accepts no responsibility for such content.
+  </p>
+
+  <p>You assume total responsibility and risk for your use of the site and the internet. {{ env.site_name }} provides the site and
+    related information “as is” and disclaims all express or implied warranties, including but not limited to
+    warranties of title, non-infringement, merchantability, or fitness for a particular purpose. {{ env.site_name }} shall not
+    be liable for any cost or damage arising from your use of the service or from transactions made through it.
+  </p>
+
+  <p>You are responsible for evaluating the accuracy, completeness, and usefulness of all content available through
+    the service or linked on the internet. Some content accessible via the internet may be offensive or explicit.
+    You access such content at your own risk. {{ env.site_name }} does not control and is not responsible for such materials.
+  </p>
+
+  <h3>4. Equipment</h3>
+  <p>You are responsible for obtaining and maintaining any equipment and services required to access the site,
+    including all related charges.
+  </p>
+
+  <h3>5. Indemnification and Reservation of Rights</h3>
+  <p>You agree to indemnify and hold harmless {{ env.site_name }}, its affiliates, officers, employees, and partners from any
+    claims, losses, or damages (including legal fees) resulting from your use of the site or any violation of this agreement.
+  </p>
+
+  <p>{{ env.site_name }} may disclose user information if required to do so by law, to comply with legal process,
+    to enforce this agreement, or to protect its rights or the safety of others.
+  </p>
+
+  <h3>6. Third-Party Rights</h3>
+  <p>The terms in Sections 3 (Use of the Site) and 5 (Indemnification) benefit {{ env.site_name }} and its affiliates,
+    employees, and partners, who may enforce them directly against you.
+  </p>
+
+  <h3>7. Termination</h3>
+  <p>This agreement may be terminated by either party at any time. Provisions related to copyright, site use,
+    indemnification, third-party rights, and miscellaneous terms shall survive termination.
+  </p>
+
+  <h3>8. Special Admonitions for International Use</h3>
+  <p>Recognizing the global nature of the internet, you agree to comply with all local laws and regulations,
+    including but not limited to those related to internet use, data protection, email, and privacy.
+    Specifically, you agree to comply with all applicable export control laws regarding the transmission of technical
+    data from the United States or the country in which you reside.
+  </p>
+
+  <h3>9. Dealings with Third Parties</h3>
+  <p>Your participation, correspondence, or business dealings with any third party found on or through the
+    site—including payment and delivery of goods or services, and any related terms or warranties—are solely
+    between you and that third party. You agree that {{ env.site_name }} is not responsible or liable for any loss, damage,
+    or other issues arising from such dealings.
+  </p>
+
+  <h3>10. Links</h3>
+  <p>The site may provide, or third parties may provide, links to non-{{ env.site_name }} internet websites or resources.
+    Because {{ env.site_name }} has no control over these external sites, you acknowledge that {{ env.site_name }}
+    is not responsible for their availability and does not endorse or assume liability for any content,
+    advertising, products, or other materials on or available from such sites. You further agree that {{ env.site_name }}
+    shall not be liable, directly or indirectly, for any damage or loss caused or alleged to be caused by
+    your use of or reliance on any such content or services.
+  </p>
+
+  <h3>11. Miscellaneous</h3>
+  <p>This agreement shall be governed by and construed in accordance with the laws of the state of residence for
+    {{ env.site_state }}, United States, applicable to agreements made and to be performed in that state. You agree
+    that any legal action or proceeding between {{ env.site_name }} and you regarding this agreement or the parties'
+    obligations shall be brought exclusively in a federal or state court of competent jurisdiction located in the
+    city of {{ env.site_city }}, state of {{ env.site_state }}, United States.</p>
+
+  <p>Any cause of action or claim you may have related to the site must be commenced within one (1) year after
+    the claim or cause of action arises, or it will be barred. {{ site_name }}'s failure to enforce any provision
+    of this agreement shall not be construed as a waiver of any provision or right. Neither the course of conduct
+    between the parties nor trade practice shall modify any provision of this agreement. {{ env.site_name }} may assign
+    its rights and duties under this agreement to any party at any time without notice to you.</p>
+
+  <p>Any rights not expressly granted herein are reserved.
+  </p>
+
+  <p>Some information on this website may include projections or forward-looking statements regarding future
+    events or the future financial performance of {{ site_name }}. These statements are predictions only and
+    actual results may differ materially.
+  </p>
+
+  <h3>12. Privacy and Cookies</h3>
+  <p>Your use of this site is also subject to our <a href="{{ url_for('privacy.privacy') }}">Privacy Policy</a>, which describes how
+    data is collected, used, and protected. By continuing to use the site, you consent to the use of cookies and
+    other tracking technologies as described therein.
+  </p>
+  {% endblock %}
+
+{% block footer %}
+  {% include tpl_path ~ "/footer.html" %}
+{% endblock %}

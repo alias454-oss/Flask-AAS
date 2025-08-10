@@ -1,0 +1,484 @@
+/* ------------------------------------------
+   Base Styles & Typography
+--------------------------------------------- */
+
+body {
+  font-family: system-ui, sans-serif;
+  background-color: #E6E6DC;
+  color: #212529;
+  margin: 0;
+  padding: 0;
+  font-size: 0.9rem;
+}
+
+h1 {
+  font-size: 1.5rem;
+}
+h2, h3, h4 {
+  font-size: 1.2rem;
+}
+
+a {
+  color: #669;
+  text-decoration: none;
+}
+a:hover {
+  text-decoration: underline;
+}
+
+img {
+  border: 0;
+  max-width: 100%;
+  height: auto;
+}
+
+/* ------------------------------------------
+   Layout Containers & Utility Classes
+--------------------------------------------- */
+
+#pageContainer {
+  max-width: 900px;
+  margin: 0 auto 15px;
+  background: #fff;
+  border: 1px solid #8DA8D5;
+}
+
+.container {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.flex {
+  display: flex;
+  gap: 1rem;
+}
+.flex-col {
+  flex-direction: column;
+}
+.flex-center {
+  justify-content: center;
+  align-items: center;
+  display: flex;
+}
+
+.clearfix::after {
+  content: "";
+  display: table;
+  clear: both;
+}
+
+.text-left { text-align: left; }
+.text-center { text-align: center; }
+.text-right { text-align: right; }
+.text-middle { vertical-align: middle; }
+
+.float-left { float: left; }
+.float-right { float: right; }
+
+.boxlt, .boxrt {
+  display: inline-block;
+  width: 48%;
+}
+
+.boxcontent {
+  padding: 1rem;
+  background: #fff;
+  border: 1px solid #276D0A;
+}
+
+.clear { clear: both; visibility: hidden; height: 0; }
+.cleared { clear: both; visibility: hidden; height: 0; }
+
+/* ------------------------------------------
+   Header, Sidebar, Main Content, Footer
+--------------------------------------------- */
+
+#header, header {
+  background: #004D99;
+  height: 190px;
+  color: #fff;
+  padding: 1rem;
+  text-align: center;
+}
+
+#sidebar {
+  background: #D8DADD;
+  width: 170px;
+  min-height: 700px;
+  padding: 1rem;
+}
+
+.mainContent {
+  flex: 1;
+  padding: 1rem;
+}
+
+#footer, footer {
+  background: #004D99;
+  color: #fff;
+  text-align: center;
+  padding: 1rem;
+  border-top: 3px solid #666;
+}
+
+/* ------------------------------------------
+   Tables, Forms, and Fieldsets
+--------------------------------------------- */
+
+table {
+  margin: 0 auto;
+  border-collapse: collapse;
+}
+th, td {
+  padding: 0.5rem;
+}
+
+label {
+  display: block;
+  margin-bottom: 0.5rem;
+  font-weight: bold;
+}
+
+fieldset {
+  border: 1px solid #276D0A;
+  padding: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+legend {
+  background: #fff;
+  padding: 0 0.5rem;
+  font-weight: bold;
+}
+
+input[type="text"],
+input[type="email"],
+input[type="tel"],
+input[type="url"] {
+  width: 60%;
+  padding: 5px;
+  font-size: 12px;
+  vertical-align: middle;
+  background: #f5f5f5;
+  border: 1px solid #ebebeb;
+  transition: border 0.25s ease-in-out;
+}
+
+input[type="text"]:hover,
+input[type="email"]:hover,
+input[type="tel"]:hover,
+input[type="url"]:hover,
+textarea:hover {
+  border: 1px solid #aaa;
+}
+
+input[type="submit"],
+input[type="reset"],
+.button {
+  display: inline-block;
+  min-width: 150px;
+  padding: 0.5rem 1rem;
+  font-weight: 700;
+  color: #fff;
+  text-transform: uppercase;
+  cursor: pointer;
+  background: #2a2a2a;
+  border: 1px solid #276D0A;
+  transition: background-color 0.3s ease;
+  text-align: center;
+}
+
+input[type="submit"]:hover,
+input[type="reset"]:hover,
+.button:hover {
+  background: #6495ED;
+}
+
+textarea {
+  width: 96%;
+  padding: 5px;
+  overflow: auto;
+  line-height: 1.5;
+  resize: vertical;
+  background: #f5f5f5;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+}
+
+/* ------------------------------------------
+   Navigation Bar & Menu Styles
+--------------------------------------------- */
+
+/* Hide the checkbox inputs */
+.nav-toggle,
+.menu-toggle {
+  display: none;
+}
+
+/* Hamburger icon styles for mobile */
+.nav-toggle-label,
+.menu__btn {
+  display: none;
+  cursor: pointer;
+  user-select: none;
+}
+
+.nav-toggle-label {
+  flex-direction: column;
+  justify-content: space-around;
+  width: 30px;
+  height: 25px;
+  margin-left: auto;
+}
+
+.nav-toggle-label span {
+  display: block;
+  height: 3px;
+  background-color: #669;
+  border-radius: 2px;
+}
+
+/* Base navbar container */
+.navbar {
+  display: flex;
+  align-items: center;
+}
+
+/* Nav tabs - horizontal menu */
+.nav-tabs {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  gap: 0.5rem;
+}
+
+.nav-tabs li {
+  /* Optional spacing or sizing */
+}
+
+.nav-tabs a {
+  color: #000;
+  padding: 0.25rem 0.5rem;
+  text-decoration: none;
+  display: block;
+}
+
+.nav-tabs .nav-link.active {
+  background-color: #e9ecef;
+  border-color: #dee2e6 #dee2e6 #fff;
+}
+
+/* Footer nav shares nav styles but with white text */
+#navcontainer ul,
+#footer ul {
+  list-style: none;
+  padding: 0;
+  margin: 0 auto;
+  display: flex;
+  justify-content: center;
+  gap: 1rem;
+}
+
+/* Footer styles */
+.footer {
+  padding: 1rem 0;
+  background-color: #f8f9fa;
+  border-top: 1px solid #dee2e6;
+  margin-top: 2rem;
+  text-align: center;
+  color: #333;
+  font-size: 0.95rem;
+}
+
+#footer a {
+  color: #fff;
+}
+
+#footer a:hover {
+  text-decoration: underline;
+}
+
+.footer-container {
+  max-width: 1000px;
+  margin: 0 auto;
+  padding: 0 1rem;
+}
+
+.footer-text {
+  margin: 0;
+}
+
+/* Dark mode support */
+@media (prefers-color-scheme: dark) {
+  .footer {
+    background-color: #1e1e1e;
+    color: #ccc;
+    border-top: 1px solid #333;
+  }
+}
+
+
+/* Responsive Mobile Nav */
+@media (max-width: 768px) {
+  .nav-toggle-label {
+    display: flex;
+  }
+
+  .navbar {
+    display: none;
+    flex-direction: column;
+    width: 100%;
+    background-color: #D8DADD;
+    margin-top: 0.5rem;
+  }
+
+  .nav-tabs {
+    flex-direction: column;
+    gap: 0;
+  }
+
+  .nav-tabs li {
+    border-bottom: 1px solid #276D0A;
+  }
+
+  .nav-tabs li:last-child {
+    border-bottom: none;
+  }
+
+  .nav-tabs a {
+    padding: 0.75rem 1rem;
+  }
+
+  /* Show navbar when checkbox is checked */
+  .nav-toggle:checked + .nav-toggle-label + .navbar {
+    display: flex;
+  }
+
+  /* Sidebar and main content stack on small screens */
+  .flex {
+    flex-direction: column;
+  }
+
+  #sidebar {
+    width: 100%;
+    min-height: auto;
+  }
+
+  .mainContent {
+    width: 100%;
+  }
+}
+
+/* Menu styles with toggle (alternate nav style) */
+
+.menu__btn {
+  display: block;
+  width: 100%;
+  padding: 0;
+  font: inherit;
+  color: #fff;
+  background: #2a2a2a;
+  border: 0;
+  cursor: pointer;
+  outline: none;
+}
+
+.menu__btn-title {
+  display: block;
+  padding: 10px 15px;
+  font-weight: 700;
+  text-align: right;
+  text-transform: uppercase;
+  user-select: none;
+}
+
+.menu__list {
+  list-style: none;
+  background: #2a2a2a;
+  margin: 0;
+  padding: 0;
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.3s ease;
+}
+
+.menu-toggle:checked + .menu__btn + .menu__list {
+  max-height: 100vh; /* enough to show all items */
+}
+
+.menu__item {
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.menu__item:first-child {
+  border-top: none;
+}
+
+.menu__link {
+  display: block;
+  padding: 10px 15px;
+  font-weight: 700;
+  color: #fff;
+  text-transform: uppercase;
+  text-decoration: none;
+}
+
+.menu__link:hover,
+.menu__item--active {
+  background: #6495ED;
+  color: #fff;
+}
+
+/* Large screens - show menu inline and hide hamburger */
+@media screen and (min-width: 767px) {
+  .menu__btn {
+    display: none;
+  }
+
+  .menu__list {
+    max-height: none;
+    display: flex;
+    background: none;
+  }
+
+  .menu__item {
+    border: none;
+  }
+
+  .menu__link {
+    color: #000;
+    padding: 15px 20px;
+    text-transform: none;
+  }
+
+  .menu__link:hover,
+  .menu__item--active {
+    background: #6495ED;
+    color: #fff;
+    text-transform: uppercase;
+  }
+}
+
+/* ------------------------------------------
+   Status & Helper Classes
+--------------------------------------------- */
+
+.error { color: red; }
+.green { background: #3c3; text-align: center; }
+.red { background: #F9C; text-align: center; }
+.awaiting { color: #999; }
+.sold { color: #F00; }
+.activated { color: #3C0; }
+.pending { color: #C60; }
+
+/* ------------------------------------------
+   Section Titles and Subheads
+--------------------------------------------- */
+
+.boxtitle, .subhead {
+  font-weight: bold;
+  padding: 0.5rem;
+  background: #DCE3F0;
+  border-bottom: 1px solid #276D0A;
+}

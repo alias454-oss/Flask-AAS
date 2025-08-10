@@ -1,0 +1,20 @@
+<!-- templates/admin/admin.html -->
+{% if current_user.is_authenticated and current_user.is_admin %}
+{% extends "admin/includes/base.html" %}
+
+{% block header %}
+  {% include "admin/includes/header.html" %}
+{% endblock %}
+
+{% block content %}
+  <h2>Admin Center</h2>
+  <h3>Logged in as <b>{{ current_user.username }}</b></h3>
+
+  <p>This is the control panel. From here, you have full access to configure site settings and manage user accounts.</p>
+  <p>Oversee key administrative operations using this interface to maintain the system and keep it running smoothly.</p>
+{% endblock %}
+
+{% block footer %}
+  {% include "admin/includes/footer.html" %}
+{% endblock %}
+{% endif %}

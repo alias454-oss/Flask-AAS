@@ -1,0 +1,64 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.pyc
+*.pdb
+
+# Pytest cache
+.pytest_cache/
+
+# Virtual environment
+.venv/
+env/
+venv/
+ENV/
+
+# Byte-compiled / optimized / DLL files
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Flask instance folder (if used)
+instance/
+
+# Flask migrations (optional, but usually committed)
+migrations/
+
+# SQLite database file
+*.db
+*.sqlite3
+
+# dotenv environment files (if you keep secrets here)
+.env
+.env.*
+
+# IDE/editor specific
+.continue/
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs
+*.log
+
+# Coverage reports
+.coverage
+htmlcov/
+
+# mypy cache
+.mypy_cache/
+
+# others
+*.bak
+*.backup
+
+*scratch*
+
+# temporary while working on initial buildout
+app/api/

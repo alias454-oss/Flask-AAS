@@ -1,0 +1,70 @@
+<!-- templates/reset.html -->
+{% extends tpl_path ~ "/base.html" %}
+
+{% block header %}
+  {% include tpl_path ~ "/header.html" %}
+{% endblock %}
+
+{% block content %}
+  <h2>{% if reset %}Reset Your Password{% else %}Change Your Password{% endif %}</h2>
+
+  <form method="post" novalidate>
+    {{ form.hidden_tag() }}
+
+    <fieldset>
+      <legend>{% if reset %}Reset Password{% else %}Update Password{% endif %}</legend>
+        {% if form.old_password %}
+        <div class="form-group">
+          {{ form.old_password.label(class_='required') }} {{ form.old_password(id='old_password', class_='form-control') }}
+          {% if form.old_password.errors %}
+            <span class="text-danger">{{ form.old_password.errors[0] }}</span>
+          {% endif %}
+        </div>
+        {% endif %}
+
+        {% if form.password %}
+        <div class="form-group">
+          {{ form.password.label(class_='required') }} {{ form.password(id='password', size=30, maxlength=30, class_='form-control') }}
+          <meter id="strengthMeter" min="0" max="4" value="0" class="mt-1 mb-1 w-100"></meter>
+          <small id="strengthText">Enter a password</small><br>
+          {% if form.password.errors %}
+            <span class="text-danger">{{ form.password.errors[0] }}</span>
+          {% endif %}
+        </div>
+        {% endif %}
+
+        {% if form.password %}
+        <div class="form-group">
+          {{ form.confirm.label(class_='required') }} {{ form.confirm(id='confirm', class_='form-control') }}
+          {% if form.confirm.errors %}
+            <span class="text-danger">{{ form.confirm.errors[0] }}</span>
+          {% endif %}
+        </div>
+        {% endif %}
+
+        {% if form.email %}
+        <div class="form-group">
+          {{ form.email.label(class_='required') }} {{ form.email(class_="form-control") }}
+          {% if form.email.errors %}
+            <span class="text-danger">{{ form.email.errors[0] }}</span>
+          {% endif %}
+        </div>
+        {% endif %}
+    </fieldset>
+
+    <div class="form-group">
+      {{ form.submit(class_="btn btn-primary") }}
+      <a href="{{ url_for('login.login') }}">Back to Login</a>
+
+      {% if token %}
+        <input type="hidden" name="token" value="{{ token }}">
+      {% endif %}
+    </div>
+  </form>
+
+  <script src="{{ url_for('static', filename='js/pw_strength_meter.js') }}"></script>
+  {% endblock %}
+
+{% block footer %}
+  {% include tpl_path ~ "/footer.html" %}
+{% endblock %}
