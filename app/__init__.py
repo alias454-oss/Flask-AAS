@@ -6,7 +6,7 @@ import time
 from flask import Flask, g, current_app, flash, request, session, redirect, url_for
 from flask_login import LoginManager, current_user
 from datetime import datetime, timezone, timedelta
-from sqlalchemy.exc import OperationalError
+from sqlalchemy.exc import OperationalError, ProgrammingError
 from htmlmin.main import minify
 
 from app.core.cache import get_cached_env_settings
@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 def safe_get_cached_env_settings():
     try:
         return get_cached_env_settings()
-    except OperationalError:
+    except (OperationalError, ProgrammingError):
         # DB not ready, return default or None
         return None
 

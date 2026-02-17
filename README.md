@@ -7,7 +7,7 @@ and optional abuse prevention features. Designed for small projects but scalable
 
 ---
 
-## 📜 Background & Philosophy
+## Background & Philosophy
 The Flask Auth & Audit System began life as a simple PHP login script written a long time ago as a foundational part of
 Open Auto Classifieds. Over time, it evolved into a full-featured authentication, user management, and audit logging platform.
 
@@ -20,9 +20,9 @@ This project focuses on:
 - Leaving optional integrations and extras up to you
 - Staying adaptable for both small projects and larger ones
 
-## 🔐 Core Features
+## Core Features
 
-### ✅ Authentication & User Management
+### Authentication & User Management
 - Secure login with **Flask-Login**
 - Password hashing via **bcrypt**
 - Active session tracking
@@ -37,7 +37,7 @@ This project focuses on:
 
 ---
 
-### 📋 Audit Logging
+### Audit Logging
 #### **AuditLogin** (Login Attempts)
 - Tracks username/email used
 - Records IP address (stored as integer)
@@ -51,7 +51,7 @@ This project focuses on:
 
 ---
 
-### 🛡 Optional Abuse Detection System
+### Optional Abuse Detection System
 *Modular, pluggable, and fully optional.*
 
 - Blocks brute-force attempts based on:
@@ -65,7 +65,7 @@ This project focuses on:
 
 ---
 
-### 🔒 Security & Rate Limiting Strategy
+### Security & Rate Limiting Strategy
 - **Multi-layer**: Cloudflare WAF (edge) + Flask-Limiter (app)
 - Rate limits by route:
   - **Login:** `5 / 5min` per IP+username
@@ -77,14 +77,14 @@ This project focuses on:
 
 ---
 
-### 🗂 Public Routes & SEO
+### Public Routes & SEO
 - `/sitemap.xml` → excludes protected/internal routes
 - `/robots.txt` → references sitemap
 - Both cached for efficiency
 
 ---
 
-## 📜 API / Route Endpoints
+## API / Route Endpoints
 
 | Endpoint | Methods | Rule |
 |----------|---------|------|
@@ -117,7 +117,7 @@ This project focuses on:
 
 ---
 
-## ⚙️ Database Setup & Migrations
+## Database Setup & Migrations
 Uses **Flask-Migrate** (Alembic) with SQLAlchemy.
 
 **Initial Setup**
@@ -133,31 +133,35 @@ python manage.py db migrate -m "Describe change"
 python manage.py db upgrade
 ```
 
+**Mark the migration as applied in the event of something going wrong when developing**
+```bash
+python manage.py db stamp head
+```
+
 Rollback:
 ```bash
 python manage.py db downgrade
 ```
 
----
-
-## 🧩 Roadmap
-- Abuse detection
-- IP tracking
-- Alternate registration workflows
-- Admin dashboards
-- OAuth / 2FA (more features)
+Seed Initial data:
+```bash
+python manage.py seed-db
+```
 
 ---
 
-## ⚙️ Installation
+## Installation
 
 ```bash
 git clone https://github.com/alias454/flask-aas.git
 cd flask-aas
-python3 -m venv venv
-source venv/bin/activate  # Mac/Linux
+python3 -m venv .venv
+source .venv/bin/activate  # Mac/Linux
+
 pip install -r requirements.txt
 cp .env.example .env
+
+export FLASK_APP=app
 flask run
 ```
 
@@ -177,6 +181,8 @@ docker build --no-cache -t flask-auth .
 docker run -d --env-file .env -p 5000:5000 --name flask-auth_container flask-auth
 
 docker run --rm -it --env-file .env -p 5000:5000 flask-auth
+
+docker run --rm -it --network host --env-file .env -p 5000:5000 flask-auth
 ```
 
 3. **Access the app**
@@ -185,7 +191,23 @@ Open your browser and go to [http://localhost:5000](http://localhost:5000)
 
 ---
 
-### 🧹 Manual Log Cleanup
+## Notes
+- Seed scripts run once on clean DB
+- `default_role_id` in `.env` controls default user role
+- Admin panel for user/role/settings management
+- Store SMTP credentials securely in environment variables
+
+### Roadmap
+- Abuse detection
+- IP tracking
+- Alternate registration workflows
+- Admin dashboards
+- OAuth / 2FA (more features)
+
+---
+
+## Maintenance
+### Manual Log Cleanup
 Keep log tables lean with the CLI cleanup command:
 
 ```bash
@@ -194,26 +216,10 @@ python manage.py cleanup-logs --days 7
 - **`--days`** → Number of days to retain logs (default: 7)
 - Deletes expired login attempts and audit records
 
-Example `manage.py` snippet:
-```python
-@app.cli.command("cleanup-logs")
-@click.option('--days', default=7, help='Days to keep logs')
-def cleanup_logs(days):
-    ...
-```
-
 ---
 
-## 📝 Notes
-- Seed scripts run once on clean DB
-- `default_role_id` in `.env` controls default user role
-- Admin panel for user/role/settings management
-- Store SMTP credentials securely in environment variables
-
----
-
-## 🛠 Maintenance
 - Run `cleanup-logs` regularly
+
 - Monitor audit logs for anomalies
 - Enable email verification & CAPTCHA for public reg
 - Backup DB & user assets

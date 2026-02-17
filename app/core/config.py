@@ -1,8 +1,9 @@
 # app/core/config.py
+import os
 import logging
 import secrets
 from datetime import datetime, timedelta, timezone
-from typing import List, Optional, Union
+from typing import List, Optional, ClassVar, Literal
 
 from pydantic_settings import BaseSettings
 from pydantic import field_validator
@@ -42,7 +43,7 @@ class Settings(BaseSettings):
         return v or []
 
     # --- Cache ---
-    CACHE_TYPE: str
+    CACHE_TYPE: str = "SimpleCache"
     CACHE_DEFAULT_TIMEOUT: int = 300
     CACHE_REDIS_URL: Optional[str] = "redis://localhost:6379/0"
 
@@ -57,7 +58,7 @@ class Settings(BaseSettings):
     LAST_EXPIRE_RUN: datetime = datetime.now(timezone.utc).isoformat()
 
     # --- Email ---
-    MAIL_DEBUG: bool = True
+    MAIL_DEBUG: bool = False
     MAIL_SERVER: Optional[str] = None
     MAIL_PORT: int = 587
     MAIL_USE_TLS: bool = True
@@ -66,11 +67,26 @@ class Settings(BaseSettings):
     MAIL_DEFAULT_SENDER: Optional[str] = None
 
     # --- Environment ---
-    FLASK_ENV: str = "prod"
+    FLASK_ENV: str = "production"
 
-    class Config:
-        env_file = ".env"
-        env_file_encoding = "utf-8"
+    # Determine which env file to use
+    @staticmethod
+    def detect_env_file() -> str | None:
+        override = os.environ.get("ENV_FILE_PATH")
+        if override and os.path.exists(override):
+            return override
+        if os.path.exists(".env"):
+            return ".env"
+        return None
+
+    # store it as non-field classvar so Pydantic ignores it
+    env_file_path: ClassVar[str | None] = detect_env_file()
+
+    model_config = {
+        "env_file": env_file_path,
+        "env_file_encoding": "utf-8",
+        "extra": "ignore",
+    }
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -85,9 +101,7 @@ class Settings(BaseSettings):
 
         # Validate EXPIRE_INTERVAL_SECONDS toggle logic
         if self.EXPIRE_INTERVAL_SECONDS is not None and self.EXPIRE_INTERVAL_SECONDS <= 0:
-            logger.warning(
-                "EXPIRE_INTERVAL_SECONDS is <= 0. Disabling expiration checks."
-            )
+            logger.warning("EXPIRE_INTERVAL_SECONDS is <= 0. Disabling expiration checks.")
             self.EXPIRE_INTERVAL_SECONDS = None
 
 settings = Settings()

@@ -114,7 +114,7 @@ def login():
             reset_lockout_attempts(username, ip)
 
             login_user(user, remember=form.remember_me.data, fresh=True)
-            session.permanent = True
+            session.permanent = form.remember_me.data
 
             if user.is_admin:  # Adjust this based on your role logic
                 return redirect(url_for('admin.admin_home'))

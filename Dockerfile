@@ -6,13 +6,17 @@ WORKDIR /base
 # Set environment variables (before pip install for caching)
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    FLASK_APP=app
+    FLASK_APP=app \
+    PYTHONPATH=/base \
+    DEBIAN_FRONTEND=noninteractive
 
 # System dependencies for build tools
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     libsqlite3-dev \
     sqlite3 \
+    libpq-dev \
+    && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Python dependencies first for better Docker layer caching
