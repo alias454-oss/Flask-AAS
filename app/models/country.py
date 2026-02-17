@@ -8,7 +8,7 @@ class Country(db.Model):
     name = db.Column(db.String(128), nullable=False)
     iso_code_2 = db.Column(db.String(2), nullable=False, default='')
     iso_code_3 = db.Column(db.String(3), nullable=False, default='')
-    address_format = db.Column(db.Text, nullable=False)
+    address_format = db.Column(db.Text, nullable=False, server_default="")
 
     def __repr__(self):
         return f"<Country {self.name} ({self.iso_code_2})>"

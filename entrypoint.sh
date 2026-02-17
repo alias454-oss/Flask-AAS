@@ -6,6 +6,14 @@ if [[ "${DEBUG}" == "yes" ]]; then
     set -o xtrace
 fi
 
+# --- WAIT FOR DATABASE ---
+#echo "[+] Waiting for PostgreSQL to be ready on db:5432..."
+## This is a simple bash loop that tries to connect to the port
+#while ! python -c "import socket; s = socket.socket(); s.connect(('localhost', 5432))" > /dev/null 2>&1; do
+#    sleep 1
+#done
+#echo "[✓] PostgreSQL is up!"
+
 # Paths
 _seeded="/base/.seeded"
 _init_completed="/base/.db_initialized"
@@ -17,9 +25,9 @@ _init_completed="/base/.db_initialized"
 # 3. Apply migrations (create/update tables)
 if [ ! -f "${_init_completed}" ]; then
     echo "[+] Initializing database..."
-    python -m app.manage db init || echo "DB already initialized"
-    python -m app.manage db migrate -m "Initial migration: create tables"
-    python -m app.manage db upgrade
+    python manage.py db init || echo "DB already initialized"
+    python manage.py db migrate -m "Initial migration: create tables"
+    python manage.py db upgrade
     touch "${_init_completed}"
 else
     echo "[✓] Database already initialized"
@@ -28,7 +36,7 @@ fi
 # 4. Run your seed script after migrations
 if [ ! -f "${_seeded}" ]; then
     echo "[+] Seeding initial data..."
-    python -m app.seed_data
+    python manage.py seed-db
     touch "${_seeded}"
 else
     echo "[✓] Seed already completed"
