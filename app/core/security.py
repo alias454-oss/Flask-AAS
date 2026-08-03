@@ -5,20 +5,20 @@ import secrets
 import hashlib
 import string
 import ipaddress
-from flask import request, current_app
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
-from jose import jwt
-from passlib.context import CryptContext
+
+from flask import request, current_app
+import jwt
 from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
 
 from app.core.cache import get_cached_env_settings
-from app.core.extensions import bcrypt, cache
 from app.core.config import settings
+from app.core.extensions import bcrypt, cache
 
 logger = logging.getLogger(__name__)
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
 
 # # === Lockout Tracking ===
 
@@ -84,7 +84,12 @@ def generate_random_password(length=12):
     return ''.join(secrets.choice(alphabet) for _ in range(length))
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    return pwd_context.verify(plain_password, hashed_password)
+    """Verify a password with the application's bcrypt backend."""
+    try:
+        return bcrypt.check_password_hash(hashed_password, plain_password)
+    except (TypeError, ValueError):
+        return False
+
 
 def old_password_match(user, new_password: str) -> bool:
     return bcrypt.check_password_hash(user.hashed_password, new_password)
@@ -102,12 +107,22 @@ def confirm_token(token, salt, expiration=86400):
     except (SignatureExpired, BadSignature):
         return None
 
-def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
+def create_access_token(
+    data: dict,
+    expires_delta: Optional[timedelta] = None,
+) -> str:
     to_encode = data.copy()
-    expire = datetime.now(timezone.utc) + (expires_delta or timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES))
+    expire = datetime.now(timezone.utc) + (
+        expires_delta
+        or timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+    )
     to_encode.update({"exp": expire})
-    token = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
-    return token
+    return jwt.encode(
+        to_encode,
+        settings.SECRET_KEY,
+        algorithm=settings.ALGORITHM,
+    )
+
 
 def _load_trusted_proxies():
     raw = current_app.config.get('TRUSTED_PROXIES', [])
@@ -183,66 +198,3 @@ def get_client_ip():
         return cleaned_ips[-1]
 
     return request.remote_addr or 'unknown'
-
-def a_get_client_ip():
-    """
-    Retrieve the client's IP address, considering trusted proxies and headers.
-
-    If TRUSTED_PROXIES (list of IPs or CIDRs) is configured in app config, headers like
-    'X-Forwarded-For' will be trusted only if the immediate client IP is in that list.
-
-    Otherwise, only request.remote_addr is returned.
-
-    Returns:
-        str: Client IP address as a string.
-    """
-    trusted_proxies = current_app.config.get('TRUSTED_PROXIES', [])
-    remote_addr = request.remote_addr or 'unknown'
-
-    def ip_in_trusted(ip):
-        try:
-            ip_obj = ipaddress.ip_address(ip)
-            for net in trusted_proxies:
-                if ip_obj in ipaddress.ip_network(net):
-                    return True
-        except ValueError:
-            return False
-        return False
-
-    if not trusted_proxies or not ip_in_trusted(remote_addr):
-        # No trusted proxies set or remote_addr not trusted, ignore headers
-        return remote_addr
-
-    # Now remote_addr is trusted proxy, try to get real client IP from headers
-    headers_to_check = [
-        'X-Forwarded-For',
-        'X-Real-IP',
-        'CF-Connecting-IP',
-        'True-Client-IP',
-        'X-Client-IP',
-        'Forwarded',
-    ]
-
-    for header in headers_to_check:
-        ip = request.headers.get(header, None)
-        if ip:
-            if header.lower() == 'forwarded':
-                parts = ip.split(';')
-                for part in parts:
-                    if part.strip().lower().startswith('for='):
-                        ip_candidate = part.split('=')[1].strip().strip('"')
-                        try:
-                            # Validate IP candidate
-                            ipaddress.ip_address(ip_candidate)
-                            return ip_candidate
-                        except ValueError:
-                            continue
-            else:
-                first_ip = ip.split(',')[0].strip()
-                try:
-                    ipaddress.ip_address(first_ip)
-                    return first_ip
-                except ValueError:
-                    continue
-
-    return remote_addr

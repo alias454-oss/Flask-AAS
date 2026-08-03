@@ -126,6 +126,17 @@ body {
   background: #dc3545;
 }
 
+.inline-action-form {
+  display: inline;
+  margin: 0;
+}
+
+button.button-link {
+  border: 0;
+  cursor: pointer;
+  font: inherit;
+}
+
 .menu ul {
   list-style: none;
   padding: 0;

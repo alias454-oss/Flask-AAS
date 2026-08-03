@@ -50,6 +50,10 @@ def generate_qr_image(secret, username, issuer='FlaskApp'):
     return base64.b64encode(buf.read()).decode('utf-8')
 
 class MFASetupForm(FlaskForm):
+    """
+    Used ONLY during setup.
+    Strictly enforces 6-digit numeric TOTP.
+    """
     code = StringField(
         "Enter the code from your authenticator app:",
         validators=[
@@ -66,10 +70,19 @@ class MFASetupForm(FlaskForm):
     submit = SubmitField("Verify")
 
 class TwoFactorForm(FlaskForm):
-    code = StringField("Authentication Code", validators=[
-        DataRequired(message="Please enter the code."),
-        Length(min=6, max=6, message="The code must be 6 digits.")
-    ])
+    """
+    Used during login.
+    Accepts TOTP (6 digits) OR Recovery Codes (8+ chars).
+    """
+    code = StringField(
+        "Authentication Code",
+        validators=[
+            DataRequired(),
+            # range matches 6 (TOTP) to 8/10 (Recovery Codes)
+            Length(min=6, max=10, message="The code must be 6 digits.")
+        ],
+        render_kw={"placeholder": "Code or Recovery Key", "autofocus": True, "autocomplete": "one-time-code"}
+    )
     submit = SubmitField("Verify")
 
 class DisableMfaForm(FlaskForm):

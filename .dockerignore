@@ -22,8 +22,7 @@ __pycache__/
 *.swp
 *.swo
 
-# Database / migration
+# Runtime database state
 instance/
-migrations/
 
-*scratch*
+/scratch/

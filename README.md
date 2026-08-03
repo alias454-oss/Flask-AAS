@@ -1,8 +1,10 @@
 # Flask-AAS
 
-Work In Progress — usable for testing and internal use.
+Work In Progress — usable for development, testing, and controlled internal evaluation.
 
-Flask-AAS is a  **modular Flask-based authentication and auditing system** with built-in user management, log tracking, 
+> **Pre-release status:** Flask-AAS is under active development. Review the documented configuration and deployment guidance before use.
+
+Flask-AAS is a  **modular Flask-based authentication and auditing system** with built-in user management, log tracking,
 and optional abuse prevention features. Designed for small projects but scalable for larger apps that require **robust security tooling**.
 
 ---
@@ -11,7 +13,7 @@ and optional abuse prevention features. Designed for small projects but scalable
 The Flask Auth & Audit System began life as a simple PHP login script written a long time ago as a foundational part of
 Open Auto Classifieds. Over time, it evolved into a full-featured authentication, user management, and audit logging platform.
 
-While the original worked well, until it didn't. The need for a more modern, secure, and flexible solution led to a 
+While the original worked well, until it didn't. The need for a more modern, secure, and flexible solution led to a
 complete rebuild in Flask. The result is a modular foundation that can be used as a starting point on my other projects.
 
 This project focuses on:
@@ -19,6 +21,16 @@ This project focuses on:
 - Providing practical features that work out of the box
 - Leaving optional integrations and extras up to you
 - Staying adaptable for both small projects and larger ones
+
+## Project Documentation
+
+| Document | Purpose |
+|---|---|
+| [`docs/deployment-modes.md`](docs/deployment-modes.md) | Development versus deployed behavior |
+| [`docs/security-checklist.md`](docs/security-checklist.md) | Reusable route-review checklist |
+| [`docs/security-tooling.md`](docs/security-tooling.md) | Static analysis, dependency audit, and CI baseline |
+
+The base is intentionally designed to remain easy to run locally. Direct HTTP, generated development secrets, SQLite, and in-memory services are valid development choices. Stricter requirements apply only when the selected deployment mode needs them.
 
 ## Core Features
 
@@ -40,8 +52,8 @@ This project focuses on:
 ### Audit Logging
 #### **AuditLogin** (Login Attempts)
 - Tracks username/email used
-- Records IP address (stored as integer)
-- Logs timestamp, success/failure, and failure reason
+- Records IPv4 or IPv6 address as text
+- Logs timestamp and success/failure outcome
 
 #### **AuditActivity** (User/Admin Actions)
 - Tracks key actions such as settings changes or account modifications
@@ -61,19 +73,20 @@ This project focuses on:
 - Automatic cooldown resets
 - Configurable timers and limits
 - Admin/internal service exemptions
-- All lockouts and failed attempts are audit-logged
+- Supports audit logging for lockouts and failed attempts
 
 ---
 
 ### Security & Rate Limiting Strategy
-- **Multi-layer**: Cloudflare WAF (edge) + Flask-Limiter (app)
-- Rate limits by route:
-  - **Login:** `5 / 5min` per IP+username
-  - **Password reset:** `10 / min` per IP
-  - **CAPTCHA:** `10 / min` (burst to `50 / 5min`)
-- Admin/dashboard generally exempt but monitored
-- Configurable via env/config
-- IP whitelisting support
+- Application-level limits use **Flask-Limiter**; an edge proxy or WAF is optional.
+- Current route examples:
+  - **Login:** `10 / minute`
+  - **Registration:** `5 / hour`
+  - **Password-reset request:** `10 / hour`
+  - **Password-reset submission:** `5 / minute`
+  - **CAPTCHA:** `10 / minute` with `50 / 5 minutes` burst control
+- Account and administrative routes also use route-specific limits.
+- Configure client-IP trust and shared rate-limit storage for the selected deployment topology.
 
 ---
 
@@ -118,52 +131,59 @@ This project focuses on:
 ---
 
 ## Database Setup & Migrations
-Uses **Flask-Migrate** (Alembic) with SQLAlchemy.
 
-**Initial Setup**
+Flask-AAS uses **Flask-Migrate** (Alembic) with SQLAlchemy. During the current pre-release phase, generated migration directories are intentionally ignored and are not part of the supported upgrade contract. A clean local or initial deployment may generate its own migration state.
+
+**Initialize a clean development database**
+
 ```bash
 python manage.py db init
 python manage.py db migrate -m "Initial migration"
 python manage.py db upgrade
+python manage.py seed-db
 ```
 
-**After Model Changes**
+**After local model changes**
+
 ```bash
 python manage.py db migrate -m "Describe change"
 python manage.py db upgrade
 ```
 
-**Mark the migration as applied in the event of something going wrong when developing**
-```bash
-python manage.py db stamp head
-```
-
-Rollback:
-```bash
-python manage.py db downgrade
-```
-
-Seed Initial data:
-```bash
-python manage.py seed-db
-```
+This is acceptable only while Flask-AAS is pre-release and deployments are treated as clean installs. Durable in-place upgrades require a future versioned migration policy; that work remains tracked as `AAS-021` / `SR-019`.
 
 ---
 
 ## Installation
 
+The current tested runtime is **Python 3.13.13**. Generate the lock and run the application with Python 3.13 so environment markers and binary-wheel selection match the deployment image.
+
 ```bash
 git clone https://github.com/alias454/flask-aas.git
 cd flask-aas
-python3 -m venv .venv
-source .venv/bin/activate  # Mac/Linux
+python3.13 -m venv .venv
+source .venv/bin/activate  # Linux/macOS
 
-pip install -r requirements.txt
-cp .env.example .env
+python -m pip install --require-hashes -r requirements.txt
+cp .env_example .env
 
 export FLASK_APP=app
 flask run
 ```
+
+### Dependency management
+
+`pyproject.toml` is the human-maintained source for direct runtime dependencies. `requirements.txt` is a generated, fully pinned, hash-verified deployment lock and should not be edited manually.
+
+The current lock baseline was generated on Fedora 42 Linux x86_64 with Python 3.13.13, pip 26.1.2, and pip-tools 7.6.0. It was validated in the `python:3.13.13-slim-trixie` container using binary wheels only.
+
+Regenerate the lock from a clean Python 3.13 environment:
+
+```bash
+./scripts/lock.sh
+```
+
+The lock workflow uses `pip-tools`; deployment still requires only standard `pip` and `requirements.txt`. JWT support uses PyJWT, and password hashing and verification use the single Flask-Bcrypt stack.
 
 ---
 
@@ -172,17 +192,15 @@ flask run
 1. **Build the Docker image (no cache)**
 
 ```bash
-docker build --no-cache -t flask-auth .
+docker build --pull --no-cache -t flask-aas:local .
 ```
 
 2. **Run the container**
 
 ```bash
-docker run -d --env-file .env -p 5000:5000 --name flask-auth_container flask-auth
+docker run -d --env-file .env -p 5000:5000 --name flask-aas flask-aas:local
 
-docker run --rm -it --env-file .env -p 5000:5000 flask-auth
-
-docker run --rm -it --network host --env-file .env -p 5000:5000 flask-auth
+docker run --rm -it --env-file .env -p 5000:5000 flask-aas:local
 ```
 
 3. **Access the app**
@@ -197,28 +215,20 @@ Open your browser and go to [http://localhost:5000](http://localhost:5000)
 - Admin panel for user/role/settings management
 - Store SMTP credentials securely in environment variables
 
-### Roadmap
-- Abuse detection
-- IP tracking
-- Alternate registration workflows
-- Admin dashboards
-- OAuth / 2FA (more features)
-
----
 
 ## Maintenance
 ### Manual Log Cleanup
 Keep log tables lean with the CLI cleanup command:
 
 ```bash
-python manage.py cleanup-logs --days 7
+python manage.py cleanup-logins --days 7
 ```
 - **`--days`** → Number of days to retain logs (default: 7)
-- Deletes expired login attempts and audit records
+- Deletes `AuditLogin` records older than the retention period
 
 ---
 
-- Run `cleanup-logs` regularly
+- Run `cleanup-logins` regularly when login-attempt retention is required
 
 - Monitor audit logs for anomalies
 - Enable email verification & CAPTCHA for public reg

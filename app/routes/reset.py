@@ -207,18 +207,3 @@ def change_password():
             flash("Your password has been updated.", "success")
             return redirect(url_for("dashboard.dashboard"))
     return render_template("reset.html", form=form, **meta)
-
-
-@reset_bp.route("/test-email")
-def test_email():
-    from app.core.mailer import send_email
-    try:
-        send_email(
-            subject="Test Email",
-            recipient="your_email@example.com",
-            body="This is a plain text test email.",
-            html="<p>This is a <strong>test</strong> email.</p>"
-        )
-        return "Test email sent!"
-    except Exception as e:
-        return f"Error: {e}"

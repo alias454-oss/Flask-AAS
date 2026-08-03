@@ -1,0 +1,62 @@
+[build-system]
+requires = ["setuptools>=80"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "flask-aas"
+version = "0.1.0"
+description = "Reusable Flask authentication, administration, and audit application base"
+readme = "README.md"
+requires-python = ">=3.13,<3.14"
+dependencies = [
+    "Flask>=3.1.3,<4",
+    "Flask-Bcrypt>=1.0.1,<2",
+    "Flask-Caching>=2.4.1,<3",
+    "Flask-Limiter>=4.1.1,<5",
+    "Flask-Login>=0.6.3,<0.7",
+    "Flask-Mailman>=1.1.1,<2",
+    "Flask-Migrate>=4.1.0,<5",
+    "Flask-SQLAlchemy>=3.1.1,<4",
+    "Flask-WTF>=1.3.0,<2",
+    "WTForms[email]>=3.2.2,<4",
+    "SQLAlchemy>=2.0.51,<3",
+    "psycopg2-binary>=2.9.12,<3",
+    "pydantic>=2.13.4,<3",
+    "pydantic-settings>=2.14.2,<3",
+    "Werkzeug>=3.1.8,<4",
+    "PyJWT[crypto]>=2.13.0,<3",
+    "click>=8.4.2,<9",
+    "numpy>=2.5.1,<3",
+    "Pillow>=12.3.0,<13",
+    "pytz>=2025.2,<2027",
+    "itsdangerous>=2.2.0,<3",
+    "Jinja2>=3.1.6,<4",
+    "pyotp>=2.9.0,<3",
+    "qrcode>=8.2,<9",
+    "gunicorn>=26.0.0,<27",
+    "minify-html>=0.18.1,<0.19",
+]
+
+[project.urls]
+Repository = "https://github.com/alias454/flask-aas"
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.packages.find]
+include = ["app*"]
+exclude = ["app.api*"]
+
+[tool.setuptools.package-data]
+app = [
+    "templates/**/*.html",
+    "templates/**/*.txt",
+    "static/**/*.css",
+    "static/**/*.js",
+    "static/**/*.svg",
+    "static/**/*.png",
+    "static/**/*.jpg",
+    "static/**/*.jpeg",
+    "static/**/*.webp",
+    "static/**/*.ico",
+]

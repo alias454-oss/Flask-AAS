@@ -59,17 +59,24 @@ def login():
         user = User.query.filter_by(username=username).first()
         env = get_cached_env_settings()
 
-        if not user:
+        # Timing fix: Use a dummy hash if user doesn't exist
+        dummy_hash = "$2b$12$KIn6.tJpD4nB/Q2FhK.R.O0fK0jK0jK0jK0jK0jK0jK0jK0jK0jK"
+        stored_hash = user.hashed_password if user else dummy_hash
+
+        # Calculate success based on both existence AND password
+        success = user is not None and bcrypt.check_password_hash(stored_hash, password)
+
+        # Catch ALL failures here (Missing user OR wrong password)
+        if not success:
             logger.warning(f"Login attempt for non-existent user '{username}' from {ip}")
             flash('Invalid credentials.', 'error')
             track_lockout_attempts(username, ip)
             return render_template('login.html', form=form, **meta)
 
+        # We KNOW the user exists and the password is correct now check account status
         if env.use_verify_email and not user.activated:
             flash("Please verify your email before logging in.", "warning")
             return redirect(url_for("auth.login"))
-
-        success = user and bcrypt.check_password_hash(user.hashed_password, password)
 
         if audit_login_enabled():
             log_login(

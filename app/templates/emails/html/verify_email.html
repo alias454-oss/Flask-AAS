@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Verify Your Email - {{ env.site_name }}</title>
+</head>
+<body style="font-family: Arial, sans-serif; background-color: #f9f9f9; color: #333; margin: 0; padding: 0;">
+  <div style="max-width: 600px; margin: 40px auto; padding: 20px; background: #fff; border: 1px solid #e0e0e0; border-radius: 4px;">
+    <h1 style="text-align: center; margin-bottom: 20px;">{{ env.site_name }}</h1>
+    <h2 style="margin-top: 0;">Verify Your Email Address</h2>
+
+    <p>Hello {{ username }},</p>
+    <p>Thank you for creating an account with {{ env.site_name }}. To complete your registration and activate your account, please click the button below:</p>
+
+    <p>
+      <a href="{{ verify_url }}"
+         style="display: inline-block; margin-top: 20px; padding: 12px 20px; background-color: #007BFF; color: #fff !important; text-decoration: none; border-radius: 4px; font-weight: bold;">
+        Verify Account
+      </a>
+    </p>
+
+    <p>If the button above doesn’t work, copy and paste this URL into your browser:</p>
+    <p><a href="{{ verify_url }}" style="color: #007BFF; word-break: break-word;">{{ verify_url }}</a></p>
+
+    <p><small>This verification link is valid for 24 hours.</small></p>
+    <p>If you did not create an account with {{ env.site_name }}, you can safely ignore this email.</p>
+
+    <p>Thanks,<br/>The {{ env.site_name }} Team</p>
+  </div>
+</body>
+</html>

@@ -5,9 +5,10 @@ import base64
 import time
 from flask import Flask, g, current_app, flash, request, session, redirect, url_for
 from flask_login import LoginManager, current_user
+from werkzeug.middleware.proxy_fix import ProxyFix
 from datetime import datetime, timezone, timedelta
 from sqlalchemy.exc import OperationalError, ProgrammingError
-from htmlmin.main import minify
+import minify_html
 
 from app.core.cache import get_cached_env_settings
 from app.core.extensions import db, migrate, bcrypt, csrf, cache, limiter, mail
@@ -47,6 +48,17 @@ login_manager.login_view = 'login.login'
 
 def create_app():
     app = Flask(__name__)
+
+    # CORRECT PROXY FIX FOR CADDY/STANDARD PROXY SETUP
+    # This tells Flask to trust the first hop of X-Forwarded-For (x_for=1),
+    # and correctly reconstruct the true remote IP/Protocol from the headers.
+    app.wsgi_app = ProxyFix(
+        app.wsgi_app,
+        x_for=1,        # Trust the first X-Forwarded-For header
+        x_proto=1,      # Trust the first X-Forwarded-Proto header
+        x_host=1,       # Trust the first X-Forwarded-Host header
+        x_prefix=1      # Trust the first X-Forwarded-Prefix header
+    )
 
     # Load config
     app.config.from_object(settings)
@@ -118,6 +130,7 @@ def create_app():
         exempt_routes = {
             'robots.robots',
             'login.login',
+            'logout.logout',
             'mfa.mfa_verify',
             'mfa.mfa_setup',
             'mfa.mfa_disable',
@@ -179,11 +192,31 @@ def create_app():
     @app.after_request
     def add_security_headers(response):
         nonce = getattr(g, 'nonce', '')
+
+        def csp_sources(*sources):
+            return " ".join(dict.fromkeys(source for source in sources if source))
+
+        connect_sources = csp_sources(
+            "'self'",
+            *current_app.config.get('CSP_CONNECT_SRC', []),
+        )
+        image_sources = csp_sources(
+            "'self'",
+            'data:',
+            *current_app.config.get('CSP_IMG_SRC', []),
+        )
+        media_sources = csp_sources(
+            "'self'",
+            *current_app.config.get('CSP_MEDIA_SRC', []),
+        )
+
         response.headers['Content-Security-Policy'] = (
             f"default-src 'self'; "
             f"script-src 'self' 'nonce-{nonce}'; "
             f"style-src 'self' 'nonce-{nonce}'; "
-            f"img-src 'self' data:;"
+            f"img-src {image_sources}; "
+            f"media-src {media_sources}; "
+            f"connect-src {connect_sources};"
         )
         response.headers['X-Frame-Options'] = 'SAMEORIGIN'
         response.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains'
@@ -206,7 +239,7 @@ def create_app():
     @app.after_request
     def response_minify(response):
         if response.content_type == u'text/html; charset=utf-8':
-            response.set_data(minify(response.get_data(as_text=True)))
+            response.set_data(minify_html.minify(response.get_data(as_text=True)))
         return response
 
     return app
