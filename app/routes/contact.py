@@ -128,3 +128,22 @@ def contact():
             )
 
     return render_template("contact.html", form=form, **meta)
+
+
+@contact_bp.route("/test-email")
+def test_email():
+    # Only allow this route to run if the app is in DEBUG mode
+    if not get_cached_env_settings().get("DEBUG"):
+        return "Not Found", 404
+
+    from app.core.mailer import send_email
+    try:
+        send_email(
+            subject="Test Email",
+            recipient="your_email@example.com",
+            body="This is a plain text test email.",
+            html="<p>This is a <strong>test</strong> email.</p>"
+        )
+        return "Test email sent!"
+    except Exception as e:
+        return f"Error: {e}"

@@ -57,16 +57,14 @@
             <img src="{{ url_for('static', filename='images/id_card_view.gif') }}" alt="View" /> View Full Details
           </a>
 
-          <a href="#" onclick="
-              if(confirm('Are you sure you want to delete this user?')) {
-                fetch('{{ url_for('users.delete_user', user_id=user.id) }}', {
-                  method: 'POST',
-                  headers: { 'X-CSRFToken': '{{ csrf_token() }}' }
-                }).then(() => location.reload());
-              }
-              return false;" class="button-link danger">
-            <img src="{{ url_for('static', filename='images/exit.gif') }}" alt="Delete" /> Delete User
-          </a>
+          <form method="POST"
+                action="{{ url_for('users.delete_user', user_id=user.id) }}"
+                class="inline-action-form js-delete-user-form">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+            <button type="submit" class="button-link danger">
+              <img src="{{ url_for('static', filename='images/exit.gif') }}" alt="Delete" /> Delete User
+            </button>
+          </form>
         </div>
       </div>
     </div>
@@ -102,5 +100,9 @@
 
 {% block footer %}
   {% include "admin/includes/footer.html" %}
+{% endblock %}
+
+{% block scripts %}
+  <script src="{{ url_for('static', filename='js/admin_users.js') }}" defer></script>
 {% endblock %}
 {% endif %}

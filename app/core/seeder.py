@@ -132,7 +132,7 @@ def seed_env_settings():
         "admin_name": "admin",
         "admin_email": "admin@site.com",
         "site_mode": 1,  # 0 = public/multi-user, 1 = single-user
-        "default_role_id": user_role.id,
+        "default_role_id": user_role.id if user_role else None,
         "users_per_page": 10,
         "users_stored_path": "/images/users",
         "max_failed_attempts": 5,

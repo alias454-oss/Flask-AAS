@@ -1,0 +1,14 @@
+Welcome, {{ username }}!
+
+Thank you for registering for {{ env.site_name }}.
+
+To activate your account, please click the link below to verify your email address:
+{{ verify_url }}
+
+If that doesn't work, copy and paste the URL into your browser.
+
+This link is valid for 24 hours. If you did not create an account, you can safely ignore this email.
+
+Glad to have you with us!
+
+– The {{ env.site_name }} Team

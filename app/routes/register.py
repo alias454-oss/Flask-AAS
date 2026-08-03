@@ -88,7 +88,7 @@ def register():
 
         if form.nobot_check.data:
             logger.warning(f"Honeypot field triggered from IP {ip}")
-            track_lockout_attempts(email, ip)
+            track_lockout_attempts("SYSTEM_HONEYPOT", ip)
             if audit_activity_enabled():
                 log_action(
                     user_id=current_user.id if current_user.is_authenticated else None,
@@ -133,7 +133,19 @@ def register():
                 flash(error, 'error')
             return render_template('register.html', title="Register", form=form, error_flags=error_flags, **meta)
 
-        raw_password = form.password.data or generate_random_password()
+        raw_password = form.password.data
+        password_was_generated = False
+
+        # Admin Bypass Logic
+        if not raw_password:
+            if is_admin:
+                raw_password = generate_random_password()
+                password_was_generated = True
+            else:
+                form.password.errors.append("Password is required.")
+                return render_template("register.html", form=form)
+
+        # 2. Hash the CORRECT password (raw_password)
         hashed_pw = bcrypt.generate_password_hash(raw_password).decode('utf-8')
 
         # Safely get optional fields — check if attribute exists first
@@ -171,36 +183,51 @@ def register():
         if is_admin:
             user.approved = True
 
-        db.session.add(user)
         try:
-            if audit_activity_enabled():
-                action_type = ("admin_create_user" if current_user.is_authenticated else "register")
+            db.session.add(user)
 
+            # FLUSH: Send the INSERT to Postgres, which generates and returns the user.id
+            db.session.flush()
+            if audit_activity_enabled():
                 log_action(
-                    user_id=current_user.id if current_user.is_authenticated else None,
-                    action=action_type,
+                    user_id=current_user.id if is_admin else user.id,
+                    action="admin_create_user" if is_admin else "register",
                     target=current_route(),
                     extra_data={
-                        "new_user_email": user.email,
-                        "ip": ip
+                        "subject_user_id": user.id, # The SUBJECT of the action
+                        "ip": ip,
+                        "password_generated": password_was_generated # From your other fix
                     }
                 )
 
             db.session.commit()
-            flash('Registration successful. Please check your email if verification is required.', 'success')
             reset_lockout_attempts(email, ip)
 
             # Use email verification to authorize account
             use_verify_email = env.use_verify_email if env else False
-            if use_verify_email:
+            # PATH A: Admin is creating the user
+            if is_admin:
+                # Send Welcome with the password (if generated)
+                temp_pass = raw_password if password_was_generated else None
+                send_welcome_email(user.email, user.username, temp_password=temp_pass)
+
+                flash(f"User {user.username} created successfully.", "success")
+                return redirect(url_for('register.register'))
+
+            # PATH B: Public User (Verification Enabled)
+            elif use_verify_email:
                 token = generate_token(user.email, EMAIL_VERIFY_SALT)
                 verify_url = url_for('verify.verify', token=token, _external=True)
+
                 send_verification_email(user.email, user.username, verify_url)
 
-            if is_admin:
-                return redirect(url_for('register.register'))
+                flash("Account created! Please check your email to verify.", "info")
+                return redirect(url_for('login.login'))
+
+            # PATH C: Public User (No Verification)
             else:
-                send_welcome_email(to_email=user.email, username=user.username)
+                send_welcome_email(user.email, user.username)
+                flash("Account created successfully. Please log in.", "success")
                 return redirect(url_for('login.login'))
 
         except IntegrityError as e:

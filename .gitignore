@@ -29,6 +29,9 @@ instance/
 # Flask migrations (optional, but usually committed)
 migrations/
 
+# But ignore the compiled cache inside it
+migrations/__pycache__/
+
 # SQLite database file
 *.db
 *.sqlite3
@@ -58,7 +61,7 @@ htmlcov/
 *.bak
 *.backup
 
-*scratch*
+/scratch/
 
 # temporary while working on initial buildout
 app/api/

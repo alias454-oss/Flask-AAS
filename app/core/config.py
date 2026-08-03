@@ -31,16 +31,35 @@ class Settings(BaseSettings):
     # Control which frontend domains can access the API. [https://example.com,https://app.example.com]
     BACKEND_CORS_ORIGINS: List[str] = []
 
+    # Additional CSP sources required by a downstream application.
+    # Keep these empty in the base and add only narrowly scoped origins.
+    CSP_CONNECT_SRC: List[str] = []
+    CSP_IMG_SRC: List[str] = []
+    CSP_MEDIA_SRC: List[str] = []
+
     # TRUSTED_PROXIES should contain the IP addresses or CIDR ranges of any reverse proxies,
     # load balancers, or gateways that sit in front of your Flask app and forward client requests
     TRUSTED_PROXIES: List[str] = []
 
-    @field_validator("BACKEND_CORS_ORIGINS", mode="before")
-    def parse_origins(cls, v):
-        """Allow comma-separated list in .env"""
-        if isinstance(v, str):
-            return [i.strip() for i in v.split(",") if i.strip()]
-        return v or []
+    @field_validator(
+        "BACKEND_CORS_ORIGINS",
+        "CSP_CONNECT_SRC",
+        "CSP_IMG_SRC",
+        "CSP_MEDIA_SRC",
+        mode="before",
+    )
+    def parse_string_list(cls, value):
+        """Allow comma-separated lists while rejecting CSP directive injection."""
+        if isinstance(value, str):
+            values = [item.strip() for item in value.split(",") if item.strip()]
+        else:
+            values = value or []
+
+        for item in values:
+            if any(character in item for character in (";", "\r", "\n")):
+                raise ValueError("Configured origins must not contain CSP delimiters")
+
+        return values
 
     # --- Cache ---
     CACHE_TYPE: str = "SimpleCache"
