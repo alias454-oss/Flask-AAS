@@ -194,6 +194,20 @@ class EmailLifecycleRouteTests(unittest.TestCase):
         self.assertTrue(urlparse(verify_url).path.startswith("/email/"))
         self.assertIn("Check your email shortly", self._flash_text())
 
+    def test_required_verification_blocks_registration_without_outbound_email(self):
+        self.settings.use_smtp = False
+        db.session.commit()
+        EnvSettings._cached_instance = None
+
+        response, send_verification = self._register("queued")
+
+        self.assertEqual(response.status_code, 200)
+        send_verification.assert_not_called()
+        self.assertIsNone(
+            User.query.filter_by(email="user-queued@example.com").first()
+        )
+        self.assertIn("temporarily unavailable", self._flash_text())
+
     def test_registration_reports_disabled_or_failed_dispatch_without_removing_user(self):
         expectations = {
             "disabled": "email verification is currently unavailable",

@@ -75,12 +75,6 @@
         </label>
       </div>
       <div class="checkbox-inline">
-        <label for="{{ form.use_verify_email.id }}">
-          {{ form.use_verify_email() }}
-          {{ form.use_verify_email.label.text }}
-        </label>
-      </div>
-      <div class="checkbox-inline">
         <label for="{{ form.use_user_approval.id }}">
           {{ form.use_user_approval() }}
           {{ form.use_user_approval.label.text }}
@@ -130,24 +124,95 @@
 
     <fieldset>
       <legend>Email Settings</legend>
+
+      <p>
+        Active mail configuration:
+        <strong>{{ mail_state.source_label }}</strong>
+      </p>
+      {% if mail_state.override_error %}
+        <p class="form-error">{{ mail_state.override_error }}</p>
+      {% endif %}
+      {% if mail_state.source == "debug" %}
+        <p>Mock delivery is enabled. Messages are rendered but are not sent.</p>
+      {% endif %}
+
       <div class="checkbox-inline">
         <label for="{{ form.use_smtp.id }}">
           {{ form.use_smtp() }}
           {{ form.use_smtp.label.text }}
         </label>
+        {% for error in form.use_smtp.errors %}
+          <div class="form-error">{{ error }}</div>
+        {% endfor %}
       </div>
-      <div class="form-group">
-        {{ form.smtp_host.label }} {{ form.smtp_host(class_="form-control") }}
+
+      <div class="checkbox-inline">
+        <label for="{{ form.use_verify_email.id }}">
+          {{ form.use_verify_email() }}
+          {{ form.use_verify_email.label.text }}
+        </label>
+        {% for error in form.use_verify_email.errors %}
+          <div class="form-error">{{ error }}</div>
+        {% endfor %}
       </div>
-      <div class="form-group">
-        {{ form.smtp_port.label }} {{ form.smtp_port(class_="form-control") }}
-      </div>
-      <div class="form-group">
-        {{ form.smtp_user.label }} {{ form.smtp_user(class_="form-control") }}
-      </div>
-      <div class="form-group">
-        {{ form.smtp_pass.label }} {{ form.smtp_pass(class_="form-control") }}
-      </div>
+
+      {% if mail_config_ui_enabled %}
+        <p>
+          A complete Site Settings configuration overrides deployment mail
+          settings. Leave the override empty to use the deployment fallback.
+        </p>
+        {% if not mail_encryption_available %}
+          <p class="form-error">
+            MAIL_CONFIG_ENCRYPTION_KEY is not configured. Authenticated SMTP
+            credentials cannot be saved until a valid key is supplied.
+          </p>
+        {% endif %}
+
+        <div class="form-group">
+          {{ form.smtp_host.label }} {{ form.smtp_host(class_="form-control") }}
+          {% for error in form.smtp_host.errors %}
+            <div class="form-error">{{ error }}</div>
+          {% endfor %}
+        </div>
+        <div class="form-group">
+          {{ form.smtp_port.label }} {{ form.smtp_port(class_="form-control") }}
+          {% for error in form.smtp_port.errors %}
+            <div class="form-error">{{ error }}</div>
+          {% endfor %}
+        </div>
+        <div class="form-group">
+          {{ form.smtp_security.label }} {{ form.smtp_security(class_="form-control") }}
+          {% for error in form.smtp_security.errors %}
+            <div class="form-error">{{ error }}</div>
+          {% endfor %}
+        </div>
+        <div class="form-group">
+          {{ form.smtp_user.label }} {{ form.smtp_user(class_="form-control", autocomplete="username") }}
+          {% for error in form.smtp_user.errors %}
+            <div class="form-error">{{ error }}</div>
+          {% endfor %}
+        </div>
+        <div class="form-group">
+          {{ form.smtp_pass.label }} {{ form.smtp_pass(class_="form-control") }}
+          {% for error in form.smtp_pass.errors %}
+            <div class="form-error">{{ error }}</div>
+          {% endfor %}
+        </div>
+        <div class="form-group">
+          {{ form.smtp_default_sender.label }} {{ form.smtp_default_sender(class_="form-control") }}
+          {% for error in form.smtp_default_sender.errors %}
+            <div class="form-error">{{ error }}</div>
+          {% endfor %}
+        </div>
+        <div class="checkbox-inline">
+          <label for="{{ form.clear_smtp_override.id }}">
+            {{ form.clear_smtp_override() }}
+            {{ form.clear_smtp_override.label.text }}
+          </label>
+        </div>
+      {% else %}
+        <p>SMTP transport settings are managed by deployment configuration.</p>
+      {% endif %}
     </fieldset>
 
     <fieldset>

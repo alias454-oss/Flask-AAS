@@ -6,7 +6,7 @@ from datetime import datetime, timedelta, timezone
 from typing import List, Optional, ClassVar, Literal
 
 from pydantic_settings import BaseSettings
-from pydantic import field_validator
+from pydantic import field_validator, model_validator
 
 logger = logging.getLogger(__name__)
 
@@ -85,12 +85,27 @@ class Settings(BaseSettings):
 
     # --- Email ---
     MAIL_DEBUG: bool = False
+    MAIL_CONFIG_UI_ENABLED: bool = False
+    MAIL_CONFIG_ENCRYPTION_KEY: Optional[str] = None
     MAIL_SERVER: Optional[str] = None
     MAIL_PORT: int = 587
     MAIL_USE_TLS: bool = True
+    MAIL_USE_SSL: bool = False
     MAIL_USERNAME: Optional[str] = None
     MAIL_PASSWORD: Optional[str] = None
     MAIL_DEFAULT_SENDER: Optional[str] = None
+
+    @field_validator("MAIL_PORT")
+    def validate_mail_port(cls, value):
+        if value < 1 or value > 65535:
+            raise ValueError("MAIL_PORT must be between 1 and 65535")
+        return value
+
+    @model_validator(mode="after")
+    def validate_mail_transport_security(self):
+        if self.MAIL_USE_TLS and self.MAIL_USE_SSL:
+            raise ValueError("MAIL_USE_TLS and MAIL_USE_SSL cannot both be enabled")
+        return self
 
     # --- Environment ---
     FLASK_ENV: str = "production"

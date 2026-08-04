@@ -10,8 +10,17 @@ from app.models.state import State
 from app.models.env_settings import EnvSettings
 from app.models.user import User
 from app.models.role import Role
+from app.core.mailer import environment_mail_configuration
 
 logger = logging.getLogger(__name__)
+
+
+def initial_outbound_email_enabled() -> bool:
+    """Derive the clean-install outbound-email switch from deployment config."""
+    return bool(
+        current_app.config.get("MAIL_DEBUG", False)
+        or environment_mail_configuration() is not None
+    )
 
 
 def seed_roles():
@@ -148,11 +157,13 @@ def seed_env_settings():
         "enable_delete_old_users": 0,
         "users_delete_after_days": 15,
         "email_after_days": 45,
-        "use_smtp": 0,
-        "smtp_host": "",
-        "smtp_port": 25,
-        "smtp_user": "",
-        "smtp_pass": "",
+        "use_smtp": initial_outbound_email_enabled(),
+        "smtp_host": None,
+        "smtp_port": 587,
+        "smtp_security": "starttls",
+        "smtp_user": None,
+        "smtp_pass": None,
+        "smtp_default_sender": None,
         "enable_analytics": False,
         "allow_custom_themes": False,
         "enable_logging": True,

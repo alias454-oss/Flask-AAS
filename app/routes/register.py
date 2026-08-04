@@ -14,7 +14,11 @@ from app.core.security import generate_random_password, generate_token, normaliz
 from app.core.meta import page_metadata
 from app.core.decorators import log_view_action
 from app.core.trackers import current_route, log_action, log_action_isolated, audit_activity_enabled
-from app.core.mailer import send_verification_email, send_welcome_email
+from app.core.mailer import (
+    get_mail_configuration_state,
+    send_verification_email,
+    send_welcome_email,
+)
 from app.models import User, Role
 from .captcha import CaptchaRequired
 
@@ -131,7 +135,7 @@ def register():
                 )
             for error in errors:
                 flash(error, 'error')
-            return render_template('register.html', title="Register", form=form, error_flags=error_flags, **meta)
+            return render_template('register.html', form=form, error_flags=error_flags, **meta)
 
         raw_password = form.password.data
         password_was_generated = False
@@ -144,6 +148,25 @@ def register():
             else:
                 form.password.errors.append("Password is required.")
                 return render_template("register.html", form=form)
+
+        if not is_admin and env and env.use_verify_email:
+            mail_state = get_mail_configuration_state()
+            if not env.use_smtp or not mail_state.available:
+                logger.error(
+                    "Public registration blocked because required email verification "
+                    "has no available outbound transport"
+                )
+                flash(
+                    "Registration is temporarily unavailable because email "
+                    "verification cannot be delivered.",
+                    "error",
+                )
+                return render_template(
+                    "register.html",
+                    form=form,
+                    error_flags=error_flags,
+                    **meta,
+                )
 
         # 2. Hash the CORRECT password (raw_password)
         hashed_pw = bcrypt.generate_password_hash(raw_password).decode('utf-8')
