@@ -40,6 +40,7 @@ class Settings(BaseSettings):
     # TRUSTED_PROXIES should contain the IP addresses or CIDR ranges of any reverse proxies,
     # load balancers, or gateways that sit in front of your Flask app and forward client requests
     TRUSTED_PROXIES: List[str] = []
+    PROXY_HOPS: int = 0
 
     @field_validator(
         "BACKEND_CORS_ORIGINS",
@@ -60,6 +61,12 @@ class Settings(BaseSettings):
                 raise ValueError("Configured origins must not contain CSP delimiters")
 
         return values
+
+    @field_validator('PROXY_HOPS')
+    def validate_proxy_hops(cls, value):
+        if value < 0 or value > 10:
+            raise ValueError('PROXY_HOPS must be between 0 and 10')
+        return value
 
     # --- Cache ---
     CACHE_TYPE: str = "SimpleCache"

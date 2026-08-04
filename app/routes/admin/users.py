@@ -13,7 +13,7 @@ from app.core.security import get_client_ip
 from app.core.auth import login_required, admin_required
 from app.core.meta import page_metadata
 from app.core.decorators import log_view_action
-from app.core.trackers import log_action
+from app.core.trackers import log_action, log_action_isolated
 from app.models import User, Role
 
 logger = logging.getLogger(__name__)
@@ -104,7 +104,7 @@ def delete_user(user_id):
         flash("Cannot delete the first admin user.", "error")
 
         # Always log Admin actions
-        log_action(
+        log_action_isolated(
             action="delete_user_denied",
             user_id=current_user.id,
             target=f"user:{user_id}",
@@ -118,7 +118,7 @@ def delete_user(user_id):
         flash("User not found", "error")
 
         # Always log Admin actions
-        log_action(
+        log_action_isolated(
             action="delete_user_failed",
             user_id=current_user.id,
             target=f"user:{user_id}",
@@ -128,16 +128,22 @@ def delete_user(user_id):
         return redirect(url_for("users.list_users"))
 
     try:
+        actor_user_id = current_user.id
+        audit_user_id = actor_user_id if actor_user_id != user_id else None
+        audit_metadata = (
+            {"actor_user_id": actor_user_id}
+            if audit_user_id is None
+            else None
+        )
+        log_action(
+            action="delete_user_success",
+            user_id=audit_user_id,
+            target=f"user:{user_id}",
+            extra_data=audit_metadata,
+        )
         db.session.delete(user)
         db.session.commit()
         flash("User successfully deleted.", "success")
-
-        # Always log Admin actions
-        log_action(
-            action="delete_user_success",
-            user_id=current_user.id,
-            target=f"user:{user_id}"
-        )
 
     except Exception as e:
         db.session.rollback()
@@ -145,7 +151,7 @@ def delete_user(user_id):
         logger.exception(f"Failed to delete user {user_id}: {e}")
 
         # Always log Admin actions
-        log_action(
+        log_action_isolated(
             action="delete_user_failed",
             user_id=current_user.id,
             target=f"user:{user_id}",
@@ -179,7 +185,7 @@ def edit_user(user_id):
             logger.warning(f"User update validation failed for user {user_id}: {form.errors}")
 
             # Always log Admin actions
-            log_action(
+            log_action_isolated(
                 action="edit_user_validation_failed",
                 user_id=current_user.id,
                 target=f"user:{user_id}",
@@ -215,10 +221,6 @@ def edit_user(user_id):
             user.roles = selected_roles
 
             try:
-                db.session.commit()
-                flash("User updated successfully.", "success")
-
-                # Always log Admin actions
                 log_action(
                     action="edit_user_success",
                     user_id=current_user.id,
@@ -229,6 +231,9 @@ def edit_user(user_id):
                     }
                 )
 
+                db.session.commit()
+                flash("User updated successfully.", "success")
+
                 return redirect(url_for('users.list_users'))
             except Exception as e:
                 db.session.rollback()
@@ -236,7 +241,7 @@ def edit_user(user_id):
                 logger.exception(f"Error updating user {user_id}: {e}")
 
                 # Always log Admin actions
-                log_action(
+                log_action_isolated(
                     action="edit_user_failed",
                     user_id=current_user.id,
                     target=f"user:{user_id}",

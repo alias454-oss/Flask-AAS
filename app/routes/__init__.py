@@ -5,6 +5,7 @@ from jinja2 import TemplateNotFound
 from flask import jsonify, render_template, request
 
 # Blueprints
+from .favicon import favicon_bp
 from .about import about_bp
 from .index import index_bp
 from .tos import tos_bp
@@ -33,6 +34,7 @@ logger = logging.getLogger(__name__)
 
 # Blueprint list
 all_blueprints = [
+    favicon_bp,
     mfa_bp,
     captcha_bp,
     sitemap_bp,

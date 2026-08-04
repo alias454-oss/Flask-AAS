@@ -129,72 +129,96 @@ def _load_trusted_proxies():
     trusted = []
     for net in raw:
         try:
-            trusted.append(ipaddress.ip_network(net))
+            trusted.append(ipaddress.ip_network(net, strict=False))
         except ValueError:
             logger.warning(f"Malformed trusted proxy network entry skipped: {net}")
             continue
     return trusted
+
 
 def get_trusted_proxies():
     if not hasattr(current_app, '_trusted_proxies_cache'):
         current_app._trusted_proxies_cache = _load_trusted_proxies()
     return current_app._trusted_proxies_cache
 
+
 def _parse_forwarded_header(value):
     parts = []
     for segment in value.split(','):
-        segment = segment.strip()
-        for kv in segment.split(';'):
-            if kv.lower().startswith('for='):
-                ip = kv[4:].strip('"[]')
-                parts.append(ip)
+        for item in segment.split(';'):
+            key, separator, raw_value = item.strip().partition('=')
+            if separator and key.lower() == 'for':
+                parts.append(raw_value.strip().strip('"'))
     return parts
 
+
+def _normalize_forwarded_ip(value):
+    candidate = value.strip().split('%', 1)[0]
+    if not candidate or candidate.lower() == 'unknown' or candidate.startswith('_'):
+        return None
+
+    if candidate.startswith('['):
+        closing = candidate.find(']')
+        if closing == -1:
+            return None
+        candidate = candidate[1:closing]
+    elif candidate.count(':') == 1:
+        host, port = candidate.rsplit(':', 1)
+        if port.isdigit():
+            candidate = host
+
+    try:
+        return ipaddress.ip_address(candidate)
+    except ValueError:
+        return None
+
+
+def _original_peer_address():
+    original = request.environ.get('werkzeug.proxy_fix.orig', {})
+    peer = original.get('REMOTE_ADDR') if isinstance(original, dict) else None
+    peer = peer or request.remote_addr
+    return _normalize_forwarded_ip(peer) if peer else None
+
+
 def get_client_ip():
-    headers_to_check = [
-        'X-Forwarded-For',
-        'X-Real-IP',
-        'CF-Connecting-IP',
-        'True-Client-IP',
-        'X-Client-IP',
-        'Forwarded',
-    ]
+    peer = _original_peer_address()
+    if peer is None:
+        return 'unknown'
 
+    proxy_hops = current_app.config.get('PROXY_HOPS', 0)
     trusted_proxies = get_trusted_proxies()
+    peer_is_trusted = any(peer in network for network in trusted_proxies)
 
-    ips = []
+    # Direct deployments must ignore all client-supplied forwarding headers.
+    if not proxy_hops or not peer_is_trusted:
+        return str(peer)
 
-    for header in headers_to_check:
-        val = request.headers.get(header, '')
-        if not val:
-            continue
-
-        if header.lower() == 'forwarded':
-            ips = _parse_forwarded_header(val)
-            if ips:
+    forwarded_values = []
+    forwarded_header = request.headers.get('Forwarded')
+    if forwarded_header:
+        forwarded_values = _parse_forwarded_header(forwarded_header)
+    else:
+        for header in (
+            'X-Forwarded-For',
+            'X-Real-IP',
+            'CF-Connecting-IP',
+            'True-Client-IP',
+        ):
+            value = request.headers.get(header)
+            if value:
+                forwarded_values = [item.strip() for item in value.split(',')]
                 break
-        else:
-            ips = [ip.strip() for ip in val.split(',') if ip.strip()]
-            if ips:
-                break
 
-    if not ips:
-        ips = list(request.access_route)
-        if request.remote_addr:
-            ips.append(request.remote_addr)
+    chain = [
+        parsed
+        for parsed in (_normalize_forwarded_ip(value) for value in forwarded_values)
+        if parsed is not None
+    ]
+    chain.append(peer)
 
-    cleaned_ips = []
-    for ip_str in reversed(ips):
-        try:
-            ip_obj = ipaddress.ip_address(ip_str)
-        except ValueError:
+    for candidate in reversed(chain):
+        if any(candidate in network for network in trusted_proxies):
             continue
+        return str(candidate)
 
-        if any(ip_obj in net for net in trusted_proxies):
-            continue
-        cleaned_ips.append(ip_str)
-
-    if cleaned_ips:
-        return cleaned_ips[-1]
-
-    return request.remote_addr or 'unknown'
+    return str(peer)

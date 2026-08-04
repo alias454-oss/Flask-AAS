@@ -96,17 +96,10 @@ class AdminSettingsForm(FlaskForm):
     submit = SubmitField("Update Settings")
 
 def update_env_settings(form, env, db):
-    """Update settings from the form and commit to the DB."""
+    """Apply settings updates to the caller-owned transaction."""
     form.populate_obj(env)
     env.default_role_id = form.default_role_id.data
-
-    try:
-        db.session.add(env)
-        db.session.commit()
-    except Exception as e:
-        db.session.rollback()
-        logger.exception(f"Failed to update environment settings: {e}")
-        raise
+    db.session.add(env)
 
 def get_available_templates():
     try:
@@ -178,8 +171,11 @@ def settings():
                     "user_agent": request.headers.get("User-Agent")
                 }
             )
+            db.session.commit()
             return redirect(url_for("settings.settings"))
         except Exception:
+            db.session.rollback()
+            logger.exception("Failed to update environment settings")
             flash("An error occurred while updating the settings.", "error")
 
     return render_template("admin/settings.html", form=form, settings=env, **meta)

@@ -210,6 +210,7 @@ legend {
 }
 
 /* General styles for inputs, textarea, and select */
+input:not([type]),
 input[type="text"],
 input[type="password"],
 input[type="email"],
@@ -228,6 +229,8 @@ select {
 }
 
 /* Hover/focus styles */
+input:not([type]):hover,
+input:not([type]):focus,
 input[type="text"]:hover,
 input[type="password"]:hover,
 input[type="email"]:hover,

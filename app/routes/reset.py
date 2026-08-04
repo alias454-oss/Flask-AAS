@@ -10,9 +10,10 @@ from itsdangerous import BadSignature, SignatureExpired
 
 from app.core.extensions import db, limiter
 from app.core.security import generate_token, confirm_token, old_password_match,  normalize_email, redact_email, get_client_ip, is_locked_out, track_lockout_attempts, reset_lockout_attempts
+from app.core.logger import redact_route_values
 from app.core.meta import page_metadata
 from app.core.decorators import nocache, log_view_action
-from app.core.trackers import log_action, audit_activity_enabled
+from app.core.trackers import log_action, log_action_isolated, audit_activity_enabled
 from app.core.mailer import send_password_reset_email
 from app.models import User
 
@@ -45,7 +46,7 @@ class ChangePasswordForm(FlaskForm):
 @reset_bp.route("/reset-password/<token>", methods=["GET", "POST"])
 @nocache
 @limiter.limit("10 per hour", key_func=get_client_ip)
-@log_view_action()
+@log_view_action(redact_params={"token"})
 def reset_password(token):
     if current_user.is_authenticated:
         return redirect(url_for("dashboard.dashboard"))
@@ -96,15 +97,15 @@ def reset_password(token):
         # Only after real success
         user.set_password(password)  # Ensure this hashes the password!
         user.updated_at = datetime.now(timezone.utc)
-        db.session.commit()
-
         if audit_activity_enabled():
             log_action(
                 user_id=user.id,
                 action="password_reset_success",
-                target=request.path,
+                target=redact_route_values(request.path, {"token"}),
                 extra_data={"ip": ip}
             )
+
+        db.session.commit()
 
         reset_lockout_attempts(email, ip)
         flash("Password reset successfully. Please log in.", "success")
@@ -135,7 +136,7 @@ def forgot_password():
 
         if user:
             if audit_activity_enabled():
-                log_action(
+                log_action_isolated(
                     user_id=user.id,
                     action="password_reset_requested",
                     target=request.path,
@@ -193,8 +194,6 @@ def change_password():
             current_user.set_password(password)
             current_user.last_active = datetime.now(timezone.utc)
             current_user.ip_address = ip
-            db.session.commit()
-
             if audit_activity_enabled():
                 log_action(
                     user_id=current_user.id,
@@ -202,6 +201,8 @@ def change_password():
                     target=request.path,
                     extra_data={"ip": ip}
                 )
+
+            db.session.commit()
 
             logger.info(f"Password successfully changed for user {current_user.id} from IP {ip}")
             flash("Your password has been updated.", "success")
