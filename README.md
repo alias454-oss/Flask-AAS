@@ -50,16 +50,20 @@ The base is intentionally designed to remain easy to run locally. Direct HTTP, g
 ---
 
 ### Audit Logging
-#### **AuditLogin** (Login Attempts)
-- Tracks username/email used
-- Records IPv4 or IPv6 address as text
-- Logs timestamp and success/failure outcome
+#### **AuditLogin** (Authentication Attempts)
+- Tracks the submitted username or email identifier
+- Records IPv4 or IPv6 address, user agent, referrer, and timestamp
+- Stores the final authentication outcome rather than password-match status
+- Uses normalized internal failure reasons without changing enumeration-resistant public responses
+- Remains separate from general application activity auditing
 
 #### **AuditActivity** (User/Admin Actions)
-- Tracks key actions such as settings changes or account modifications
-- Stores payload as JSON for flexibility
-- Supports actor/target tracking
-- Future: filtering, export, and analytics
+- Tracks actor, action, target, client address, and route-selected metadata
+- Stores structured metadata through one portable JSON serialization boundary
+- Commits business-success events with the business transaction
+- Uses isolated writes for standalone views, denials, failures, and operational tracking
+- Supports explicit per-route redaction for token-bearing URL parameters
+- Future: filtering, export, retention controls, and analytics
 
 ---
 
@@ -105,6 +109,7 @@ The base is intentionally designed to remain easy to run locally. Direct HTTP, g
 | admin.admin_home | GET | `/admin/` |
 | captcha.captcha_image | GET | `/captcha_image` |
 | dashboard.dashboard | GET | `/dashboard` |
+| favicon.favicon | GET | `/favicon.ico` |
 | index.index | GET | `/` |
 | login.login | GET, POST | `/login` |
 | logout.logout | GET | `/logout` |
@@ -186,6 +191,18 @@ Regenerate the lock from a clean Python 3.13 environment:
 The lock workflow uses `pip-tools`; deployment still requires only standard `pip` and `requirements.txt`. JWT support uses PyJWT, and password hashing and verification use the single Flask-Bcrypt stack.
 
 ---
+
+### Focused Audit Validation
+
+Run the audit transaction, metadata-redaction, tracking, and login-outcome regression suites with:
+
+```bash
+python -m unittest -v \
+  tests.test_audit_tracking \
+  tests.test_login_audit
+```
+
+The tests use SQLite by default. Set `AUDIT_TEST_DATABASE_URI` to a disposable PostgreSQL database URI to exercise the same portable audit behavior against PostgreSQL.
 
 ### Build and Run
 
