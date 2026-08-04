@@ -28,7 +28,7 @@ The application does not require internal certificates for ordinary development 
 | Host validation | Optional localhost allowance | Local host allowlist | Required allowlist or canonical host |
 | Cache and lockouts | In-memory allowed | In-memory allowed for one process | Shared backend for multiple workers/instances |
 | Database | SQLite allowed | SQLite allowed | Deployment-specific durable database |
-| SMTP | Optional or test backend | Optional | Explicitly configured if email features enabled |
+| Outbound email | Optional; disabled or mock delivery | Optional; deployment SMTP or UI override | Explicitly configured when email-dependent features are enabled |
 | Migrations | Explicit init/generate/upgrade | Same | Clean bootstrap only until a versioned upgrade contract exists |
 
 ## Secret-key behavior
@@ -88,13 +88,20 @@ Redis is one possible backend, not a mandatory development dependency.
 
 ## Email behavior
 
-Development must be able to run without SMTP. Supported behavior should be explicit:
+Development must be able to run without SMTP. Outbound email is controlled by the database-backed **Enable Outbound Email** switch. When it is off, no message is queued, including in debug mode.
 
-- disable email-dependent features;
-- use a local capture/test backend; or
-- return a visible development-only delivery result.
+The effective transport is resolved for each dispatch in this order:
 
-The application must not claim that an email was sent when template rendering or transport failed.
+1. `MAIL_DEBUG=true` provides mock delivery after the master switch is enabled. Messages are rendered and reported as queued, but no SMTP connection is made.
+2. When `MAIL_CONFIG_UI_ENABLED=true`, a complete Site Settings SMTP configuration overrides deployment values.
+3. Otherwise, a complete deployment configuration using `MAIL_SERVER`, `MAIL_PORT`, `MAIL_USE_TLS` or `MAIL_USE_SSL`, optional paired credentials, and `MAIL_DEFAULT_SENDER` is used.
+4. When no complete source exists, delivery is unavailable.
+
+Site Settings and deployment values are not blended field by field. An empty Site Settings override falls back to deployment configuration, while a partial override is rejected. UI-managed SMTP passwords are encrypted with `MAIL_CONFIG_ENCRYPTION_KEY`, which must remain outside the database. The stored password is not rendered back into the form, and clearing the override is an explicit operation.
+
+`Require Email Verification` depends on enabled outbound email and an available effective transport. This prevents registration from creating users who cannot receive their activation link.
+
+Mail dispatch remains asynchronous. A route may report that a message was queued after the background worker starts; that does not mean the SMTP server accepted or delivered it. Final delivery success or failure is recorded by the worker. Template rendering, policy lookup, and thread-start failures remain visible to callers.
 
 ## Migration behavior
 
@@ -116,7 +123,9 @@ Examples:
 - `PROXY_HOPS=0` permits direct local operation.
 - `PROXY_HOPS>0` requires a documented trusted topology.
 - `WORKER_COUNT>1` or a deployed mode requires a stable shared secret.
-- Email verification enabled requires a functioning mail backend.
+- Enabling outbound email requires debug delivery or a complete deployment or Site Settings transport.
+- Email verification enabled requires outbound email and a functioning effective mail backend.
+- UI-managed SMTP credentials require `MAIL_CONFIG_UI_ENABLED=true` and an external Fernet encryption key.
 - HTTPS external URL enables secure cookies and HSTS at the correct boundary.
 
 The base should fail only when the requested capability cannot operate safely, not merely because optional production infrastructure is absent.

@@ -47,6 +47,14 @@ The base is intentionally designed to remain easy to run locally. Direct HTTP, g
 - Single-user lockdown mode
 - Global CSRF protection
 
+### Email Verification & Outbound Mail
+- Optional email verification using the persisted `activated` account state
+- Idempotent verification links with safe handling for malformed, expired, missing-account, and already-used tokens
+- Asynchronous mail dispatch so HTTP requests do not wait for SMTP delivery
+- Explicit dispatch results: `queued`, `disabled`, or `failed`
+- Deployment-managed SMTP with an optional encrypted Site Settings override
+- Runtime display of the active mail source: Debug, Site Settings, Environment, Disabled, or Not configured
+
 ---
 
 ### Audit Logging
@@ -188,9 +196,69 @@ Regenerate the lock from a clean Python 3.13 environment:
 ./scripts/lock.sh
 ```
 
-The lock workflow uses `pip-tools`; deployment still requires only standard `pip` and `requirements.txt`. JWT support uses PyJWT, and password hashing and verification use the single Flask-Bcrypt stack.
+The lock workflow uses `pip-tools`; deployment still requires only standard `pip` and `requirements.txt`. JWT support uses PyJWT, password hashing and verification use the single Flask-Bcrypt stack, and `cryptography` is a direct dependency for encrypted runtime SMTP credentials.
 
 ---
+
+### Email Configuration
+
+Outbound email uses an explicit master switch in **Admin → Site Settings**:
+
+```text
+Enable Outbound Email
+Require Email Verification
+```
+
+`Require Email Verification` can be enabled only when outbound email is enabled and an effective mail transport is available. The application does not claim delivery merely because a message was queued. Final SMTP success or failure is logged by the asynchronous worker.
+
+Deployment SMTP settings are supplied through `.env` or another external configuration source:
+
+```dotenv
+MAIL_DEBUG=false
+MAIL_SERVER=smtp.example.com
+MAIL_PORT=587
+MAIL_USE_TLS=true
+MAIL_USE_SSL=false
+MAIL_USERNAME=mailer@example.com
+MAIL_PASSWORD=replace-me
+MAIL_DEFAULT_SENDER=mailer@example.com
+```
+
+Runtime SMTP editing is disabled by default. To permit an administrator-managed override:
+
+```dotenv
+MAIL_CONFIG_UI_ENABLED=true
+MAIL_CONFIG_ENCRYPTION_KEY=<fernet-key>
+```
+
+Generate a Fernet key with:
+
+```bash
+python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+```
+
+Effective source precedence is:
+
+1. **Enable Outbound Email** off → delivery disabled.
+2. `MAIL_DEBUG=true` → mock delivery; no SMTP connection.
+3. Complete Site Settings SMTP configuration → encrypted runtime override.
+4. Complete deployment SMTP configuration → environment fallback.
+5. No complete source → delivery unavailable.
+
+The two SMTP sources are never blended field by field. A partial Site Settings override is rejected. The saved SMTP password is encrypted with the externally supplied key, is never rendered back into the form, and is cleared only through the explicit override-clear control.
+
+---
+
+### Focused Email Validation
+
+Run the email lifecycle, transport-resolution, encryption, settings-route, and account-state regression suites with:
+
+```bash
+python -m unittest -v \
+  tests.test_mailer \
+  tests.test_mail_config \
+  tests.test_email_lifecycle
+```
 
 ### Focused Audit Validation
 
@@ -230,7 +298,7 @@ Open your browser and go to [http://localhost:5000](http://localhost:5000)
 - Seed scripts run once on clean DB
 - `default_role_id` in `.env` controls default user role
 - Admin panel for user/role/settings management
-- Store SMTP credentials securely in environment variables
+- Keep deployment SMTP credentials in external configuration, or enable the encrypted Site Settings override deliberately.
 
 
 ## Maintenance

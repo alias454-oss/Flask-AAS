@@ -46,6 +46,7 @@ A GET request should not mutate account, role, security, or billing state.
 - Which database changes must succeed or fail together?
 - Can logging, email, cache, or queue helpers commit or roll back the caller's transaction?
 - Are external side effects performed before a durable database decision?
+- Does the user-facing result distinguish queued work from completed external delivery?
 - Is there an outbox, retry, or reconciliation mechanism when external systems are involved?
 - Are concurrent requests serialized or made idempotent where required?
 
@@ -81,6 +82,8 @@ Per-IP controls alone do not stop distributed attacks. Per-account hard lockouts
 - Are sensitive headers such as authorization and cookies excluded from captured request metadata?
 - Are semantic audit targets stable resource identifiers rather than token-bearing URLs?
 - Are secrets stored in the correct configuration layer?
+- If a secret is runtime-managed, is it encrypted with a key stored outside the database?
+- Are blank-update and explicit-clear semantics defined for stored secrets?
 - Are secret values ever rendered back into forms?
 - Are exception messages safe for the user-facing response?
 
