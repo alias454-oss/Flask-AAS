@@ -1,6 +1,6 @@
 # routes/register.py
 import logging
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 from flask import Blueprint, render_template, redirect, url_for, flash, abort
 from flask_login import current_user
 from flask_wtf import FlaskForm
@@ -14,7 +14,7 @@ from app.core.security import generate_random_password, generate_token, normaliz
 from app.core.meta import page_metadata
 from app.core.decorators import log_view_action
 from app.core.trackers import current_route, log_action, log_action_isolated, audit_activity_enabled
-from app.core.mailer import send_verification_email,  send_welcome_email
+from app.core.mailer import send_verification_email, send_welcome_email
 from app.models import User, Role
 from .captcha import CaptchaRequired
 
@@ -205,30 +205,76 @@ def register():
 
             # Use email verification to authorize account
             use_verify_email = env.use_verify_email if env else False
+
             # PATH A: Admin is creating the user
             if is_admin:
-                # Send Welcome with the password (if generated)
                 temp_pass = raw_password if password_was_generated else None
-                send_welcome_email(user.email, user.username, temp_password=temp_pass)
+                mail_status = send_welcome_email(
+                    user.email,
+                    user.username,
+                    temp_password=temp_pass,
+                )
+                if mail_status != "queued":
+                    logger.warning(
+                        "Welcome email dispatch status=%s for user_id=%s",
+                        mail_status,
+                        user.id,
+                    )
 
                 flash(f"User {user.username} created successfully.", "success")
-                return redirect(url_for('register.register'))
+                return redirect(url_for("register.register"))
 
             # PATH B: Public User (Verification Enabled)
-            elif use_verify_email:
+            if use_verify_email:
                 token = generate_token(user.email, EMAIL_VERIFY_SALT)
-                verify_url = url_for('verify.verify', token=token, _external=True)
+                verify_url = url_for(
+                    "verify.verify_email_token",
+                    token=token,
+                    _external=True,
+                )
+                mail_status = send_verification_email(
+                    user.email,
+                    user.username,
+                    verify_url,
+                )
 
-                send_verification_email(user.email, user.username, verify_url)
-
-                flash("Account created! Please check your email to verify.", "info")
-                return redirect(url_for('login.login'))
+                if mail_status == "queued":
+                    flash(
+                        "Account created. Check your email shortly to verify your account.",
+                        "info",
+                    )
+                elif mail_status == "disabled":
+                    logger.warning(
+                        "Verification email delivery disabled for user_id=%s",
+                        user.id,
+                    )
+                    flash(
+                        "Account created, but email verification is currently unavailable. "
+                        "Contact an administrator.",
+                        "warning",
+                    )
+                else:
+                    logger.error(
+                        "Verification email could not be queued for user_id=%s",
+                        user.id,
+                    )
+                    flash(
+                        "Account created, but the verification email could not be queued. "
+                        "Contact an administrator.",
+                        "warning",
+                    )
+                return redirect(url_for("login.login"))
 
             # PATH C: Public User (No Verification)
-            else:
-                send_welcome_email(user.email, user.username)
-                flash("Account created successfully. Please log in.", "success")
-                return redirect(url_for('login.login'))
+            mail_status = send_welcome_email(user.email, user.username)
+            if mail_status != "queued":
+                logger.warning(
+                    "Welcome email dispatch status=%s for user_id=%s",
+                    mail_status,
+                    user.id,
+                )
+            flash("Account created successfully. Please log in.", "success")
+            return redirect(url_for("login.login"))
 
         except IntegrityError as e:
             db.session.rollback()

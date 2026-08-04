@@ -4,10 +4,11 @@ from flask import Blueprint, request, url_for, redirect, flash
 from flask_login import current_user
 from datetime import datetime, timezone
 from itsdangerous import BadSignature, SignatureExpired
+from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.extensions import db, limiter
 from app.core.logger import redact_route_values
-from app.core.security import confirm_token, get_client_ip, is_locked_out, track_lockout_attempts, reset_lockout_attempts
+from app.core.security import confirm_token, get_client_ip, is_locked_out, redact_email, track_lockout_attempts, reset_lockout_attempts
 from app.core.decorators import nocache, log_view_action
 from app.core.trackers import log_action, log_action_isolated, audit_activity_enabled
 from app.models.user import User
@@ -40,26 +41,49 @@ def verify_email_token(token):
 
     user = User.query.filter_by(email=email).first()
     if not user:
-        flash("No user found with that email address.", "danger")
+        logger.warning(
+            "Verification token resolved to a missing account for %s from IP %s",
+            redact_email(email),
+            ip,
+        )
+        flash("The verification link is invalid or has expired.", "danger")
         return redirect(url_for("login.login"))
 
-    if user.is_verified:
-        logger.info(f"Email {email} already verified. Attempt from IP: {ip}")
+    if user.activated:
+        logger.info(
+            "Email already verified for %s; repeat attempt from IP %s",
+            redact_email(email),
+            ip,
+        )
         flash("Your email is already verified. Please log in.", "info")
         return redirect(url_for("login.login"))
 
-    if audit_activity_enabled():
-        log_action(
-            user_id=user.id,
-            action="email_verified",
-            target=redact_route_values(request.path, {"token"}),
-            extra_data={"ip": ip}
-        )
+    try:
+        user.activated = True
+        user.last_active = datetime.now(timezone.utc)
+        user.ip_address = ip
 
-    user.activated = True
-    user.last_active = datetime.now(timezone.utc)
-    user.ip_address = ip
-    db.session.commit()
+        if audit_activity_enabled():
+            log_action(
+                user_id=user.id,
+                action="email_verified",
+                target=redact_route_values(request.path, {"token"}),
+                extra_data={"ip": ip},
+            )
+
+        db.session.commit()
+    except SQLAlchemyError:
+        db.session.rollback()
+        logger.exception(
+            "Email verification commit failed for user_id=%s from IP %s",
+            user.id,
+            ip,
+        )
+        flash(
+            "We could not verify your email right now. Please try again.",
+            "danger",
+        )
+        return redirect(url_for("login.login"))
 
     flash("Your email has been verified. You can now log in.", "success")
     return redirect(url_for("login.login"))

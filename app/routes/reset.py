@@ -144,12 +144,34 @@ def forgot_password():
                 )
 
             try:
-                logger.info(f"Password reset email sent to {redact_email(user.email)} from IP {ip}")
                 token = generate_token(user.email, RESET_PW_SALT)
-                send_password_reset_email(user.email, token)
-            except Exception as e:
-                logger.error(f"Failed to send password reset email to {redact_email(user.email)}: {e}", exc_info=True)
-                # Optional: flash user-friendly message or log to monitoring tool
+                mail_status = send_password_reset_email(user.email, token)
+                redacted = redact_email(user.email)
+
+                if mail_status == "queued":
+                    logger.info(
+                        "Password reset email queued for %s from IP %s",
+                        redacted,
+                        ip,
+                    )
+                elif mail_status == "disabled":
+                    logger.warning(
+                        "Password reset email delivery disabled for %s from IP %s",
+                        redacted,
+                        ip,
+                    )
+                else:
+                    logger.error(
+                        "Password reset email could not be queued for %s from IP %s",
+                        redacted,
+                        ip,
+                    )
+            except Exception:
+                logger.exception(
+                    "Unexpected password reset email error for %s from IP %s",
+                    redact_email(user.email),
+                    ip,
+                )
 
         # In *both* success and failure cases:
         track_lockout_attempts(email, ip)
