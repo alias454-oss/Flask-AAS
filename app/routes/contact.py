@@ -7,11 +7,11 @@ from wtforms import StringField, TextAreaField, SubmitField
 from wtforms.validators import DataRequired, Email, Length
 
 from app.core.cache import get_cached_env_settings
-from app.core.extensions import db, limiter
-from app.core.security import get_client_ip, normalize_email, redact_email, is_locked_out, track_lockout_attempts, reset_lockout_attempts
+from app.core.extensions import limiter
+from app.core.security import get_client_ip, normalize_email, redact_email
 from app.core.meta import page_metadata
 from app.core.decorators import log_view_action
-from app.core.trackers import current_route, log_action, audit_activity_enabled
+from app.core.trackers import current_route, log_action_isolated, audit_activity_enabled
 from app.core.mailer import send_contact_email
 from .captcha import CaptchaRequired
 
@@ -56,7 +56,7 @@ def contact():
         if form.nobot_check.data:
             logger.warning(f"Honeypot field triggered from IP {ip}")
             if audit_activity_enabled():
-                log_action(
+                log_action_isolated(
                     user_id=getattr(current_user, "id", None),
                     action="honeypot_triggered",
                     target=current_route(),
@@ -67,7 +67,7 @@ def contact():
         if is_spam(form.message.data):
             logger.warning(f"Spam message blocked from {ip}")
             if audit_activity_enabled():
-                log_action(
+                log_action_isolated(
                     user_id=getattr(current_user, "id", None),
                     action="spam_blocked",
                     target=current_route(),
@@ -80,7 +80,7 @@ def contact():
             send_contact_email(name=form.name.data, email=email, message=form.message.data, subject=form.subject.data)
 
             if audit_activity_enabled():
-                log_action(
+                log_action_isolated(
                     user_id=getattr(current_user, "id", None),
                     action="contact_attempt",
                     target=current_route(),
@@ -99,7 +99,7 @@ def contact():
         except Exception as e:
             logger.error(f"Failed to send contact form from {ip}: {e}")
             if audit_activity_enabled():
-                log_action(
+                log_action_isolated(
                     user_id=getattr(current_user, "id", None),
                     action="contact_attempt",
                     target=current_route(),
@@ -116,7 +116,7 @@ def contact():
     elif form.errors:
         logger.info(f"Contact form validation failed from {ip} - errors: {form.errors}")
         if audit_activity_enabled():
-            log_action(
+            log_action_isolated(
                 user_id=getattr(current_user, "id", None),
                 action="contact_form_invalid",
                 target=current_route(),

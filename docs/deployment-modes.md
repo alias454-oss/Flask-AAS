@@ -63,6 +63,13 @@ Enable only the forwarded fields and hop counts that the topology actually suppl
 
 `TRUSTED_PROXIES` and `ProxyFix` must describe the same trust boundary. A custom IP parser must first establish that the immediate peer is trusted before considering forwarded client values.
 
+
+### Current proxy checkpoint
+
+`PROXY_HOPS` defaults to `0`, so direct development does not install `ProxyFix` and ignores spoofed forwarding headers for audit, tracking, and rate-limit identity.
+
+When `PROXY_HOPS` is greater than zero, the configured hop count enables `ProxyFix`, while `TRUSTED_PROXIES` controls whether the immediate peer is allowed to supply forwarded client addresses. Host allowlisting and canonical external URL generation remain separate deployment-hardening work.
+
 ## Cookies and HSTS
 
 `Secure` cookies are not sent over plain HTTP. They must remain disabled for direct HTTP development.

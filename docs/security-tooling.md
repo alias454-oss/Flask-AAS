@@ -17,6 +17,19 @@ The 2026-08-03 dependency/runtime checkpoint uses:
 
 The lock was generated on Fedora 42 Linux x86_64 and validated in the Trixie container with `--require-hashes` and `--only-binary=:all:`. Dependency auditing should continue to run against the generated lock before release checkpoints.
 
+## Current audit-integrity checkpoint
+
+The 2026-08-03 audit/tracking checkpoint established these invariants:
+
+- `AuditActivity` business-success events participate in the caller-owned transaction;
+- login attempts, standalone activity events, and online-presence updates use isolated writes;
+- `AuditActivity.extra_data` is encoded exactly once and legacy double-encoded rows remain readable;
+- token-bearing routes declare explicit parameter redaction without reducing normal route audit detail;
+- `AuditLogin` records one final outcome per attempt with a normalized failure reason;
+- direct requests ignore spoofed forwarded headers unless proxy trust is explicitly configured.
+
+Focused regression coverage is maintained in `tests.test_audit_tracking` and `tests.test_login_audit`.
+
 ## Recommended baseline
 
 ### Ruff
@@ -31,12 +44,12 @@ Use for basic Python security-pattern detection. Treat findings as review leads 
 
 Use for framework-aware and project-specific checks. Add local rules for Flask-AAS invariants such as:
 
-- token-bearing values passed to audit logging;
-- audit helpers calling `commit()` or `rollback()`;
+- token-bearing routes or audit calls without explicit parameter redaction;
+- audit helpers calling `commit()` or `rollback()` on the caller-owned session;
 - state-changing GET routes;
 - CSRF-exempt browser routes;
 - security-sensitive routes without fresh reauthentication;
-- broad request-header capture;
+- request metadata capture that fails to exclude authorization or cookie headers;
 - `ProxyFix` enabled without explicit configuration.
 
 ### Dependency audit
@@ -70,6 +83,9 @@ The security regression suite is the most important control in this list. Static
 
 ## Project-specific checks to automate
 
+- Every submitted login produces exactly one final `AuditLogin` outcome.
+- Successful login rows are written only after Flask-Login accepts the user.
+- Token-bearing routes declare redaction and no concrete token appears anywhere in the stored audit row.
 - No concrete reset or verification token appears in audit rows.
 - Audit helpers do not call transaction-ending methods.
 - Direct-development mode starts without SMTP, Redis, certificates, or a supplied secret.

@@ -6,9 +6,10 @@ from datetime import datetime, timezone
 from itsdangerous import BadSignature, SignatureExpired
 
 from app.core.extensions import db, limiter
+from app.core.logger import redact_route_values
 from app.core.security import confirm_token, get_client_ip, is_locked_out, track_lockout_attempts, reset_lockout_attempts
 from app.core.decorators import nocache, log_view_action
-from app.core.trackers import log_action, audit_activity_enabled
+from app.core.trackers import log_action, log_action_isolated, audit_activity_enabled
 from app.models.user import User
 
 logger = logging.getLogger(__name__)
@@ -24,7 +25,7 @@ EMAIL_VERIFY_SALT = "app.tokens.email.verify"
 @verify_bp.route("/email/<token>")
 @nocache
 @limiter.limit("10 per hour", key_func=get_client_ip)
-@log_view_action()
+@log_view_action(redact_params={"token"})
 def verify_email_token(token):
     ip = get_client_ip()
 
@@ -51,7 +52,7 @@ def verify_email_token(token):
         log_action(
             user_id=user.id,
             action="email_verified",
-            target=request.path,
+            target=redact_route_values(request.path, {"token"}),
             extra_data={"ip": ip}
         )
 
@@ -68,7 +69,7 @@ def verify_email_token(token):
 @verify_bp.route("/reset/<token>")
 @nocache
 @limiter.limit("10 per hour", key_func=get_client_ip)
-@log_view_action()
+@log_view_action(redact_params={"token"})
 def verify_reset_token(token):
     ip = get_client_ip()
 
@@ -98,10 +99,10 @@ def verify_reset_token(token):
 
     # Only after real success
     if audit_activity_enabled():
-        log_action(
+        log_action_isolated(
             user_id=user.id,
             action="password_reset_token_validated",
-            target=request.path,
+            target=redact_route_values(request.path, {"token"}),
             extra_data={"ip": ip}
         )
 

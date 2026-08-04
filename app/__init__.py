@@ -49,19 +49,18 @@ login_manager.login_view = 'login.login'
 def create_app():
     app = Flask(__name__)
 
-    # CORRECT PROXY FIX FOR CADDY/STANDARD PROXY SETUP
-    # This tells Flask to trust the first hop of X-Forwarded-For (x_for=1),
-    # and correctly reconstruct the true remote IP/Protocol from the headers.
-    app.wsgi_app = ProxyFix(
-        app.wsgi_app,
-        x_for=1,        # Trust the first X-Forwarded-For header
-        x_proto=1,      # Trust the first X-Forwarded-Proto header
-        x_host=1,       # Trust the first X-Forwarded-Host header
-        x_prefix=1      # Trust the first X-Forwarded-Prefix header
-    )
-
-    # Load config
+    # Load config before applying topology-dependent middleware.
     app.config.from_object(settings)
+
+    proxy_hops = app.config.get('PROXY_HOPS', 0)
+    if proxy_hops:
+        app.wsgi_app = ProxyFix(
+            app.wsgi_app,
+            x_for=proxy_hops,
+            x_proto=proxy_hops,
+            x_host=proxy_hops,
+            x_prefix=proxy_hops,
+        )
 
     # Set the session lifetime from your settings
     app.permanent_session_lifetime = settings.PERMANENT_SESSION_LIFETIME
@@ -116,11 +115,17 @@ def create_app():
 
         now = datetime.now(timezone.utc)
         last_expire_run = current_app.config.get("LAST_EXPIRE_RUN")
-        expire_interval = current_app.config["EXPIRE_INTERVAL_SECONDS"]
+        expire_interval = current_app.config.get("EXPIRE_INTERVAL_SECONDS")
 
-        delta_seconds = (now - last_expire_run).total_seconds()
+        if not expire_interval:
+            return
 
-        if delta_seconds > expire_interval:
+        if isinstance(last_expire_run, str):
+            last_expire_run = datetime.fromisoformat(last_expire_run)
+        if last_expire_run.tzinfo is None:
+            last_expire_run = last_expire_run.replace(tzinfo=timezone.utc)
+
+        if (now - last_expire_run).total_seconds() > expire_interval:
             expire_stale_online_users()
             current_app.config["LAST_EXPIRE_RUN"] = now
 
@@ -128,6 +133,7 @@ def create_app():
     def enforce_mfa():
         # Skip for static files, login, MFA verification route
         exempt_routes = {
+            "favicon.favicon",
             'robots.robots',
             'login.login',
             'logout.logout',

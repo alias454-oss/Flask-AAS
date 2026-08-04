@@ -76,8 +76,10 @@ Per-IP controls alone do not stop distributed attacks. Per-account hard lockouts
 ## 7. Secrets and sensitive data
 
 - Could passwords, reset tokens, verification tokens, TOTP secrets, session IDs, or API keys reach logs?
-- Are path parameters and query values redacted?
-- Is header capture an allowlist rather than a blocklist?
+- Has the route explicitly defined which request metadata is useful and safe to retain?
+- Are secret-bearing path or query parameters declared for audit redaction?
+- Are sensitive headers such as authorization and cookies excluded from captured request metadata?
+- Are semantic audit targets stable resource identifiers rather than token-bearing URLs?
 - Are secrets stored in the correct configuration layer?
 - Are secret values ever rendered back into forms?
 - Are exception messages safe for the user-facing response?
@@ -96,7 +98,7 @@ For a security-relevant action, define:
 - request or correlation ID;
 - before/after state for privileged changes.
 
-Do not record raw credentials, live tokens, arbitrary headers, or entire form submissions.
+Do not record raw credentials, live tokens, or entire form submissions. Ordinary routes may retain concrete request context when the route deliberately treats it as audit-safe; token-bearing routes must declare explicit redaction for the sensitive parameter.
 
 ## 9. Error behavior
 
@@ -152,6 +154,7 @@ At minimum, test:
 - CSRF/replay protection:
 - Rate-limit key:
 - Audit event:
+- Audit metadata policy:
 - Redacted fields:
 - Failure behavior:
 - Required tests:

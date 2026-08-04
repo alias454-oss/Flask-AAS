@@ -13,7 +13,7 @@ from app.core.extensions import db, bcrypt, limiter
 from app.core.security import generate_random_password, generate_token, normalize_username, normalize_email, get_client_ip, is_locked_out, track_lockout_attempts, reset_lockout_attempts
 from app.core.meta import page_metadata
 from app.core.decorators import log_view_action
-from app.core.trackers import current_route, log_action, audit_activity_enabled
+from app.core.trackers import current_route, log_action, log_action_isolated, audit_activity_enabled
 from app.core.mailer import send_verification_email,  send_welcome_email
 from app.models import User, Role
 from .captcha import CaptchaRequired
@@ -90,7 +90,7 @@ def register():
             logger.warning(f"Honeypot field triggered from IP {ip}")
             track_lockout_attempts("SYSTEM_HONEYPOT", ip)
             if audit_activity_enabled():
-                log_action(
+                log_action_isolated(
                     user_id=current_user.id if current_user.is_authenticated else None,
                     action="honeypot_triggered",
                     target=current_route(),
@@ -119,7 +119,7 @@ def register():
         if errors:
             track_lockout_attempts(email, ip)
             if audit_activity_enabled():
-                log_action(
+                log_action_isolated(
                     user_id=current_user.id if current_user.is_authenticated else None,
                     action="failed_register_attempt",
                     target=current_route(),
