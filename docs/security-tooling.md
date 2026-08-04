@@ -30,6 +30,22 @@ The 2026-08-03 audit/tracking checkpoint established these invariants:
 
 Focused regression coverage is maintained in `tests.test_audit_tracking` and `tests.test_login_audit`.
 
+## Current email-lifecycle checkpoint
+
+The 2026-08-04 email checkpoint established these invariants:
+
+- verification uses the registered endpoint names and the persisted `User.activated` state;
+- valid verification is idempotent, malformed or expired tokens fail safely, and activation commits with its audit event;
+- template rendering resolves the packaged HTML and text template trees;
+- callers receive `queued`, `disabled`, or `failed` dispatch status without waiting for SMTP;
+- **Enable Outbound Email** is the application master switch and required verification depends on an available transport;
+- complete Site Settings SMTP configuration may override deployment configuration only when `MAIL_CONFIG_UI_ENABLED=true`;
+- partial runtime overrides are rejected rather than blended with environment values;
+- UI-managed SMTP passwords are Fernet-encrypted with an external key, are not rendered back into forms, and are excluded from audit metadata;
+- the background worker receives an immutable resolved configuration rather than mutating global application configuration.
+
+Focused regression coverage is maintained in `tests.test_mailer`, `tests.test_mail_config`, and `tests.test_email_lifecycle`. The combined email, login, and audit checkpoint currently runs 69 tests.
+
 ## Recommended baseline
 
 ### Ruff
@@ -94,6 +110,10 @@ The security regression suite is the most important control in this list. Static
 - HSTS and secure cookies are not forced during direct HTTP development.
 - All registered routes resolve their endpoint references.
 - All email templates referenced by code exist.
+- Required verification cannot be enabled without an effective outbound transport.
+- Runtime SMTP overrides are all-or-nothing, encrypted, and ignored when UI configuration is disabled.
+- SMTP credentials never appear in rendered forms, logs, or audit metadata.
+- Queued email is not represented as completed SMTP delivery.
 - Migrations upgrade a new database and a representative prior schema.
 - CSP tests cover interactive controls without allowing inline script.
 

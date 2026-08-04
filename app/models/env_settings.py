@@ -50,11 +50,20 @@ class EnvSettings(db.Model):
     template = db.Column(db.String(100), nullable=True)
 
     # Email / SMTP Config
+    # use_smtp is the application-level outbound email switch. Connection
+    # details come from a complete UI override or the deployment environment.
     use_smtp = db.Column(db.Boolean, nullable=False, server_default=db.false())
-    smtp_host = db.Column(db.String(100))
-    smtp_port = db.Column(db.Integer, nullable=False, server_default="25")
-    smtp_user = db.Column(db.String(100))
-    smtp_pass = db.Column(db.String(100))
+    smtp_host = db.Column(db.String(255))
+    smtp_port = db.Column(db.Integer, nullable=True)
+    smtp_security = db.Column(
+        db.String(10),
+        nullable=False,
+        default="starttls",
+        server_default="starttls",
+    )
+    smtp_user = db.Column(db.String(255))
+    smtp_pass = db.Column(db.Text)
+    smtp_default_sender = db.Column(db.String(255))
 
     # Advanced / Optional Features
     enable_analytics = db.Column(db.Boolean, nullable=False, server_default=db.false())
