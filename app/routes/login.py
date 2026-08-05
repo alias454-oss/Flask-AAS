@@ -13,6 +13,7 @@ from app.core.cache import get_cached_env_settings
 from app.core.decorators import log_view_action
 from app.core.extensions import db, limiter
 from app.core.meta import page_metadata
+from app.core.inactivity import mark_session_activity
 from app.core.security import (
     normalize_username,
     get_client_ip,
@@ -196,6 +197,7 @@ def login():
     )
 
     session.permanent = form.remember_me.data
+    mark_session_activity()
     logger.info(f"User '{username}' logged in successfully from {ip}")
 
     if user.is_admin:

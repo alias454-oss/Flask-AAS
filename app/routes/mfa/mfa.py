@@ -20,6 +20,7 @@ from app.core.cache import get_cached_env_settings
 from app.core.extensions import db, limiter
 from app.core.security import get_client_ip, reset_lockout_attempts
 from app.core.meta import page_metadata
+from app.core.inactivity import mark_session_activity
 from app.core.mailer import send_mfa_change_email
 from app.core.decorators import nocache, log_view_action
 from app.core.trackers import (
@@ -541,6 +542,8 @@ def mfa_verify():
 
             _mark_mfa_verified()
             _clear_pending_mfa_state()
+            session.permanent = remember
+            mark_session_activity()
 
             if verification_method == 'recovery' and audit_activity_enabled():
                 log_action_isolated(
