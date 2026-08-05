@@ -53,11 +53,8 @@ class MailConfigurationRouteTests(unittest.TestCase):
         cls.login_manager = LoginManager(cls.app)
 
         @cls.login_manager.user_loader
-        def load_user(user_id):
-            try:
-                return db.session.get(User, int(user_id))
-            except (TypeError, ValueError):
-                return None
+        def load_user(session_id):
+            return User.load_from_session_id(session_id)
 
         login_bp = Blueprint("login", __name__)
 
@@ -168,7 +165,7 @@ class MailConfigurationRouteTests(unittest.TestCase):
 
         self.client = self.app.test_client()
         with self.client.session_transaction() as session:
-            session["_user_id"] = str(self.admin.id)
+            session["_user_id"] = self.admin.get_id()
             session["_fresh"] = True
 
     def tearDown(self):

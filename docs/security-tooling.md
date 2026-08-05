@@ -52,14 +52,31 @@ The 2026-08-05 MFA checkpoint established these invariants:
 
 - MFA enrollment, authenticator replacement, and disable require fresh authentication;
 - remembered or otherwise non-fresh sessions must complete MFA reauthentication before changing MFA state;
-- disabling an enabled authenticator requires the current TOTP until recovery-code support is completed;
+- MFA reauthentication and disable accept either the current TOTP or an unused single-use recovery code;
 - transient setup, verification, reauthentication, and disable state is bounded by timestamps and attempt limits;
 - terminal MFA lockout forces a complete login and deletes the remember cookie;
 - the accepted TOTP counter is persisted and an already accepted code is rejected;
 - final MFA-login persistence failure does not leave an accepted login session;
 - replay regression tests isolate MFA matching behavior without replacing the process-wide clock.
 
-Focused MFA coverage is maintained in `tests.test_login_audit`. The complete regression suite contains 87 tests.
+Focused MFA coverage is maintained in `tests.test_login_audit`.
+
+## Current password-reset checkpoint
+
+The 2026-08-05 password-reset checkpoint established these invariants:
+
+- reset secrets are generated with high entropy and stored only as SHA-256 hashes;
+- reset records carry explicit expiry, consumption, and revocation state;
+- token consumption is a conditional database update, so only one concurrent request can succeed;
+- requesting another reset link does not revoke an earlier valid link through an unauthenticated denial-of-service path;
+- a successful reset consumes its token and revokes every other outstanding reset token for the account;
+- authenticated password changes also revoke all outstanding reset tokens;
+- every password change rotates the user authentication version, invalidating active sessions and remember cookies across clients;
+- the current browser is forced through a complete login and its remember cookie is deleted;
+- password-change notification is queued only after the password transaction commits;
+- a failed database commit preserves the old password, authentication version, and token usability.
+
+Focused password-reset coverage is maintained in `tests.test_email_lifecycle` and `tests.test_login_audit`. The complete regression suite contains 95 tests. `ACCOUNT_TEST_DATABASE_URI` may point those lifecycle tests at a disposable PostgreSQL database.
 
 ## Recommended baseline
 
@@ -119,6 +136,8 @@ The security regression suite is the most important control in this list. Static
 - Sensitive MFA state changes require fresh authentication.
 - Forced full-login paths delete remembered authentication state.
 - An accepted TOTP counter cannot be replayed.
+- Password-reset secrets are hashed at rest and accepted only once.
+- Password changes revoke outstanding reset links and invalidate earlier session identities.
 - Token-bearing routes declare redaction and no concrete token appears anywhere in the stored audit row.
 - No concrete reset or verification token appears in audit rows.
 - Audit helpers do not call transaction-ending methods.

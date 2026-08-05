@@ -49,12 +49,20 @@ The base is intentionally designed to remain easy to run locally. Direct HTTP, g
 
 ### Multi-Factor Authentication
 - TOTP enrollment and authenticator replacement
-- Fresh reauthentication before MFA setup, replacement, or disable
-- Current-TOTP confirmation before disabling an enabled authenticator
+- Fresh reauthentication before MFA setup, replacement, recovery-code rotation, or disable
+- Current-TOTP or unused recovery-code confirmation for sensitive MFA changes
+- Hashed, display-once, single-use recovery codes with explicit rotation
 - Bounded pending-MFA state and lockout handling
 - Forced complete login with remember-cookie deletion after terminal MFA failures
 - Persistent TOTP-counter replay protection
-- Recovery-code completion remains tracked separately
+
+### Password Reset and Session Revocation
+- Cryptographically random password-reset secrets stored only as SHA-256 hashes
+- Durable expiry, consumption, and revocation state
+- Atomic one-time token consumption with replay rejection
+- Revocation of every outstanding reset link after a successful password change
+- Authentication-version rotation that invalidates active sessions and remember cookies
+- Password-change security notification after the database transaction commits
 
 ### Email Verification & Outbound Mail
 - Optional email verification using the persisted `activated` account state
@@ -286,7 +294,7 @@ Run the complete regression suite with:
 python -m unittest discover -s tests -p 'test_*.py'
 ```
 
-The current suite contains 87 tests. Tests use SQLite by default. Set `AUDIT_TEST_DATABASE_URI` to a disposable PostgreSQL database URI to exercise the same portable audit behavior against PostgreSQL.
+The current suite contains 95 tests. Tests use SQLite by default. Set `AUDIT_TEST_DATABASE_URI` to a disposable PostgreSQL database URI for the audit suite, or `ACCOUNT_TEST_DATABASE_URI` for the account and password-reset lifecycle suite, to exercise the same portable behavior against PostgreSQL.
 
 ### Build and Run
 

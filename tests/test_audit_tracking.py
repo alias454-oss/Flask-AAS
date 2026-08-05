@@ -50,11 +50,8 @@ class AuditTrackingTests(unittest.TestCase):
         cls.login_manager = LoginManager(cls.app)
 
         @cls.login_manager.user_loader
-        def load_user(user_id):
-            try:
-                return db.session.get(User, int(user_id))
-            except (TypeError, ValueError):
-                return None
+        def load_user(session_id):
+            return User.load_from_session_id(session_id)
 
         @cls.app.route('/reset-password/<token>')
         def reset_password_test(token):

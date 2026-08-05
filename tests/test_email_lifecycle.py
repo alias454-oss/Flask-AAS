@@ -1,6 +1,8 @@
+import os
 import tempfile
 import unittest
 from contextlib import ExitStack
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import patch
 from urllib.parse import urlparse
@@ -11,7 +13,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.extensions import bcrypt, cache, db, limiter
 from app.core.security import generate_token
-from app.models import AuditActivity, EnvSettings, User
+from app.models import AuditActivity, EnvSettings, PasswordResetToken, User
 from app.routes.register import EMAIL_VERIFY_SALT, register_bp
 from app.routes.reset import reset_bp
 from app.routes.verify import verify_bp
@@ -22,12 +24,16 @@ class EmailLifecycleRouteTests(unittest.TestCase):
     def setUpClass(cls):
         cls.temp_dir = tempfile.TemporaryDirectory()
         database_path = Path(cls.temp_dir.name) / "email-lifecycle-tests.db"
+        default_uri = f"sqlite:///{database_path}"
 
         cls.app = Flask(__name__)
         cls.app.config.update(
             TESTING=True,
             SECRET_KEY="email-lifecycle-test-secret",
-            SQLALCHEMY_DATABASE_URI=f"sqlite:///{database_path}",
+            SQLALCHEMY_DATABASE_URI=os.environ.get(
+                "ACCOUNT_TEST_DATABASE_URI",
+                default_uri,
+            ),
             SQLALCHEMY_TRACK_MODIFICATIONS=False,
             WTF_CSRF_ENABLED=False,
             RATELIMIT_ENABLED=False,
@@ -43,11 +49,8 @@ class EmailLifecycleRouteTests(unittest.TestCase):
         cls.login_manager = LoginManager(cls.app)
 
         @cls.login_manager.user_loader
-        def load_user(user_id):
-            try:
-                return db.session.get(User, int(user_id))
-            except (TypeError, ValueError):
-                return None
+        def load_user(session_id):
+            return User.load_from_session_id(session_id)
 
         login_bp = Blueprint("login", __name__)
 
@@ -140,6 +143,12 @@ class EmailLifecycleRouteTests(unittest.TestCase):
         )
         stack.enter_context(
             patch("app.routes.reset.render_template", return_value="reset")
+        )
+        stack.enter_context(
+            patch(
+                "app.routes.reset.send_password_changed_email",
+                return_value="disabled",
+            )
         )
         if not route_audit:
             stack.enter_context(
@@ -249,15 +258,170 @@ class EmailLifecycleRouteTests(unittest.TestCase):
                 self.assertEqual(response.status_code, 302)
                 self.assertEqual(urlparse(response.location).path, "/login")
                 send_reset.assert_called_once()
+                plaintext_token = send_reset.call_args.args[1]
+                stored_token = PasswordResetToken.query.filter_by(
+                    token_hash=PasswordResetToken.hash_token(plaintext_token)
+                ).one()
+                self.assertNotEqual(stored_token.token_hash, plaintext_token)
                 self.assertIn(expected_public_message, self._flash_text())
 
                 if status == "queued":
+                    self.assertIsNone(stored_token.revoked_at)
                     route_logger.info.assert_called_once()
                 elif status == "disabled":
+                    self.assertIsNotNone(stored_token.revoked_at)
                     route_logger.warning.assert_called_once()
                 else:
+                    self.assertIsNotNone(stored_token.revoked_at)
                     route_logger.error.assert_called_once()
                 cache.clear()
+
+    def test_new_reset_request_does_not_revoke_older_active_token(self):
+        user = self._save_user("new-reset@example.com")
+
+        with self._request_patches(), patch(
+            "app.routes.reset.send_password_reset_email",
+            return_value="queued",
+        ) as first_send:
+            self.client.post("/forgot-password", data={"email": user.email})
+        first_plaintext = first_send.call_args.args[1]
+
+        with self._request_patches(), patch(
+            "app.routes.reset.send_password_reset_email",
+            return_value="queued",
+        ) as second_send:
+            self.client.post("/forgot-password", data={"email": user.email})
+        second_plaintext = second_send.call_args.args[1]
+
+        first = PasswordResetToken.query.filter_by(
+            token_hash=PasswordResetToken.hash_token(first_plaintext)
+        ).one()
+        second = PasswordResetToken.query.filter_by(
+            token_hash=PasswordResetToken.hash_token(second_plaintext)
+        ).one()
+        self.assertIsNone(first.revoked_at)
+        self.assertIsNone(first.consumed_at)
+        self.assertIsNone(second.revoked_at)
+        self.assertIsNone(second.consumed_at)
+
+    def test_reset_token_is_single_use_and_rotates_session_identity(self):
+        user = self._save_user("single-use-reset@example.com")
+        old_session_id = user.get_id()
+        token_record, plaintext_token = PasswordResetToken.issue_for_user(user)
+        other_token, _ = PasswordResetToken.issue_for_user(user)
+        db.session.commit()
+
+        with self._request_patches(), patch(
+            "app.routes.reset.send_password_changed_email",
+            return_value="queued",
+        ) as send_changed:
+            response = self.client.post(
+                f"/reset-password/{plaintext_token}",
+                data={
+                    "password": "new-secure-password",
+                    "confirm": "new-secure-password",
+                },
+                follow_redirects=False,
+            )
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(urlparse(response.location).path, "/login")
+        db.session.expire_all()
+        stored_user = db.session.get(User, user.id)
+        stored_token = db.session.get(PasswordResetToken, token_record.id)
+        stored_other_token = db.session.get(PasswordResetToken, other_token.id)
+        self.assertTrue(stored_user.check_password("new-secure-password"))
+        self.assertNotEqual(stored_user.get_id(), old_session_id)
+        self.assertIsNone(User.load_from_session_id(old_session_id))
+        self.assertIsNotNone(stored_token.consumed_at)
+        self.assertIsNotNone(stored_other_token.revoked_at)
+        send_changed.assert_called_once_with(stored_user.email, stored_user.username)
+
+        with self._request_patches():
+            replay = self.client.get(
+                f"/reset-password/{plaintext_token}",
+                follow_redirects=False,
+            )
+        self.assertEqual(replay.status_code, 302)
+        self.assertEqual(urlparse(replay.location).path, "/forgot-password")
+
+    def test_expired_and_revoked_reset_tokens_fail_safely(self):
+        user = self._save_user("invalid-reset@example.com")
+        now = datetime.now(timezone.utc)
+        expired_plaintext = "expired-reset-token"
+        revoked_plaintext = "revoked-reset-token"
+        db.session.add_all([
+            PasswordResetToken(
+                user_id=user.id,
+                token_hash=PasswordResetToken.hash_token(expired_plaintext),
+                expires_at=now - timedelta(minutes=1),
+            ),
+            PasswordResetToken(
+                user_id=user.id,
+                token_hash=PasswordResetToken.hash_token(revoked_plaintext),
+                expires_at=now + timedelta(hours=1),
+                revoked_at=now,
+            ),
+        ])
+        db.session.commit()
+
+        for plaintext_token in (expired_plaintext, revoked_plaintext):
+            with self.subTest(token=plaintext_token), self._request_patches():
+                response = self.client.get(
+                    f"/reset-password/{plaintext_token}",
+                    follow_redirects=False,
+                )
+            self.assertEqual(response.status_code, 302)
+            self.assertEqual(urlparse(response.location).path, "/forgot-password")
+
+    def test_reset_commit_failure_preserves_password_and_token(self):
+        user = self._save_user("reset-rollback@example.com")
+        old_session_id = user.get_id()
+        token_record, plaintext_token = PasswordResetToken.issue_for_user(user)
+        db.session.commit()
+
+        with self._request_patches(), patch.object(
+            db.session,
+            "commit",
+            side_effect=SQLAlchemyError("database unavailable"),
+        ), patch(
+            "app.routes.reset.send_password_changed_email"
+        ) as send_changed:
+            response = self.client.post(
+                f"/reset-password/{plaintext_token}",
+                data={
+                    "password": "new-secure-password",
+                    "confirm": "new-secure-password",
+                },
+                follow_redirects=False,
+            )
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(urlparse(response.location).path, "/forgot-password")
+        db.session.expire_all()
+        stored_user = db.session.get(User, user.id)
+        stored_token = db.session.get(PasswordResetToken, token_record.id)
+        self.assertTrue(stored_user.check_password("test-password"))
+        self.assertEqual(stored_user.get_id(), old_session_id)
+        self.assertIsNone(stored_token.consumed_at)
+        self.assertIsNone(stored_token.revoked_at)
+        send_changed.assert_not_called()
+
+    def test_user_delete_removes_reset_tokens_on_sqlite(self):
+        user = self._save_user("delete-reset-user@example.com")
+        PasswordResetToken.issue_for_user(user)
+        db.session.commit()
+        user_id = user.id
+
+        db.session.expire(user, ["password_reset_tokens"])
+        db.session.delete(user)
+        db.session.commit()
+
+        self.assertIsNone(db.session.get(User, user_id))
+        self.assertEqual(
+            PasswordResetToken.query.filter_by(user_id=user_id).count(),
+            0,
+        )
 
     def test_valid_verification_activates_user_and_commits_audit_event(self):
         user = self._save_user("verify-user@example.test")

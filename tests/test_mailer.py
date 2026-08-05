@@ -13,6 +13,7 @@ from app.core.mailer import (
     get_mail_configuration_state,
     render_email,
     send_email,
+    send_password_changed_email,
     send_password_reset_email,
 )
 
@@ -338,6 +339,32 @@ class MailerTests(unittest.TestCase):
             "Please view this email in an HTML-compatible client.",
         )
         self.assertEqual(html, "<p>HTML</p>")
+
+    def test_password_changed_wrapper_returns_dispatch_status(self):
+        self.app.config["SITE_NAME"] = "Example Site"
+        with self.app.app_context(), patch(
+            "app.core.mailer.render_email",
+            return_value=("Text body", "<p>HTML body</p>"),
+        ) as mock_render, patch(
+            "app.core.mailer.send_email",
+            return_value="queued",
+        ) as mock_send:
+            status = send_password_changed_email(
+                "user@example.test",
+                "example-user",
+            )
+
+        self.assertEqual(status, "queued")
+        mock_render.assert_called_once_with(
+            "password_changed",
+            username="example-user",
+        )
+        mock_send.assert_called_once_with(
+            "Password changed for Example Site",
+            "user@example.test",
+            "Text body",
+            "<p>HTML body</p>",
+        )
 
     def test_password_reset_wrapper_returns_dispatch_status(self):
         with (

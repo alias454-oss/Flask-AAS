@@ -13,9 +13,17 @@ from flask_login import LoginManager
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.extensions import bcrypt, cache, db, limiter
-from app.models import AuditActivity, AuditLogin, EnvSettings, MfaRecoveryCode, User
+from app.models import (
+    AuditActivity,
+    AuditLogin,
+    EnvSettings,
+    MfaRecoveryCode,
+    PasswordResetToken,
+    User,
+)
 from app.routes.login import login_bp
 from app.routes.mfa.mfa import mfa_bp
+from app.routes.reset import reset_bp
 
 # Flask-Login 0.6.3 uses datetime.utcnow() while setting remember-cookie
 # expiration. The upstream fix has not yet shipped in a release. Keep this
@@ -53,13 +61,11 @@ class LoginAuditRouteTests(unittest.TestCase):
         limiter.init_app(cls.app)
 
         cls.login_manager = LoginManager(cls.app)
+        cls.login_manager.login_view = 'login.login'
 
         @cls.login_manager.user_loader
-        def load_user(user_id):
-            try:
-                return db.session.get(User, int(user_id))
-            except (TypeError, ValueError):
-                return None
+        def load_user(session_id):
+            return User.load_from_session_id(session_id)
 
         admin_bp = Blueprint('admin', __name__)
 
@@ -75,6 +81,7 @@ class LoginAuditRouteTests(unittest.TestCase):
 
         cls.app.register_blueprint(login_bp)
         cls.app.register_blueprint(mfa_bp)
+        cls.app.register_blueprint(reset_bp)
         cls.app.register_blueprint(admin_bp)
         cls.app.register_blueprint(dashboard_bp)
 
@@ -177,6 +184,18 @@ class LoginAuditRouteTests(unittest.TestCase):
             patch('app.routes.mfa.mfa.render_template', return_value='mfa')
         )
         stack.enter_context(
+            patch('app.routes.reset.audit_activity_enabled', return_value=False)
+        )
+        stack.enter_context(
+            patch('app.routes.reset.render_template', return_value='reset')
+        )
+        stack.enter_context(
+            patch(
+                'app.routes.reset.send_password_changed_email',
+                return_value='disabled',
+            )
+        )
+        stack.enter_context(
             patch('app.routes.mfa.mfa.send_mfa_change_email', return_value='disabled')
         )
         return stack
@@ -196,6 +215,98 @@ class LoginAuditRouteTests(unittest.TestCase):
                 },
                 follow_redirects=False,
             )
+
+    def test_change_password_revokes_sessions_tokens_and_forces_login(self):
+        user = self._save_user(username='password-change-user')
+        old_session_id = user.get_id()
+        reset_token, _ = PasswordResetToken.issue_for_user(user)
+        db.session.commit()
+
+        self._post_login(
+            'password-change-user',
+            'correct-password',
+            remember=True,
+        )
+        remember_cookie_name = self.app.config.get(
+            'REMEMBER_COOKIE_NAME',
+            'remember_token',
+        )
+        self.assertIsNotNone(self.client.get_cookie(remember_cookie_name))
+
+        with self._request_patches(), patch(
+            'app.routes.reset.send_password_changed_email',
+            return_value='queued',
+        ) as send_changed:
+            response = self.client.post(
+                '/change-password',
+                data={
+                    'old_password': 'correct-password',
+                    'password': 'new-secure-password',
+                    'confirm': 'new-secure-password',
+                },
+                follow_redirects=False,
+            )
+
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(response.location.endswith('/login'))
+        db.session.expire_all()
+        stored_user = db.session.get(User, user.id)
+        stored_token = db.session.get(PasswordResetToken, reset_token.id)
+        self.assertTrue(stored_user.check_password('new-secure-password'))
+        self.assertNotEqual(stored_user.get_id(), old_session_id)
+        self.assertIsNone(User.load_from_session_id(old_session_id))
+        self.assertIsNotNone(stored_token.revoked_at)
+        send_changed.assert_called_once_with(stored_user.email, stored_user.username)
+
+        with self.client.session_transaction() as login_session:
+            self.assertNotIn('_user_id', login_session)
+        self.assertIsNone(self.client.get_cookie(remember_cookie_name))
+
+    def test_change_password_commit_failure_preserves_session_and_token(self):
+        user = self._save_user(username='password-change-rollback-user')
+        old_session_id = user.get_id()
+        reset_token, _ = PasswordResetToken.issue_for_user(user)
+        db.session.commit()
+
+        self._post_login(
+            'password-change-rollback-user',
+            'correct-password',
+            remember=True,
+        )
+        remember_cookie_name = self.app.config.get(
+            'REMEMBER_COOKIE_NAME',
+            'remember_token',
+        )
+
+        with self._request_patches(), patch.object(
+            db.session,
+            'commit',
+            side_effect=SQLAlchemyError('database unavailable'),
+        ), patch(
+            'app.routes.reset.send_password_changed_email'
+        ) as send_changed:
+            response = self.client.post(
+                '/change-password',
+                data={
+                    'old_password': 'correct-password',
+                    'password': 'new-secure-password',
+                    'confirm': 'new-secure-password',
+                },
+                follow_redirects=False,
+            )
+
+        self.assertEqual(response.status_code, 200)
+        db.session.expire_all()
+        stored_user = db.session.get(User, user.id)
+        stored_token = db.session.get(PasswordResetToken, reset_token.id)
+        self.assertTrue(stored_user.check_password('correct-password'))
+        self.assertEqual(stored_user.get_id(), old_session_id)
+        self.assertIsNone(stored_token.revoked_at)
+        send_changed.assert_not_called()
+
+        with self.client.session_transaction() as login_session:
+            self.assertEqual(login_session.get('_user_id'), old_session_id)
+        self.assertIsNotNone(self.client.get_cookie(remember_cookie_name))
 
     def test_nonexistent_user_and_wrong_password_share_failure_reason(self):
         self._save_user(username='known-user')
