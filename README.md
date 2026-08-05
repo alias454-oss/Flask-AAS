@@ -38,6 +38,8 @@ The base is intentionally designed to remain easy to run locally. Direct HTTP, g
 - Secure login with **Flask-Login**
 - Password hashing via **bcrypt**
 - Active session tracking
+- Sliding authenticated-session inactivity timeout with remember-cookie deletion on expiry
+- Remember-cookie-restored sessions begin a new non-fresh inactivity window
 - Account state flags:
   - `activated` → Email verification status
   - `approved` → Optional admin review
@@ -294,7 +296,7 @@ Run the complete regression suite with:
 python -m unittest discover -s tests -p 'test_*.py'
 ```
 
-The current suite contains 95 tests. Tests use SQLite by default. Set `AUDIT_TEST_DATABASE_URI` to a disposable PostgreSQL database URI for the audit suite, or `ACCOUNT_TEST_DATABASE_URI` for the account and password-reset lifecycle suite, to exercise the same portable behavior against PostgreSQL.
+The current suite contains 104 tests. Tests use SQLite by default. Set `AUDIT_TEST_DATABASE_URI` to a disposable PostgreSQL database URI for the audit suite, or `ACCOUNT_TEST_DATABASE_URI` for the account and password-reset lifecycle suite, to exercise the same portable behavior against PostgreSQL.
 
 ### Build and Run
 

@@ -23,6 +23,7 @@ The application does not require internal certificates for ordinary development 
 | Secure cookies | Off for HTTP | Match proxy scheme | On when external scheme is HTTPS |
 | `HttpOnly` | On | On | On |
 | `SameSite` | `Lax` by default | `Lax` by default | Policy-defined, normally `Lax` |
+| Session inactivity | Local default or disabled deliberately | Same | Explicit timeout appropriate to the application |
 | HSTS | Off | Off unless deliberately testing HTTPS | On only at an HTTPS boundary |
 | `ProxyFix` | Off | Explicit hop count | Explicit hop count matching topology |
 | Host validation | Optional localhost allowance | Local host allowlist | Required allowlist or canonical host |
@@ -77,6 +78,16 @@ When `PROXY_HOPS` is greater than zero, the configured hop count enables `ProxyF
 `HttpOnly` and a reasonable `SameSite` policy should remain enabled in development.
 
 HSTS must not be sent by a direct HTTP development server. Browsers can cache HSTS state and make local testing unnecessarily difficult.
+
+## Session inactivity
+
+`SESSION_INACTIVITY_TIMEOUT_SECONDS` defines a sliding inactivity window for an authenticated browser session. The default is 900 seconds. A value of `0` disables this control.
+
+The session stores a numeric Unix timestamp and refreshes it on authenticated application requests. Static asset requests do not extend the window. At the timeout boundary, Flask-AAS logs out the user, clears transient MFA and other session state, and requests deletion of the Flask-Login remember cookie.
+
+A session restored from a valid remember cookie has no prior browser-session activity timestamp. It begins a new inactivity window and remains non-fresh, so existing fresh-login and MFA reauthentication controls continue to protect sensitive operations. Pre-authentication MFA state is not treated as an authenticated session and remains governed by its own expiry and attempt limits.
+
+This control applies to the current browser session. Enforcing inactivity across a browser that has discarded its session cookie but still holds an otherwise valid remember cookie requires the future persisted session-management work tracked separately.
 
 ## Shared state
 
