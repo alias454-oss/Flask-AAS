@@ -41,9 +41,9 @@
     </div>
 
     {% if env.use_captcha %}
-      <div class="form-group">
-        <img src="{{ url_for('captcha.captcha_image') }}" alt="CAPTCHA" id="captcha-image" />
-        <button class="btn btn-secondary" type="button" onclick="document.getElementById('captcha-image').src='{{ url_for('captcha.captcha_image') }}?'+Date.now();">Reload CAPTCHA</button>
+     <div class="form-group captcha-row">
+        <img src="{{ url_for('captcha.captcha_image') }}" alt="CAPTCHA Image" id="captcha-image" class="captcha-image" />
+        <button id="reload-captcha" class="captcha-reload" type="button">Reload CAPTCHA</button>
       </div>
       <div class="form-group">
         {{ form.captcha.label }} {{ form.captcha(class_="form-control") }}
@@ -51,6 +51,11 @@
           <span class="text-danger">{{ error }}</span>
         {% endfor %}
       </div>
+      <script nonce="{{ nonce }}">
+      document.getElementById('reload-captcha').addEventListener('click', function () {
+        document.getElementById('captcha-image').src = "{{ url_for('captcha.captcha_image') }}?" + Date.now();
+      });
+      </script>
     {% endif %}
 
     <div class="form-group">

@@ -257,6 +257,7 @@ input[type="reset"],
   min-width: 150px;
   padding: 0.5rem 1rem;
   margin-top: 5px;
+  margin-right: 5px;
   font-weight: 700;
   color: #fff;
   text-transform: uppercase;
@@ -320,6 +321,53 @@ textarea {
   top: -9999px !important;
   height: 1px; width: 1px;
   overflow: hidden;
+}
+
+.captcha-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.captcha-image {
+  display: block;
+  width: 160px;
+  height: 50px;
+  border: 1px solid #276D0A;
+}
+
+.captcha-reload {
+  appearance: none;
+  padding: 0.3rem 0.55rem;
+  font-family: inherit;
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1;
+  color: #2f3742;
+  cursor: pointer;
+  background: #eef0f3;
+  border: 1px solid #8b929c;
+  border-radius: 4px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+  transition:
+    background-color 0.15s ease,
+    border-color 0.15s ease,
+    transform 0.05s ease;
+}
+
+.captcha-reload:hover {
+  background: #dde1e6;
+  border-color: #606975;
+}
+
+.captcha-reload:active {
+  transform: translateY(1px);
+}
+
+.captcha-reload:focus-visible {
+  outline: 2px solid #6495ed;
+  outline-offset: 2px;
 }
 
 /* Sidebar */
