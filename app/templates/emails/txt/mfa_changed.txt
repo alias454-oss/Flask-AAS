@@ -1,0 +1,7 @@
+Hello {{ username }},
+
+{{ action }} for your {{ site_name }} account.
+
+If you did not make this change, contact the site administrator immediately.
+
+– The {{ site_name }} Team

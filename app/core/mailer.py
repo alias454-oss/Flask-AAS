@@ -613,3 +613,19 @@ def send_password_reset_email(to_email: str, token: str) -> MailStatus:
         reset_url=reset_url,
     )
     return send_email(subject, to_email, text, html)
+
+
+def send_mfa_change_email(
+    to_email: str,
+    username: str,
+    action: str,
+) -> MailStatus:
+    site_name = current_app.config.get("SITE_NAME", "Flask-AAS")
+    subject = f"MFA security change for {site_name}"
+
+    text, html = render_email(
+        "mfa_changed",
+        username=username,
+        action=action,
+    )
+    return send_email(subject, to_email, text, html)

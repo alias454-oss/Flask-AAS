@@ -55,12 +55,7 @@ class EnvSettings(db.Model):
     use_smtp = db.Column(db.Boolean, nullable=False, server_default=db.false())
     smtp_host = db.Column(db.String(255))
     smtp_port = db.Column(db.Integer, nullable=True)
-    smtp_security = db.Column(
-        db.String(10),
-        nullable=False,
-        default="starttls",
-        server_default="starttls",
-    )
+    smtp_security = db.Column(db.String(10), nullable=False, default="starttls", server_default="starttls")
     smtp_user = db.Column(db.String(255))
     smtp_pass = db.Column(db.Text)
     smtp_default_sender = db.Column(db.String(255))

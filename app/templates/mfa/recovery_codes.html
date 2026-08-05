@@ -1,0 +1,88 @@
+<!-- templates/mfa/recovery_codes.html -->
+{% extends tpl_path ~ "/base.html" %}
+
+{% block header %}
+  {% include tpl_path ~ "/header.html" %}
+{% endblock %}
+
+{% block content %}
+  <h2>MFA Recovery Codes</h2>
+  {% if recovery_codes %}
+    <p>Save these recovery codes now. Each code can be used once and they will not be shown again.</p>
+    <ul id="mfa-recovery-codes" data-site-name="{{ env.site_name }}">
+      {% for code in recovery_codes %}
+        <li><code>{{ code }}</code></li>
+      {% endfor %}
+    </ul>
+    <p>
+      <button type="button" id="copy-recovery-codes" class="btn btn-secondary">Copy Codes</button>
+      <button type="button" id="download-recovery-codes" class="btn btn-secondary">Download Codes</button>
+    </p>
+  {% else %}
+    <p>Recovery codes are only displayed immediately after generation.</p>
+  {% endif %}
+
+  <form method="post" action="{{ url_for('mfa.mfa_recovery_codes') }}" novalidate>
+    {{ form.hidden_tag() }}
+    <p>Generating new recovery codes invalidates every existing recovery code.</p>
+    {{ form.submit(class_='btn btn-primary') }}
+  </form>
+
+
+{% if recovery_codes %}
+<script nonce="{{ nonce }}">
+  document.addEventListener("DOMContentLoaded", function() {
+    const codeList = document.getElementById("mfa-recovery-codes");
+    const copyButton = document.getElementById("copy-recovery-codes");
+    const downloadButton = document.getElementById("download-recovery-codes");
+    const codes = Array.from(codeList.querySelectorAll("code"), function(element) {
+      return element.textContent.trim();
+    });
+    const siteName = codeList.dataset.siteName || "";
+    const safeSiteName = siteName
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "");
+    const filename = (safeSiteName ? safeSiteName + "-" : "") + "recovery-codes.txt";
+    const contents = [
+      siteName ? siteName + " MFA Recovery Codes" : "MFA Recovery Codes",
+      "",
+      ...codes,
+      "",
+      "Each code can be used once. Store this file securely."
+    ].join("\n");
+
+    copyButton.addEventListener("click", function() {
+      if (!navigator.clipboard) {
+        copyButton.textContent = "Copy unavailable";
+        return;
+      }
+
+      navigator.clipboard.writeText(codes.join("\n")).then(function() {
+        copyButton.textContent = "Copied";
+      }).catch(function() {
+        copyButton.textContent = "Copy failed";
+      });
+    });
+
+    downloadButton.addEventListener("click", function() {
+      const blob = new Blob([contents], {type: "text/plain;charset=utf-8"});
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    });
+  });
+</script>
+{% endif %}
+
+{% endblock %}
+
+{% block footer %}
+  {% include tpl_path ~ "/footer.html" %}
+{% endblock %}

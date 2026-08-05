@@ -31,6 +31,9 @@ class User(db.Model):
     activated = db.Column(db.Boolean, nullable=False, server_default=db.false())
     approved = db.Column(db.Boolean, nullable=False, server_default=db.false())
     otp_secret = db.Column(db.String(32), nullable=True)
+    pending_otp_secret = db.Column(db.String(32), nullable=True)
+    pending_otp_created_at = db.Column(db.DateTime(timezone=True), nullable=True)
+    last_totp_counter = db.Column(db.BigInteger, nullable=True)
     mfa_enabled = db.Column(db.Boolean, nullable=False, server_default=db.false())
 
     notes = db.Column(db.Text, nullable=True)
@@ -41,6 +44,10 @@ class User(db.Model):
     updated_at = db.Column(db.DateTime(timezone=True), onupdate=db.func.now())
 
     roles = db.relationship('Role', secondary='user_roles', back_populates='users')
+    mfa_recovery_codes = db.relationship(
+        'MfaRecoveryCode',
+        cascade='all, delete-orphan',
+    )
 
     def __repr__(self):
         return f"<User id={self.id} username={self.username} email={self.email}>"
@@ -64,17 +71,21 @@ class User(db.Model):
         self.ip_address = str(ip_obj)
 
     @property
-    def is_active(self):
+    def login_eligibility_failure(self):
         settings = EnvSettings.get_cached_instance()  # Assuming you have only one row
         # Default to enabled if no settings found
         use_verify_email = settings.use_verify_email if settings else 1
         use_user_approval = settings.use_user_approval if settings else 1
 
         if use_verify_email and not self.activated:
-            return False
+            return "unverified"
         if use_user_approval and not self.approved:
-            return False
-        return True
+            return "unapproved"
+        return None
+
+    @property
+    def is_active(self):
+        return self.login_eligibility_failure is None
 
     @property
     def is_authenticated(self):

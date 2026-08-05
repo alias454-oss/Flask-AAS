@@ -4,7 +4,7 @@ import time
 from datetime import datetime, timezone
 
 from flask import Blueprint, render_template, redirect, url_for, flash, request, session
-from flask_login import login_user
+from flask_login import login_user, logout_user
 from flask_wtf import FlaskForm
 from wtforms import StringField, BooleanField, PasswordField, SubmitField
 from wtforms.validators import DataRequired
@@ -24,8 +24,6 @@ from app.core.trackers import (
     LOGIN_FAILURE_INVALID_CREDENTIALS,
     LOGIN_FAILURE_LOCKED_OUT,
     LOGIN_FAILURE_REJECTED,
-    LOGIN_FAILURE_UNAPPROVED,
-    LOGIN_FAILURE_UNVERIFIED,
     audit_activity_enabled,
     audit_login_enabled,
     current_route,
@@ -125,28 +123,19 @@ def login():
         track_lockout_attempts(username, ip)
         return render_template('login.html', form=form, **meta)
 
-    if env.use_verify_email and not user.activated:
+    failure_reason = user.login_eligibility_failure
+    if failure_reason:
         _log_login_result(
             username,
             ip,
             ua,
             ref,
             success=False,
-            failure_reason=LOGIN_FAILURE_UNVERIFIED,
+            failure_reason=failure_reason,
         )
-        flash("Please verify your email before logging in.", "warning")
-        return redirect(url_for('login.login'))
-
-    if env.use_user_approval and not user.approved:
-        _log_login_result(
-            username,
-            ip,
-            ua,
-            ref,
-            success=False,
-            failure_reason=LOGIN_FAILURE_UNAPPROVED,
-        )
-        flash("Your account is awaiting approval.", "warning")
+        logout_user()
+        session.clear()
+        flash("This account is not currently available for sign-in.", "warning")
         return redirect(url_for('login.login'))
 
     session.clear()  # Prevent session fixation before authentication continues.

@@ -6,13 +6,13 @@
 {% endblock %}
 
 {% block content %}
-  <h2>Enable Two-Factor Authentication</h2>
+  <h2>{{ heading|default("Enable Two-Factor Authentication") }}</h2>
   <p>Scan the QR code below with your authenticator app (Google Authenticator, Authy, etc.):</p>
 
 
-  <form method="POST" action="{{ url_for('mfa.mfa_setup') }}" novalidate>
+  <form method="POST" action="{{ form_action|default(url_for('mfa.mfa_setup')) }}" novalidate>
     <fieldset>
-      <legend>Setup MFA Token</legend>
+      <legend>{{ legend|default("Setup MFA Token") }}</legend>
         {{ form.hidden_tag() }}
         <img src="data:image/png;base64,{{ qr_base64 }}" alt="QR Code" />
 
