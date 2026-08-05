@@ -80,6 +80,7 @@ class MailConfigurationRouteTests(unittest.TestCase):
         with cls.app.app_context():
             db.session.remove()
             db.drop_all()
+            db.engine.dispose()
         cls.temp_dir.cleanup()
 
     def setUp(self):
