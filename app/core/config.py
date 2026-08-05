@@ -78,6 +78,13 @@ class Settings(BaseSettings):
     SESSION_COOKIE_HTTPONLY: Optional[bool] = True
     SESSION_COOKIE_SAMESITE: Optional[str] = 'Lax'
     PERMANENT_SESSION_LIFETIME: timedelta = timedelta(minutes=30)
+    SESSION_INACTIVITY_TIMEOUT_SECONDS: int = 900
+
+    @field_validator('SESSION_INACTIVITY_TIMEOUT_SECONDS')
+    def validate_session_inactivity_timeout(cls, value):
+        if value is not None and value < 0:
+            raise ValueError('SESSION_INACTIVITY_TIMEOUT_SECONDS must be zero or greater')
+        return value
 
     # --- Online tracking ---
     EXPIRE_INTERVAL_SECONDS: Optional[int] = 900  # None disables expiration

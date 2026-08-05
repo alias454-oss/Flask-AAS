@@ -3,10 +3,10 @@ import logging
 import os
 import base64
 import time
-from flask import Flask, g, current_app, flash, request, session, redirect, url_for
+from flask import Flask, g, current_app, request, session, redirect, url_for
 from flask_login import LoginManager, current_user
 from werkzeug.middleware.proxy_fix import ProxyFix
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 from sqlalchemy.exc import OperationalError, ProgrammingError
 import minify_html
 
@@ -14,6 +14,7 @@ from app.core.cache import get_cached_env_settings
 from app.core.extensions import db, migrate, bcrypt, csrf, cache, limiter, mail
 from app.routes import register_error_handlers, register_all_routes
 from app.core.config import settings
+from app.core.inactivity import enforce_inactivity_timeout
 from app.core.trackers import track_online_user, expire_stale_online_users, visitor_tracking_enabled
 from app.models.user import EnvSettings, User
 
@@ -84,18 +85,9 @@ def create_app():
     with app.app_context():
         update_log_level()
 
-    @app.before_request
-    def enforce_inactivity_timeout():
-        if 'user_id' in session:
-            now = datetime.now(timezone.utc)
-            last_active_str = session.get('last_active')
-            if last_active_str:
-                last_active = datetime.strptime(last_active_str, "%Y-%m-%d %H:%M:%S")
-                if now - last_active > timedelta(minutes=15):
-                    session.clear()
-                    flash('You have been logged out due to inactivity.', 'warning')
-                    return redirect(url_for('login.login'))
-            session['last_active'] = now.strftime("%Y-%m-%d %H:%M:%S")
+    # Apply a sliding inactivity window to authenticated browser sessions.
+    # Pre-authentication MFA state remains governed by its own expiry controls.
+    app.before_request(enforce_inactivity_timeout)
 
     @app.before_request
     def start_timer():

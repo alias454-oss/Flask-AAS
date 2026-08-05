@@ -407,6 +407,8 @@ class LoginAuditRouteTests(unittest.TestCase):
         db.session.expire_all()
         stored_user = db.session.get(User, user.id)
         self.assertIsNotNone(stored_user.last_active)
+        with self.client.session_transaction() as login_session:
+            self.assertIsInstance(login_session.get('last_activity_at'), float)
 
     def test_mfa_setup_marks_current_session_verified(self):
         user = self._save_user(username='mfa-setup-user')
@@ -477,6 +479,8 @@ class LoginAuditRouteTests(unittest.TestCase):
         row = AuditLogin.query.one()
         self.assertTrue(row.success)
         self.assertIsNone(row.failure_reason)
+        with self.client.session_transaction() as login_session:
+            self.assertIsInstance(login_session.get('last_activity_at'), float)
 
     def test_mfa_rechecks_unverified_account_before_authentication(self):
         secret = pyotp.random_base32()

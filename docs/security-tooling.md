@@ -76,7 +76,23 @@ The 2026-08-05 password-reset checkpoint established these invariants:
 - password-change notification is queued only after the password transaction commits;
 - a failed database commit preserves the old password, authentication version, and token usability.
 
-Focused password-reset coverage is maintained in `tests.test_email_lifecycle` and `tests.test_login_audit`. The complete regression suite contains 95 tests. `ACCOUNT_TEST_DATABASE_URI` may point those lifecycle tests at a disposable PostgreSQL database.
+Focused password-reset coverage is maintained in `tests.test_email_lifecycle` and `tests.test_login_audit`. `ACCOUNT_TEST_DATABASE_URI` may point those lifecycle tests at a disposable PostgreSQL database.
+
+## Current inactivity checkpoint
+
+The 2026-08-05 inactivity checkpoint established these invariants:
+
+- authenticated browser sessions use a numeric, sliding inactivity timestamp rather than a nonexistent custom user-session key;
+- the timeout is configurable through `SESSION_INACTIVITY_TIMEOUT_SECONDS`, with `0` disabling it explicitly;
+- the exact timeout boundary forces a complete login and deletes the remember cookie;
+- successful primary and MFA logins seed the inactivity window immediately;
+- remembered-session restoration starts a new non-fresh inactivity window;
+- missing, malformed, legacy, or future activity timestamps recover into a new bounded window rather than creating an indefinite session;
+- static asset requests do not refresh authenticated activity;
+- pre-authentication MFA state remains governed by its separate expiry and attempt limits;
+- inactivity expiry clears authenticated, transient MFA, and other browser-session state.
+
+Focused inactivity coverage is maintained in `tests.test_inactivity`, with login integration assertions in `tests.test_login_audit`. The complete regression suite contains 104 tests.
 
 ## Recommended baseline
 
