@@ -96,7 +96,7 @@ def _prepare_activity_values(user_id, action, target, extra_data):
         raise ValueError("target must not exceed 255 characters.")
 
     if user_id is None and current_user.is_authenticated:
-        user_id = current_user.get_id()
+        user_id = current_user.id
 
     return {
         'user_id': _normalize_user_id(user_id),

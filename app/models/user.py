@@ -11,6 +11,12 @@ class User(db.Model):
     username = db.Column(db.String(60), nullable=False, unique=True)
     hashed_password = db.Column(db.String(128), nullable=False)
     email = db.Column(db.String(255), unique=True, index=True, nullable=False)
+    auth_version = db.Column(
+        db.Integer,
+        nullable=False,
+        default=0,
+        server_default="0",
+    )
 
     company_name = db.Column(db.String(255), nullable=True)
     first_name = db.Column(db.String(100), nullable=True)
@@ -46,6 +52,11 @@ class User(db.Model):
     roles = db.relationship('Role', secondary='user_roles', back_populates='users')
     mfa_recovery_codes = db.relationship(
         'MfaRecoveryCode',
+        cascade='all, delete-orphan',
+    )
+    password_reset_tokens = db.relationship(
+        'PasswordResetToken',
+        back_populates='user',
         cascade='all, delete-orphan',
     )
 
@@ -101,8 +112,34 @@ class User(db.Model):
         # False for real users
         return False
 
+    def rotate_authentication_version(self):
+        """Invalidate every earlier Flask-Login session identity."""
+        self.auth_version = (self.auth_version or 0) + 1
+        return self.auth_version
+
+    @classmethod
+    def load_from_session_id(cls, session_id):
+        """Resolve a versioned Flask-Login identity only while it is current."""
+        if not session_id:
+            return None
+
+        raw_user_id, separator, raw_version = str(session_id).partition(":")
+        if not separator:
+            return None
+
+        try:
+            user_id = int(raw_user_id)
+            auth_version = int(raw_version)
+        except (TypeError, ValueError):
+            return None
+
+        user = db.session.get(cls, user_id)
+        if user is None or user.auth_version != auth_version:
+            return None
+        return user
+
     def get_id(self):
-        return str(self.id)
+        return f"{self.id}:{self.auth_version}"
 
     def has_role(self, role_name):
         return any(role.name == role_name for role in self.roles)

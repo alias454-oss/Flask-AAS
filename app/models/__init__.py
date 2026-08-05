@@ -10,5 +10,6 @@ from .env_settings import EnvSettings
 from .audit_activity import AuditActivity
 from .audit_login import AuditLogin
 from .mfa_recovery_code import MfaRecoveryCode
+from .password_reset_token import PasswordResetToken
 
-__all__ = ["User", "Role", "UserRole", "OnlineUser", "State", "Country", "Zone", "EnvSettings", "AuditActivity", "AuditLogin", "MfaRecoveryCode"]
+__all__ = ["User", "Role", "UserRole", "OnlineUser", "State", "Country", "Zone", "EnvSettings", "AuditActivity", "AuditLogin", "MfaRecoveryCode", "PasswordResetToken"]

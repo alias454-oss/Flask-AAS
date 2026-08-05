@@ -188,12 +188,8 @@ def create_app():
 
     # User loader for Flask-Login
     @login_manager.user_loader
-    def load_user(user_id):
-        try:
-            return db.session.get(User, int(user_id))
-        except (ValueError, TypeError):
-            # Handles invalid user_id conversion or bad input
-            return None
+    def load_user(session_id):
+        return User.load_from_session_id(session_id)
 
     # Helper for building error responses
     register_error_handlers(app)
