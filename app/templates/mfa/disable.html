@@ -12,8 +12,25 @@
         <legend>Disable MFA Token</legend>
           {{ form.hidden_tag() }}
 
+          {% if mfa_fresh %}
+            <p>Enter a current authenticator code or an unused recovery code to disable MFA.</p>
+            <p>If you just completed MFA, wait for the next authenticator code or use an unused recovery code.</p>
+            <div class="form-group">
+              {{ form.code.label(class_='required') }} {{ form.code(class_='form-control') }}
+              {% if form.code.errors %}
+                <span class="text-danger">{{ form.code.errors[0] }}</span>
+              {% endif %}
+            </div>
+          {% else %}
+            <p>Verify MFA again before disabling it. The code entered during verification will authorize this change.</p>
+          {% endif %}
+
           <div class="form-group">
-            {{ form.submit(class_='btn btn-primary') }}
+            {% if mfa_fresh %}
+              {{ form.submit(class_='btn btn-primary') }}
+            {% else %}
+              <button type="submit" class="btn btn-primary">Verify MFA and Disable</button>
+            {% endif %}
           </div>
       </fieldset>
     </form>

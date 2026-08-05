@@ -14,6 +14,10 @@
 
           <div class="form-group">
             {{ form.code.label(class_='required') }} {{ form.code(class_='form-control') }}
+            <p>Enter a code from your authenticator app or one of your recovery codes.</p>
+            {% if show_recovery_hint %}
+              <p class="warning">Authenticator codes failing? Try an unused recovery code.</p>
+            {% endif %}
             {% if form.code.errors %}
               <span class="text-danger">{{ form.code.errors[0] }}</span>
             {% endif %}

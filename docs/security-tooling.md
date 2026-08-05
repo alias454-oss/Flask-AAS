@@ -44,7 +44,22 @@ The 2026-08-04 email checkpoint established these invariants:
 - UI-managed SMTP passwords are Fernet-encrypted with an external key, are not rendered back into forms, and are excluded from audit metadata;
 - the background worker receives an immutable resolved configuration rather than mutating global application configuration.
 
-Focused regression coverage is maintained in `tests.test_mailer`, `tests.test_mail_config`, and `tests.test_email_lifecycle`. The combined email, login, and audit checkpoint currently runs 69 tests.
+Focused regression coverage is maintained in `tests.test_mailer`, `tests.test_mail_config`, and `tests.test_email_lifecycle`. The combined email, login, and audit checkpoint runs 69 tests.
+
+## Current MFA checkpoint
+
+The 2026-08-05 MFA checkpoint established these invariants:
+
+- MFA enrollment, authenticator replacement, and disable require fresh authentication;
+- remembered or otherwise non-fresh sessions must complete MFA reauthentication before changing MFA state;
+- disabling an enabled authenticator requires the current TOTP until recovery-code support is completed;
+- transient setup, verification, reauthentication, and disable state is bounded by timestamps and attempt limits;
+- terminal MFA lockout forces a complete login and deletes the remember cookie;
+- the accepted TOTP counter is persisted and an already accepted code is rejected;
+- final MFA-login persistence failure does not leave an accepted login session;
+- replay regression tests isolate MFA matching behavior without replacing the process-wide clock.
+
+Focused MFA coverage is maintained in `tests.test_login_audit`. The complete regression suite contains 87 tests.
 
 ## Recommended baseline
 
@@ -101,6 +116,9 @@ The security regression suite is the most important control in this list. Static
 
 - Every submitted login produces exactly one final `AuditLogin` outcome.
 - Successful login rows are written only after Flask-Login accepts the user.
+- Sensitive MFA state changes require fresh authentication.
+- Forced full-login paths delete remembered authentication state.
+- An accepted TOTP counter cannot be replayed.
 - Token-bearing routes declare redaction and no concrete token appears anywhere in the stored audit row.
 - No concrete reset or verification token appears in audit rows.
 - Audit helpers do not call transaction-ending methods.

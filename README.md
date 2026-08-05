@@ -47,6 +47,15 @@ The base is intentionally designed to remain easy to run locally. Direct HTTP, g
 - Single-user lockdown mode
 - Global CSRF protection
 
+### Multi-Factor Authentication
+- TOTP enrollment and authenticator replacement
+- Fresh reauthentication before MFA setup, replacement, or disable
+- Current-TOTP confirmation before disabling an enabled authenticator
+- Bounded pending-MFA state and lockout handling
+- Forced complete login with remember-cookie deletion after terminal MFA failures
+- Persistent TOTP-counter replay protection
+- Recovery-code completion remains tracked separately
+
 ### Email Verification & Outbound Mail
 - Optional email verification using the persisted `activated` account state
 - Idempotent verification links with safe handling for malformed, expired, missing-account, and already-used tokens
@@ -260,17 +269,24 @@ python -m unittest -v \
   tests.test_email_lifecycle
 ```
 
-### Focused Audit Validation
+### Focused Audit and MFA Validation
 
-Run the audit transaction, metadata-redaction, tracking, and login-outcome regression suites with:
+Run the audit transaction, metadata-redaction, tracking, login-outcome, and MFA lifecycle regression suites with:
 
 ```bash
-python -m unittest -v \
-  tests.test_audit_tracking \
-  tests.test_login_audit
+python -m unittest discover \
+  -s tests \
+  -p 'test_login_audit.py' \
+  -v
 ```
 
-The tests use SQLite by default. Set `AUDIT_TEST_DATABASE_URI` to a disposable PostgreSQL database URI to exercise the same portable audit behavior against PostgreSQL.
+Run the complete regression suite with:
+
+```bash
+python -m unittest discover -s tests -p 'test_*.py'
+```
+
+The current suite contains 87 tests. Tests use SQLite by default. Set `AUDIT_TEST_DATABASE_URI` to a disposable PostgreSQL database URI to exercise the same portable audit behavior against PostgreSQL.
 
 ### Build and Run
 
