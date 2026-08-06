@@ -12,41 +12,46 @@
   <form method="POST" novalidate>
     {{ form.hidden_tag() }}
 
-    <div class="form-group">
-      {{ form.name.label(class_="required") }} {{ form.name(class_="form-control") }}
-      {% for error in form.name.errors %}
-        <span class="text-danger">{{ error }}</span>
-      {% endfor %}
-    </div>
+    <fieldset>
+      <legend>Contact Details</legend>
+      <div class="form-group">
+        {{ form.name.label(class_="required") }} {{ form.name(class_="form-control") }}
+        {% for error in form.name.errors %}
+          <span class="text-danger">{{ error }}</span>
+        {% endfor %}
+      </div>
 
-    <div class="form-group">
-      {{ form.email.label(class_="required") }} {{ form.email(class_="form-control") }}
-      {% for error in form.email.errors %}
-        <span class="text-danger">{{ error }}</span>
-      {% endfor %}
-    </div>
+      <div class="form-group">
+        {{ form.email.label(class_="required") }} {{ form.email(class_="form-control") }}
+        {% for error in form.email.errors %}
+          <span class="text-danger">{{ error }}</span>
+        {% endfor %}
+      </div>
 
-    <div class="form-group">
-      {{ form.subject.label }} {{ form.subject(class_="form-control") }}
-      {% for error in form.subject.errors %}
-        <span class="text-danger">{{ error }}</span>
-      {% endfor %}
-    </div>
+      <div class="form-group">
+        {{ form.subject.label }} {{ form.subject(class_="form-control") }}
+        {% for error in form.subject.errors %}
+          <span class="text-danger">{{ error }}</span>
+        {% endfor %}
+      </div>
 
-    <div class="form-group">
-      {{ form.message.label(class_="required") }} {{ form.message(rows=6, class_="form-control") }}
-      {% for error in form.message.errors %}
-        <span class="text-danger">{{ error }}</span>
-      {% endfor %}
-    </div>
+      <div class="form-group">
+        {{ form.message.label(class_="required") }} {{ form.message(rows=6, class_="form-control") }}
+        {% for error in form.message.errors %}
+          <span class="text-danger">{{ error }}</span>
+        {% endfor %}
+      </div>
+    </fieldset>
 
     {% if env.use_captcha %}
-     <div class="form-group captcha-row">
+    <fieldset>
+      <legend>Verification</legend>
+      <div class="form-group captcha-row">
         <img src="{{ url_for('captcha.captcha_image') }}" alt="CAPTCHA Image" id="captcha-image" class="captcha-image" />
         <button id="reload-captcha" class="captcha-reload" type="button">Reload CAPTCHA</button>
       </div>
       <div class="form-group">
-        {{ form.captcha.label }} {{ form.captcha(class_="form-control") }}
+        {{ form.captcha.label(class_="required") }} {{ form.captcha(class_="form-control") }}
         {% for error in form.captcha.errors %}
           <span class="text-danger">{{ error }}</span>
         {% endfor %}
@@ -56,12 +61,13 @@
         document.getElementById('captcha-image').src = "{{ url_for('captcha.captcha_image') }}?" + Date.now();
       });
       </script>
+    </fieldset>
     {% endif %}
 
     <div class="form-group">
       {{ form.submit(class_="btn btn-primary") }}
     </div>
-    <input type="text" name="nobot_check" style="display:none">
+    <input type="text" name="nobot_check" class="hidden-field" autocomplete="off" tabindex="-1" />
   </form>
 {% endblock %}
 

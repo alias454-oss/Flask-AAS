@@ -41,6 +41,28 @@
       <div class="form-group">
         {{ form.admin_email.label }} {{ form.admin_email(class_="form-control") }}
       </div>
+      <div class="checkbox-inline">
+        <label for="{{ form.contact_enabled.id }}">
+          {{ form.contact_enabled() }}
+          {{ form.contact_enabled.label.text }}
+        </label>
+        {% for error in form.contact_enabled.errors %}
+          <div class="form-error">{{ error }}</div>
+        {% endfor %}
+      </div>
+      <p>
+        The contact form requires Admin Email and an available outbound email
+        configuration.
+      </p>
+      {% if env.contact_enabled and not contact_available %}
+        <p class="form-error">
+          The contact form is configured as enabled but is currently unavailable.
+        </p>
+      {% elif contact_available %}
+        <p>The contact form is currently available.</p>
+      {% else %}
+        <p>The contact form is disabled.</p>
+      {% endif %}
     </fieldset>
 
     <fieldset>

@@ -206,6 +206,8 @@ class MailConfigurationRouteTests(unittest.TestCase):
             data["use_smtp"] = "y"
         if self.settings.use_verify_email:
             data["use_verify_email"] = "y"
+        if self.settings.contact_enabled:
+            data["contact_enabled"] = "y"
         data.update(overrides)
         return data
 
@@ -238,6 +240,71 @@ class MailConfigurationRouteTests(unittest.TestCase):
             MAIL_DEFAULT_SENDER=None,
         )
         self.assertFalse(initial_outbound_email_enabled())
+
+    def test_contact_form_defaults_disabled(self):
+        self.assertFalse(self.settings.contact_enabled)
+
+    def test_contact_form_can_be_enabled_with_admin_email_and_mail_transport(self):
+        response, _, _ = self._post(
+            self._form_data(contact_enabled="y")
+        )
+
+        self.assertEqual(response.status_code, 302)
+        db.session.refresh(self.settings)
+        self.assertTrue(self.settings.contact_enabled)
+
+    def test_contact_form_cannot_be_enabled_without_admin_email(self):
+        response, render, _ = self._post(
+            self._form_data(
+                contact_enabled="y",
+                admin_email="",
+            )
+        )
+
+        self.assertEqual(response.status_code, 200)
+        form = render.call_args.kwargs["form"]
+        self.assertIn(
+            "requires Admin Email",
+            " ".join(form.contact_enabled.errors),
+        )
+        db.session.refresh(self.settings)
+        self.assertFalse(self.settings.contact_enabled)
+
+    def test_contact_form_cannot_be_enabled_without_outbound_email(self):
+        data = self._form_data(contact_enabled="y")
+        data.pop("use_smtp", None)
+
+        response, render, _ = self._post(data)
+
+        self.assertEqual(response.status_code, 200)
+        form = render.call_args.kwargs["form"]
+        self.assertIn(
+            "requires outbound email",
+            " ".join(form.contact_enabled.errors),
+        )
+        db.session.refresh(self.settings)
+        self.assertFalse(self.settings.contact_enabled)
+
+    def test_contact_form_cannot_be_enabled_without_mail_transport(self):
+        self.app.config.update(
+            MAIL_SERVER=None,
+            MAIL_USERNAME=None,
+            MAIL_PASSWORD=None,
+            MAIL_DEFAULT_SENDER=None,
+        )
+
+        response, render, _ = self._post(
+            self._form_data(contact_enabled="y")
+        )
+
+        self.assertEqual(response.status_code, 200)
+        form = render.call_args.kwargs["form"]
+        self.assertIn(
+            "available outbound email transport",
+            " ".join(form.contact_enabled.errors),
+        )
+        db.session.refresh(self.settings)
+        self.assertFalse(self.settings.contact_enabled)
 
     def test_get_never_populates_the_saved_password(self):
         self.settings.smtp_host = "smtp.database.test"

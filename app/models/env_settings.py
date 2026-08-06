@@ -37,6 +37,7 @@ class EnvSettings(db.Model):
     use_user_approval = db.Column(db.Boolean, nullable=False, server_default=db.false())
     use_user_location = db.Column(db.Boolean, nullable=False, server_default=db.true())
     use_captcha = db.Column(db.Boolean, nullable=False, server_default=db.true())
+    contact_enabled = db.Column(db.Boolean, nullable=False, default=False, server_default=db.false())
     maint_mode = db.Column(db.Boolean, nullable=False, server_default=db.false())
     visitor_tracking = db.Column(db.Boolean, nullable=False, server_default=db.false())
     use_fancy_urls = db.Column(db.Boolean, nullable=False, server_default=db.false())

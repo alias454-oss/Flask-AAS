@@ -1,7 +1,7 @@
 # routes/contact.py
 import logging
 
-from flask import Blueprint, flash, redirect, render_template, request, url_for
+from flask import Blueprint, abort, flash, redirect, render_template, request, url_for
 from flask_login import current_user
 from flask_wtf import FlaskForm
 from wtforms import StringField, SubmitField, TextAreaField
@@ -10,7 +10,7 @@ from wtforms.validators import DataRequired, Email, Length
 from app.core.cache import get_cached_env_settings
 from app.core.decorators import log_view_action
 from app.core.extensions import limiter
-from app.core.mailer import send_contact_email
+from app.core.mailer import contact_form_available, send_contact_email
 from app.core.meta import page_metadata
 from app.core.security import get_client_ip, normalize_email, redact_email
 from app.core.trackers import (
@@ -60,6 +60,10 @@ class ContactForm(FlaskForm):
 @limiter.limit("10 per hour", key_func=get_client_ip)
 @log_view_action()
 def contact():
+    env = get_cached_env_settings()
+    if not contact_form_available(env):
+        abort(404)
+
     form = ContactForm()
     meta = page_metadata.get("contact", {})
     ip = get_client_ip()

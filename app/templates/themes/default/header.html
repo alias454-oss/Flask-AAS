@@ -7,6 +7,9 @@
       <ul class="menu__list">
         <li class="menu__item"><a class="menu__link" href="{{ url_for('index.index') }}">Home</a></li>
         <li class="menu__item"><a class="menu__link" href="{{ url_for('about.about') }}">About</a></li>
+        {% if env.contact_enabled %}
+          <li class="menu__item"><a class="menu__link" href="{{ url_for('contact.contact') }}">Contact</a></li>
+        {% endif %}
 
         {% if current_user.is_authenticated %}
           {% if current_user.is_admin %}
