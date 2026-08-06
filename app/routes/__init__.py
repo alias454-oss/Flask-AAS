@@ -28,6 +28,7 @@ from .mfa.mfa import mfa_bp
 from .robots import robots_bp
 from .sitemap import sitemap_bp
 from .captcha import captcha_bp
+from .contact import contact_bp
 
 # Logging
 logger = logging.getLogger(__name__)
@@ -37,6 +38,7 @@ all_blueprints = [
     favicon_bp,
     mfa_bp,
     captcha_bp,
+    contact_bp,
     sitemap_bp,
     robots_bp,
     about_bp,

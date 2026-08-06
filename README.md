@@ -135,6 +135,7 @@ The base is intentionally designed to remain easy to run locally. Direct HTTP, g
 | about.about | GET | `/about` |
 | admin.admin_home | GET | `/admin/` |
 | captcha.captcha_image | GET | `/captcha_image` |
+| contact.contact | GET, POST | `/contact` |
 | dashboard.dashboard | GET | `/dashboard` |
 | favicon.favicon | GET | `/favicon.ico` |
 | index.index | GET | `/` |
@@ -148,7 +149,6 @@ The base is intentionally designed to remain easy to run locally. Direct HTTP, g
 | reset.change_password | GET, POST | `/change-password` |
 | reset.forgot_password | GET, POST | `/forgot-password` |
 | reset.reset_password | GET, POST | `/reset-password/<token>` |
-| reset.test_email | GET | `/test-email` |
 | robots.robots | GET | `/robots.txt` |
 | settings.settings | GET, POST | `/admin/settings/` |
 | sitemap.sitemap | GET | `/sitemap.xml` |
@@ -255,6 +255,17 @@ Generate a Fernet key with:
 ```bash
 python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
 ```
+
+Test the active outbound email configuration from the operator CLI. The
+configured Admin Email is used by default; `--to` provides a one-time override:
+
+```bash
+python manage.py mail-test
+python manage.py mail-test --to operator@example.com
+```
+
+The command exits unsuccessfully when outbound email is disabled, unavailable,
+or cannot be queued.
 
 Effective source precedence is:
 

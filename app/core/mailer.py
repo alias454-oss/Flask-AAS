@@ -551,16 +551,34 @@ def send_contact_email(
     message: str,
     subject: str | None = None,
 ) -> MailStatus:
-    to_email = current_app.config.get("SUPPORT_EMAIL")
-    subject = subject or f"Contact Form: {name}"
+    """Queue a public contact submission for the configured administrator."""
+    try:
+        env = get_mail_env_settings()
+    except Exception:
+        logger.exception(
+            "Contact email not queued: administrative recipient lookup failed"
+        )
+        return "failed"
+
+    recipient = _clean_text(getattr(env, "admin_email", None)) if env else None
+    if not recipient:
+        logger.error(
+            "Contact email not queued: administrative recipient is not configured"
+        )
+        return "failed"
+
+    submitted_subject = " ".join((subject or "").split())[:100]
+    submitted_subject = submitted_subject or "General inquiry"
+    mail_subject = f"Contact Form: {submitted_subject}"
 
     text, html = render_email(
         "contact",
         name=name,
         email=email,
+        subject=submitted_subject,
         message=message,
     )
-    return send_email(subject, to_email, text, html)
+    return send_email(mail_subject, recipient, text, html)
 
 
 def send_welcome_email(
