@@ -13,7 +13,11 @@ from app.core.security import get_client_ip
 from app.core.auth import login_required, admin_required
 from app.core.meta import page_metadata
 from app.core.decorators import log_view_action
-from app.core.trackers import log_action, log_action_isolated
+from app.core.trackers import (
+    get_admin_quick_stats,
+    log_action,
+    log_action_isolated,
+)
 from app.models import User, Role
 
 logger = logging.getLogger(__name__)
@@ -91,7 +95,15 @@ def list_users():
     env = get_cached_env_settings()
     page = request.args.get("page", 1, type=int)
     paginate = User.query.order_by(User.id.desc()).paginate(page=page, per_page=env.users_per_page)
-    return render_template("admin/list_users.html", paginate=paginate, users=paginate.items, **meta)
+    quick_stats = get_admin_quick_stats()
+
+    return render_template(
+        "admin/list_users.html",
+        paginate=paginate,
+        users=paginate.items,
+        quick_stats=quick_stats,
+        **meta,
+    )
 
 
 @users_bp.route("/<int:user_id>/delete", methods=["POST"])
@@ -198,7 +210,14 @@ def edit_user(user_id):
             admin_role = next((role for role in all_roles if role.name == 'admin'), None)
             if user.id == 1 and admin_role.id not in selected_role_ids:
                 flash("You cannot remove the admin role from the primary admin user.", "danger")
-                return render_template("admin/edit_user.html", form=form, user=user, **meta)
+                quick_stats = get_admin_quick_stats()
+                return render_template(
+                    "admin/edit_user.html",
+                    form=form,
+                    user=user,
+                    quick_stats=quick_stats,
+                    **meta,
+                )
 
             # Detect changed fields BEFORE applying updates
             changed_fields = []
@@ -249,4 +268,11 @@ def edit_user(user_id):
                 )
 
     # Render form with errors or initial data
-    return render_template("admin/edit_user.html", form=form, user=user, **meta)
+    quick_stats = get_admin_quick_stats()
+    return render_template(
+        "admin/edit_user.html",
+        form=form,
+        user=user,
+        quick_stats=quick_stats,
+        **meta,
+    )

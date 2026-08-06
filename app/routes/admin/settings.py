@@ -35,7 +35,7 @@ from app.core.mailer import (
 )
 from app.core.meta import page_metadata
 from app.core.security import get_client_ip
-from app.core.trackers import log_action
+from app.core.trackers import get_admin_quick_stats, log_action
 from app.models import Role
 
 logger = logging.getLogger(__name__)
@@ -428,6 +428,8 @@ def settings():
         flash("Please correct the highlighted settings.", "error")
 
     mail_state = get_mail_configuration_state(env)
+    quick_stats = get_admin_quick_stats()
+
     return render_template(
         "admin/settings.html",
         form=form,
@@ -435,5 +437,6 @@ def settings():
         mail_state=mail_state,
         mail_config_ui_enabled=mail_config_ui_enabled(),
         mail_encryption_available=mail_encryption_available(),
+        quick_stats=quick_stats,
         **meta,
     )

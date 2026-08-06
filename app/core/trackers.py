@@ -1,20 +1,22 @@
 # app/core/trackers.py
 import logging
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
 from ipaddress import ip_address
 
 from flask import request
 from flask_login import current_user
-from sqlalchemy import delete, select, update
+from sqlalchemy import delete, or_, select, update
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.cache import get_cached_env_settings
 from app.core.extensions import db
 from app.core.security import get_client_ip
-from app.models import OnlineUser, AuditActivity, AuditLogin
+from app.models import AuditActivity, AuditLogin, OnlineUser, User
 from app.models.audit_activity import serialize_extra_data
 
 logger = logging.getLogger(__name__)
+
+CLEAN_ONLINE_USER_MINUTES = 10
 
 LOGIN_FAILURE_INVALID_CREDENTIALS = 'invalid_credentials'
 LOGIN_FAILURE_LOCKED_OUT = 'locked_out'
@@ -238,7 +240,7 @@ def track_online_user():
         return False
 
 
-def expire_stale_online_users(minutes=30):
+def expire_stale_online_users(minutes=CLEAN_ONLINE_USER_MINUTES):
     cutoff = datetime.now(timezone.utc) - timedelta(minutes=minutes)
 
     try:
@@ -252,10 +254,51 @@ def expire_stale_online_users(minutes=30):
         return 0
 
 
-def get_total_user_count_statistics(stat_type='online'):
-    query = OnlineUser.query
+def get_total_user_count_statistics(
+    stat_type='online',
+    minutes=CLEAN_ONLINE_USER_MINUTES,
+):
+    cutoff = datetime.now(timezone.utc) - timedelta(minutes=minutes)
+    query = OnlineUser.query.filter(OnlineUser.last_active >= cutoff)
+
     if stat_type == 'guest':
         query = query.filter(OnlineUser.user == OnlineUser.GUEST_USER)
     elif stat_type == 'online':
         query = query.filter(OnlineUser.user != OnlineUser.GUEST_USER)
+
     return query.count()
+
+
+def get_admin_quick_stats():
+    """Return the shared account and online-presence counts for admin pages."""
+    settings = get_cached_env_settings()
+    pending_conditions = []
+
+    if settings.use_verify_email:
+        pending_conditions.append(User.activated.is_(False))
+
+    if settings.use_user_approval:
+        pending_conditions.append(User.approved.is_(False))
+
+    pending_users = (
+        User.query.filter(or_(*pending_conditions)).count()
+        if pending_conditions
+        else 0
+    )
+    tracking_enabled = bool(settings.visitor_tracking)
+
+    return {
+        'total_users': User.query.count(),
+        'pending_users': pending_users,
+        'visitor_tracking_enabled': tracking_enabled,
+        'online_users': (
+            get_total_user_count_statistics('online')
+            if tracking_enabled
+            else None
+        ),
+        'online_guests': (
+            get_total_user_count_statistics('guest')
+            if tracking_enabled
+            else None
+        ),
+    }

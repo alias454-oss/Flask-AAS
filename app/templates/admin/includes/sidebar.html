@@ -36,13 +36,19 @@
       <li><a href="{{ url_for('users.list_users') }}">View Users</a></li>
     </ul>
 
-    <h3>Quick Stats {{ version }}</h3>
+    <h3>Quick Stats</h3>
     <ul>
-      <li>Total Users: {{ total_registered_user_count }}</li>
-      <li>Pending Users: {{ total_pending_user_count }}</li>
-      <li>Total Sellers: {{ total_sellers_user_count }}</li>
-      <li>Online Users: {{ total_online_user_count }}</li>
-      <li>Online Guests: {{ total_guest_online_user_count }}</li>
-      {# Add additional stats here #}
+      <li>
+        <a href="{{ url_for('users.list_users') }}">
+          Total Users: {{ quick_stats.total_users }}
+        </a>
+      </li>
+      <li>Pending Users: {{ quick_stats.pending_users }}</li>
+      {% if quick_stats.visitor_tracking_enabled %}
+        <li>Online Users: {{ quick_stats.online_users }}</li>
+        <li>Online Guests: {{ quick_stats.online_guests }}</li>
+      {% else %}
+        <li>Visitor Tracking: Disabled</li>
+      {% endif %}
     </ul>
   </div>
