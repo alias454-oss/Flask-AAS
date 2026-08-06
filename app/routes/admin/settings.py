@@ -24,6 +24,7 @@ from app.core.decorators import log_view_action
 from app.core.extensions import db, limiter
 from app.core.mailer import (
     MailConfigurationError,
+    contact_form_available,
     database_mail_override_present,
     decrypt_smtp_password,
     encrypt_smtp_password,
@@ -96,6 +97,7 @@ class AdminSettingsForm(FlaskForm):
     use_user_approval = BooleanField("Require Approval for Users")
     use_user_location = BooleanField("Use User Location")
     use_captcha = BooleanField("Enable CAPTCHA")
+    contact_enabled = BooleanField("Enable Contact Form")
     maint_mode = BooleanField("Maintenance Mode")
     visitor_tracking = BooleanField("Track Online Users")
     use_fancy_urls = BooleanField("Enable Fancy URLs")
@@ -255,11 +257,29 @@ def validate_mail_settings(form, env) -> bool:
             "Email verification requires an available outbound email transport."
         )
 
+    contact_enabling = form.contact_enabled.data and not bool(
+        getattr(env, "contact_enabled", False)
+    )
+    if contact_enabling:
+        if not _strip_or_none(form.admin_email.data):
+            form.contact_enabled.errors.append(
+                "The contact form requires Admin Email before it can be enabled."
+            )
+        elif not form.use_smtp.data:
+            form.contact_enabled.errors.append(
+                "The contact form requires outbound email to be enabled."
+            )
+        elif not transport_available:
+            form.contact_enabled.errors.append(
+                "The contact form requires an available outbound email transport."
+            )
+
     return not any(
         (
             form.smtp_host.errors,
             form.use_smtp.errors,
             form.use_verify_email.errors,
+            form.contact_enabled.errors,
         )
     )
 
@@ -437,6 +457,7 @@ def settings():
         mail_state=mail_state,
         mail_config_ui_enabled=mail_config_ui_enabled(),
         mail_encryption_available=mail_encryption_available(),
+        contact_available=contact_form_available(env),
         quick_stats=quick_stats,
         **meta,
     )

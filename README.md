@@ -122,9 +122,9 @@ The base is intentionally designed to remain easy to run locally. Direct HTTP, g
 ---
 
 ### Public Routes & SEO
-- `/sitemap.xml` → excludes protected/internal routes
+- `/sitemap.xml` → excludes protected/internal routes and unavailable optional routes
 - `/robots.txt` → references sitemap
-- Both cached for efficiency
+- The sitemap is generated dynamically so feature-toggle changes take effect immediately
 
 ---
 
@@ -229,6 +229,11 @@ Require Email Verification
 ```
 
 `Require Email Verification` can be enabled only when outbound email is enabled and an effective mail transport is available. The application does not claim delivery merely because a message was queued. Final SMTP success or failure is logged by the asynchronous worker.
+
+The public contact form is disabled by default. An administrator can enable it
+only when Admin Email is configured and outbound email has an effective
+transport. If any dependency later becomes unavailable, `/contact` returns 404,
+the Contact navigation link is hidden, and the route is omitted from the sitemap.
 
 Deployment SMTP settings are supplied through `.env` or another external configuration source:
 

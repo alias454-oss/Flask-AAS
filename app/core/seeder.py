@@ -151,6 +151,7 @@ def seed_env_settings():
         "use_user_approval": 0,
         "use_user_location": 0,
         "use_captcha": 0,
+        "contact_enabled": False,
         "maint_mode": 0,
         "visitor_tracking": 0,
         "use_fancy_urls": 0,

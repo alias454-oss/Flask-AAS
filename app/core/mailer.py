@@ -417,6 +417,24 @@ def get_mail_configuration_state(env: Any = None) -> MailConfigurationState:
     return state
 
 
+def contact_form_available(env: Any = None) -> bool:
+    """Return whether the public contact form can currently accept messages."""
+    try:
+        if env is None:
+            env = get_mail_env_settings()
+
+        if not env or not getattr(env, "contact_enabled", False):
+            return False
+        if not _clean_text(getattr(env, "admin_email", None)):
+            return False
+
+        state = get_mail_configuration_state(env)
+        return state.enabled and state.available
+    except Exception:
+        logger.exception("Unable to determine contact form availability")
+        return False
+
+
 def _send_async_email(app, message: EmailMultiAlternatives) -> None:
     """Deliver a queued message inside the application's context."""
     with app.app_context():
@@ -562,10 +580,14 @@ def send_contact_email(
 
     recipient = _clean_text(getattr(env, "admin_email", None)) if env else None
     if not recipient:
-        logger.error(
+        logger.info(
             "Contact email not queued: administrative recipient is not configured"
         )
-        return "failed"
+        return "disabled"
+
+    if not contact_form_available(env):
+        logger.info("Contact email not queued: contact form is disabled or unavailable")
+        return "disabled"
 
     submitted_subject = " ".join((subject or "").split())[:100]
     submitted_subject = submitted_subject or "General inquiry"

@@ -6,8 +6,8 @@ import urllib.request
 from datetime import datetime
 from flask import Blueprint, current_app, url_for, Response
 
-from app.core.extensions import cache
 from app.core.decorators import log_view_action
+from app.core.mailer import contact_form_available
 
 logger = logging.getLogger(__name__)
 
@@ -58,12 +58,14 @@ def get_all_public_urls():
 
     with current_app.app_context():
         output = []
+        contact_available = contact_form_available()
         for rule in current_app.url_map.iter_rules():
             if (
                 "GET" in rule.methods
                 and len(rule.arguments) == 0
                 and not any(rule.rule.startswith(prefix) for prefix in ignored_prefixes)
                 and not any(substr in rule.endpoint for substr in ignored_substrings)
+                and (rule.endpoint != "contact.contact" or contact_available)
             ):
                 view_func = current_app.view_functions.get(rule.endpoint)
                 if view_func and not getattr(view_func, "login_required", False):
@@ -76,7 +78,6 @@ def get_all_public_urls():
 
 @sitemap_bp.route("/sitemap.xml")
 @log_view_action()
-@cache.cached(timeout=0)
 def sitemap():
     urls = get_all_public_urls()
     # urls += [
