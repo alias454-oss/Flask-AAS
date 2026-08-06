@@ -2,14 +2,14 @@ import json
 import os
 import tempfile
 import unittest
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import patch
 
 os.environ.setdefault('ADMIN_SECRET', 'test-admin-secret')
 os.environ.setdefault('SQLALCHEMY_DATABASE_URI', 'sqlite://')
 
-from flask import Flask, request
+from flask import Flask, g, request
 from flask_login import LoginManager
 from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
@@ -19,14 +19,16 @@ from app.core.extensions import bcrypt, db
 from app.core.logger import extract_request_metadata, redact_route_values
 from app.core.security import get_client_ip
 from app.core.trackers import (
+    CLEAN_ONLINE_USER_MINUTES,
     expire_stale_online_users,
+    get_admin_quick_stats,
     get_total_user_count_statistics,
     log_action,
     log_action_isolated,
     log_login,
     track_online_user,
 )
-from app.models import AuditActivity, AuditLogin, OnlineUser, User
+from app.models import AuditActivity, AuditLogin, EnvSettings, OnlineUser, User
 
 
 class AuditTrackingTests(unittest.TestCase):
@@ -76,19 +78,54 @@ class AuditTrackingTests(unittest.TestCase):
         db.session.remove()
         db.drop_all()
         db.create_all()
+        EnvSettings._cached_instance = None
+        g.pop('_env_settings', None)
         if hasattr(self.app, '_trusted_proxies_cache'):
             delattr(self.app, '_trusted_proxies_cache')
 
     def tearDown(self):
         db.session.remove()
+        EnvSettings._cached_instance = None
+        g.pop('_env_settings', None)
         self.app_context.pop()
 
-    def _new_user(self, username='audit-user'):
-        return User(
-            username=username,
-            email=f'{username}@example.test',
-            hashed_password='not-used-in-audit-tests',
-        )
+    def _new_user(self, username='audit-user', **overrides):
+        values = {
+            'username': username,
+            'email': f'{username}@example.test',
+            'hashed_password': 'not-used-in-audit-tests',
+        }
+        values.update(overrides)
+        return User(**values)
+
+    def _new_settings(self, owner, **overrides):
+        values = {
+            'user_id': owner.id,
+            'site_name': 'Audit Test',
+            'site_url': 'https://example.test',
+            'site_lang': 'en',
+            'site_timezone': 'UTC',
+            'description': '',
+            'keywords': '',
+            'users_per_page': 20,
+            'users_stored_path': '/tmp/users',
+            'use_verify_email': False,
+            'use_user_approval': False,
+            'visitor_tracking': True,
+            'enable_logging': False,
+        }
+        values.update(overrides)
+        settings = EnvSettings(**values)
+        db.session.add(settings)
+        db.session.commit()
+        EnvSettings._cached_instance = None
+        g.pop('_env_settings', None)
+        return settings
+
+    @staticmethod
+    def _clear_settings_cache():
+        EnvSettings._cached_instance = None
+        g.pop('_env_settings', None)
 
     def test_activity_and_business_change_commit_together(self):
         with self.app.test_request_context('/account', environ_base={'REMOTE_ADDR': '192.0.2.10'}):
@@ -270,12 +307,101 @@ class AuditTrackingTests(unittest.TestCase):
 
         with self.app.test_request_context('/', environ_base={'REMOTE_ADDR': '192.0.2.16'}):
             db.session.add(self._new_user())
-            self.assertEqual(expire_stale_online_users(minutes=30), 1)
+            self.assertEqual(CLEAN_ONLINE_USER_MINUTES, 10)
+            self.assertEqual(expire_stale_online_users(), 1)
             db.session.rollback()
 
         self.assertEqual(User.query.count(), 0)
         self.assertEqual(get_total_user_count_statistics('guest'), 0)
         self.assertEqual(get_total_user_count_statistics('online'), 1)
+
+    def test_admin_pending_count_follows_enabled_account_requirements(self):
+        owner = self._new_user(
+            'settings-owner',
+            activated=True,
+            approved=True,
+        )
+        db.session.add(owner)
+        db.session.flush()
+        settings = self._new_settings(owner)
+
+        db.session.add_all(
+            [
+                self._new_user('ready', activated=True, approved=True),
+                self._new_user('unverified', activated=False, approved=True),
+                self._new_user('unapproved', activated=True, approved=False),
+                self._new_user('blocked-both', activated=False, approved=False),
+            ]
+        )
+        db.session.commit()
+
+        cases = (
+            (False, False, 0),
+            (True, False, 2),
+            (False, True, 2),
+            (True, True, 3),
+        )
+        for verify_email, user_approval, expected in cases:
+            with self.subTest(
+                verify_email=verify_email,
+                user_approval=user_approval,
+            ):
+                settings.use_verify_email = verify_email
+                settings.use_user_approval = user_approval
+                db.session.commit()
+                self._clear_settings_cache()
+
+                stats = get_admin_quick_stats()
+
+                self.assertEqual(stats['total_users'], 5)
+                self.assertEqual(stats['pending_users'], expected)
+
+    def test_admin_online_counts_use_cleanup_window_and_separate_guests(self):
+        owner = self._new_user(
+            'settings-owner',
+            activated=True,
+            approved=True,
+        )
+        db.session.add(owner)
+        db.session.flush()
+        settings = self._new_settings(owner, visitor_tracking=True)
+
+        now = datetime.now(timezone.utc)
+        stale = now - timedelta(minutes=CLEAN_ONLINE_USER_MINUTES + 1)
+        db.session.add_all(
+            [
+                OnlineUser(user='member', ip_address='192.0.2.21', last_active=now),
+                OnlineUser(
+                    user=OnlineUser.GUEST_USER,
+                    ip_address='192.0.2.22',
+                    last_active=now,
+                ),
+                OnlineUser(
+                    user='stale-member',
+                    ip_address='192.0.2.23',
+                    last_active=stale,
+                ),
+                OnlineUser(
+                    user=OnlineUser.GUEST_USER,
+                    ip_address='192.0.2.24',
+                    last_active=stale,
+                ),
+            ]
+        )
+        db.session.commit()
+
+        stats = get_admin_quick_stats()
+        self.assertEqual(stats['online_users'], 1)
+        self.assertEqual(stats['online_guests'], 1)
+
+        settings.visitor_tracking = False
+        db.session.commit()
+        self._clear_settings_cache()
+
+        stats = get_admin_quick_stats()
+        self.assertFalse(stats['visitor_tracking_enabled'])
+        self.assertIsNone(stats['online_users'])
+        self.assertIsNone(stats['online_guests'])
 
     def test_extra_data_is_encoded_once_and_caller_values_are_preserved(self):
         with self.app.test_request_context('/admin', environ_base={'REMOTE_ADDR': '2001:db8::10'}):
