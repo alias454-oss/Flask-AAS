@@ -18,8 +18,20 @@ RUN python -m pip install \
     --only-binary=:all: \
     -r requirements.txt
 
-COPY . /base
+RUN groupadd --system flaskaas \
+    && useradd \
+        --system \
+        --gid flaskaas \
+        --home-dir /base \
+        --no-create-home \
+        --shell /bin/bash \
+        flaskaas \
+    && chown flaskaas:flaskaas /base
+
+COPY --chown=flaskaas:flaskaas . /base
 RUN chmod +x /base/entrypoint.sh
+
+USER flaskaas:flaskaas
 
 EXPOSE 5000
 
