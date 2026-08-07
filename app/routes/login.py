@@ -4,16 +4,18 @@ import time
 from datetime import datetime, timezone
 
 from flask import Blueprint, render_template, redirect, url_for, flash, request, session
-from flask_login import login_user, logout_user
+from flask_login import current_user, login_user, logout_user
 from flask_wtf import FlaskForm
 from wtforms import StringField, BooleanField, PasswordField, SubmitField
 from wtforms.validators import DataRequired
+from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.cache import get_cached_env_settings
 from app.core.decorators import log_view_action
 from app.core.extensions import db, limiter
 from app.core.meta import page_metadata
 from app.core.inactivity import mark_session_activity
+from app.core.sessions import close_current_session, create_login_session
 from app.core.security import (
     normalize_username,
     get_client_ip,
@@ -134,12 +136,19 @@ def login():
             success=False,
             failure_reason=failure_reason,
         )
+        close_current_session()
         logout_user()
         session.clear()
+        session['_remember'] = 'clear'
         flash("This account is not currently available for sign-in.", "warning")
         return redirect(url_for('login.login'))
 
+    if current_user.is_authenticated:
+        close_current_session()
+        logout_user()
+
     session.clear()  # Prevent session fixation before authentication continues.
+    session['_remember'] = 'clear'
 
     # MFA users are not accepted by Flask-Login until the second factor succeeds.
     if env.use_mfa and user.mfa_enabled:
@@ -152,12 +161,40 @@ def login():
         flash("Enter your 2FA code to complete login.", "info")
         return redirect(url_for('mfa.mfa_verify'))
 
+    try:
+        create_login_session(
+            user,
+            remembered=form.remember_me.data,
+            ip_address=ip,
+            user_agent=ua,
+        )
+    except SQLAlchemyError:
+        db.session.rollback()
+        user.clear_session_identity()
+        _log_login_result(
+            username,
+            ip,
+            ua,
+            ref,
+            success=False,
+            failure_reason=LOGIN_FAILURE_REJECTED,
+        )
+        logger.exception(
+            "Could not create a login session for user '%s' from %s",
+            username,
+            ip,
+        )
+        flash('Login could not be completed. Please try again.', 'danger')
+        return render_template('login.html', form=form, **meta)
+
     accepted = login_user(
         user,
         remember=form.remember_me.data,
         fresh=True,
     )
     if not accepted:
+        db.session.rollback()
+        user.clear_session_identity()
         _log_login_result(
             username,
             ip,
@@ -185,7 +222,30 @@ def login():
             },
         )
 
-    db.session.commit()
+    try:
+        db.session.commit()
+    except SQLAlchemyError:
+        db.session.rollback()
+        logout_user()
+        session.clear()
+        session['_remember'] = 'clear'
+        user.clear_session_identity()
+        _log_login_result(
+            username,
+            ip,
+            ua,
+            ref,
+            success=False,
+            failure_reason=LOGIN_FAILURE_REJECTED,
+        )
+        logger.exception(
+            "Login commit failed for user '%s' from %s",
+            username,
+            ip,
+        )
+        flash('Login could not be completed. Please try again.', 'danger')
+        return render_template('login.html', form=form, **meta)
+
     reset_lockout_attempts(username, ip)
 
     _log_login_result(

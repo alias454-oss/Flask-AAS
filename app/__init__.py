@@ -15,6 +15,7 @@ from app.core.extensions import db, migrate, bcrypt, csrf, cache, limiter, mail
 from app.routes import register_error_handlers, register_all_routes
 from app.core.config import settings
 from app.core.inactivity import enforce_inactivity_timeout
+from app.core.sessions import touch_current_session
 from app.core.trackers import track_online_user, expire_stale_online_users, visitor_tracking_enabled
 from app.models.user import EnvSettings, User
 
@@ -88,6 +89,7 @@ def create_app():
     # Apply a sliding inactivity window to authenticated browser sessions.
     # Pre-authentication MFA state remains governed by its own expiry controls.
     app.before_request(enforce_inactivity_timeout)
+    app.before_request(touch_current_session)
 
     @app.before_request
     def start_timer():
@@ -181,7 +183,7 @@ def create_app():
     # User loader for Flask-Login
     @login_manager.user_loader
     def load_user(session_id):
-        return User.load_from_session_id(session_id)
+        return User.load_from_session_id(session_id, require_session_record=True)
 
     # Helper for building error responses
     register_error_handlers(app)
@@ -225,7 +227,7 @@ def create_app():
     @app.after_request
     def add_cache_headers(response):
         # Apply cache control globally to admin and captcha paths
-        ignored_paths=("/admin", "account", "/member", "/dashboard", "/captcha", "/internal", "/debug", "/test")
+        ignored_paths=("/admin", "/account", "/member", "/dashboard", "/captcha", "/internal", "/debug", "/test")
         path = request.path
         if path.startswith(ignored_paths):
             response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, private"

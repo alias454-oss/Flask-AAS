@@ -11,5 +11,6 @@ from .audit_activity import AuditActivity
 from .audit_login import AuditLogin
 from .mfa_recovery_code import MfaRecoveryCode
 from .password_reset_token import PasswordResetToken
+from .user_session import UserSession
 
-__all__ = ["User", "Role", "UserRole", "OnlineUser", "State", "Country", "Zone", "EnvSettings", "AuditActivity", "AuditLogin", "MfaRecoveryCode", "PasswordResetToken"]
+__all__ = ["User", "Role", "UserRole", "OnlineUser", "State", "Country", "Zone", "EnvSettings", "AuditActivity", "AuditLogin", "MfaRecoveryCode", "PasswordResetToken", "UserSession"]

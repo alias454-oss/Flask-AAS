@@ -7,11 +7,207 @@
 
 {% block content %}
   <h2>Manage Account</h2>
-  <p>Welcome, {{ current_user.username }}</p>
-
-  <h3>About You:</h3>
-  <p>{{ current_user.first_name }} {{ current_user.last_name }}<br />
+  <p>
+    View your account status and update your profile information.
+    If you need to change your password,
+    <a href="{{ url_for('reset.change_password') }}">change it here</a>.
   </p>
+
+  <fieldset>
+    <legend>Account Details</legend>
+    <div class="form-group">
+      <strong>Username:</strong> {{ current_user.username }}
+    </div>
+    <div class="form-group">
+      {% set full_name = [current_user.first_name, current_user.last_name] | select | join(' ') %}
+      <strong>Name:</strong> {{ full_name or 'Not provided' }}
+    </div>
+    <div class="form-group">
+      <strong>Email:</strong> {{ current_user.email }}
+      <div class="text-muted">Email changes are not currently available.</div>
+    </div>
+    <div class="form-group">
+      <strong>Email Status:</strong>
+      {% if not env or not env.use_verify_email %}
+        Verification not required
+      {% elif current_user.activated %}
+        Verified
+      {% else %}
+        Pending verification
+      {% endif %}
+    </div>
+    <div class="form-group">
+      <strong>Account Approval:</strong>
+      {% if not env or not env.use_user_approval %}
+        Approval not required
+      {% elif current_user.approved %}
+        Approved
+      {% else %}
+        Pending approval
+      {% endif %}
+    </div>
+    {% if env and env.use_mfa %}
+      <div class="form-group">
+        <strong>Multi-Factor Authentication:</strong>
+        {% if current_user.mfa_enabled %}
+          Enabled
+          —
+          <a href="{{ url_for('mfa.mfa_replace') }}">Replace Authenticator</a>,
+          <a href="{{ url_for('mfa.mfa_recovery_codes') }}">Recovery Codes</a>,
+          or
+          <a href="{{ url_for('mfa.mfa_disable') }}">Disable MFA</a>
+        {% else %}
+          Disabled
+          —
+          <a href="{{ url_for('mfa.mfa_setup') }}">Set Up MFA</a>
+        {% endif %}
+      </div>
+    {% endif %}
+    <div class="form-group">
+      <strong>Registered:</strong>
+      {{ current_user.reg_date.strftime('%Y-%m-%d') if current_user.reg_date else 'Unknown' }}
+    </div>
+    <div class="form-group">
+      <strong>Previous Login:</strong>
+      {{ previous_login_at.strftime('%Y-%m-%d %H:%M UTC') if previous_login_at else 'None' }}
+    </div>
+  </fieldset>
+
+  <fieldset>
+    <legend>Active Sessions</legend>
+    {% if active_sessions %}
+      {% for user_session in active_sessions %}
+        <div class="form-group">
+          <strong>
+            {% if user_session.id == current_session_id %}
+              Current Session
+            {% else %}
+              Other Session
+            {% endif %}
+          </strong><br />
+          Signed in: {{ user_session.created_at.strftime('%Y-%m-%d %H:%M UTC') }}<br />
+          Last active: {{ user_session.last_active_at.strftime('%Y-%m-%d %H:%M UTC') }}<br />
+          IP address: {{ user_session.ip_address or 'Unknown' }}<br />
+          Remember Me: {{ 'Yes' if user_session.remembered else 'No' }}<br />
+          Browser: {{ user_session.user_agent or 'Unknown' }}
+
+          {% if user_session.id != current_session_id %}
+            <form
+              method="POST"
+              action="{{ url_for('account.revoke_session', session_id=user_session.id) }}"
+            >
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+              <input type="submit" value="Revoke Session" />
+            </form>
+          {% endif %}
+        </div>
+      {% endfor %}
+
+      {% if active_sessions | length > 1 %}
+        <form method="POST" action="{{ url_for('account.revoke_other_sessions') }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+          <input type="submit" value="Log Out All Other Sessions" />
+        </form>
+      {% endif %}
+    {% else %}
+      <p>No active sessions were found.</p>
+    {% endif %}
+  </fieldset>
+
+  <form method="POST" action="{{ url_for('account.account') }}" novalidate>
+    {{ form.hidden_tag() }}
+
+    <fieldset>
+      <legend>Update Account Details</legend>
+      <div class="form-group">
+        {{ form.company_name.label }}
+        {{ form.company_name(size=30, maxlength=255, class_='form-control') }}
+        {% if form.company_name.errors %}
+          <span class="text-danger">{{ form.company_name.errors[0] }}</span>
+        {% endif %}
+      </div>
+      <div class="form-group">
+        {{ form.first_name.label }}
+        {{ form.first_name(size=30, maxlength=100, class_='form-control') }}
+        {% if form.first_name.errors %}
+          <span class="text-danger">{{ form.first_name.errors[0] }}</span>
+        {% endif %}
+      </div>
+      <div class="form-group">
+        {{ form.last_name.label }}
+        {{ form.last_name(size=30, maxlength=100, class_='form-control') }}
+        {% if form.last_name.errors %}
+          <span class="text-danger">{{ form.last_name.errors[0] }}</span>
+        {% endif %}
+      </div>
+      <div class="form-group">
+        {{ form.phone.label }}
+        {{ form.phone(type='tel', size=30, maxlength=50, class_='form-control') }}
+        {% if form.phone.errors %}
+          <span class="text-danger">{{ form.phone.errors[0] }}</span>
+        {% endif %}
+      </div>
+      <div class="form-group">
+        {{ form.alt_phone.label }}
+        {{ form.alt_phone(type='tel', size=30, maxlength=50, class_='form-control') }}
+        {% if form.alt_phone.errors %}
+          <span class="text-danger">{{ form.alt_phone.errors[0] }}</span>
+        {% endif %}
+      </div>
+      <div class="form-group">
+        {{ form.fax.label }}
+        {{ form.fax(type='tel', size=30, maxlength=50, class_='form-control') }}
+        {% if form.fax.errors %}
+          <span class="text-danger">{{ form.fax.errors[0] }}</span>
+        {% endif %}
+      </div>
+    </fieldset>
+
+    {% if env and env.use_user_location %}
+      <fieldset>
+        <legend>Location</legend>
+        <div class="form-group">
+          {{ form.country.label }}
+          {{ form.country(size=30, maxlength=100, class_='form-control') }}
+          {% if form.country.errors %}
+            <span class="text-danger">{{ form.country.errors[0] }}</span>
+          {% endif %}
+        </div>
+        <div class="form-group">
+          {{ form.state.label }}
+          {{ form.state(size=30, maxlength=100, class_='form-control') }}
+          {% if form.state.errors %}
+            <span class="text-danger">{{ form.state.errors[0] }}</span>
+          {% endif %}
+        </div>
+        <div class="form-group">
+          {{ form.city.label }}
+          {{ form.city(size=30, maxlength=100, class_='form-control') }}
+          {% if form.city.errors %}
+            <span class="text-danger">{{ form.city.errors[0] }}</span>
+          {% endif %}
+        </div>
+        <div class="form-group">
+          {{ form.address.label }}
+          {{ form.address(size=60, maxlength=255, class_='form-control') }}
+          {% if form.address.errors %}
+            <span class="text-danger">{{ form.address.errors[0] }}</span>
+          {% endif %}
+        </div>
+        <div class="form-group">
+          {{ form.zip.label }}
+          {{ form.zip(size=20, maxlength=20, class_='form-control') }}
+          {% if form.zip.errors %}
+            <span class="text-danger">{{ form.zip.errors[0] }}</span>
+          {% endif %}
+        </div>
+      </fieldset>
+    {% endif %}
+
+    <div class="form-group">
+      {{ form.submit(class_="btn btn-primary") }}
+    </div>
+  </form>
 {% endblock %}
 
 {% block footer %}

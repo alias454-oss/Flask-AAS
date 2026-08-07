@@ -50,15 +50,9 @@ class User(db.Model):
     updated_at = db.Column(db.DateTime(timezone=True), onupdate=db.func.now())
 
     roles = db.relationship('Role', secondary='user_roles', back_populates='users')
-    mfa_recovery_codes = db.relationship(
-        'MfaRecoveryCode',
-        cascade='all, delete-orphan',
-    )
-    password_reset_tokens = db.relationship(
-        'PasswordResetToken',
-        back_populates='user',
-        cascade='all, delete-orphan',
-    )
+    mfa_recovery_codes = db.relationship('MfaRecoveryCode', cascade='all, delete-orphan')
+    password_reset_tokens = db.relationship('PasswordResetToken', back_populates='user', cascade='all, delete-orphan')
+    user_sessions = db.relationship('UserSession', back_populates='user', cascade='all, delete-orphan')
 
     def __repr__(self):
         return f"<User id={self.id} username={self.username} email={self.email}>"
@@ -117,29 +111,61 @@ class User(db.Model):
         self.auth_version = (self.auth_version or 0) + 1
         return self.auth_version
 
+    def bind_session_identity(self, token, record_id=None):
+        """Attach the raw browser-session token only to this in-memory user."""
+        self._session_token = token
+        self._session_record_id = record_id
+
+    def clear_session_identity(self):
+        self._session_token = None
+        self._session_record_id = None
+
+    @property
+    def session_record_id(self):
+        return getattr(self, '_session_record_id', None)
+
     @classmethod
-    def load_from_session_id(cls, session_id):
-        """Resolve a versioned Flask-Login identity only while it is current."""
+    def load_from_session_id(cls, session_id, *, require_session_record=True):
+        """Resolve a current versioned identity and its active session record."""
         if not session_id:
             return None
 
-        raw_user_id, separator, raw_version = str(session_id).partition(":")
-        if not separator:
+        parts = str(session_id).split(':', 2)
+        if len(parts) < 2:
             return None
 
         try:
-            user_id = int(raw_user_id)
-            auth_version = int(raw_version)
+            user_id = int(parts[0])
+            auth_version = int(parts[1])
         except (TypeError, ValueError):
             return None
 
         user = db.session.get(cls, user_id)
         if user is None or user.auth_version != auth_version:
             return None
+
+        if not require_session_record:
+            return user
+
+        if len(parts) != 3 or not parts[2]:
+            return None
+
+        from app.models.user_session import UserSession
+
+        token = parts[2]
+        record_id = UserSession.active_record_id(user.id, token)
+        if record_id is None:
+            return None
+
+        user.bind_session_identity(token, record_id)
         return user
 
     def get_id(self):
-        return f"{self.id}:{self.auth_version}"
+        identity = f"{self.id}:{self.auth_version}"
+        token = getattr(self, '_session_token', None)
+        if token:
+            return f"{identity}:{token}"
+        return identity
 
     def has_role(self, role_name):
         return any(role.name == role_name for role in self.roles)
