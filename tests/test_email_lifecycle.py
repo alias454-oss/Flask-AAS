@@ -13,7 +13,13 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.extensions import bcrypt, cache, db, limiter
 from app.core.security import generate_token
-from app.models import AuditActivity, EnvSettings, PasswordResetToken, User
+from app.models import (
+    AuditActivity,
+    EnvSettings,
+    PasswordResetToken,
+    User,
+    UserSession,
+)
 from app.routes.register import EMAIL_VERIFY_SALT, register_bp
 from app.routes.reset import reset_bp
 from app.routes.verify import verify_bp
@@ -309,6 +315,12 @@ class EmailLifecycleRouteTests(unittest.TestCase):
         old_session_id = user.get_id()
         token_record, plaintext_token = PasswordResetToken.issue_for_user(user)
         other_token, _ = PasswordResetToken.issue_for_user(user)
+        active_session = UserSession.issue_for_user(
+            user,
+            ip_address='192.0.2.50',
+            user_agent='reset-session-agent',
+            remembered=True,
+        )
         db.session.commit()
 
         with self._request_patches(), patch(
@@ -335,6 +347,9 @@ class EmailLifecycleRouteTests(unittest.TestCase):
         self.assertIsNone(User.load_from_session_id(old_session_id))
         self.assertIsNotNone(stored_token.consumed_at)
         self.assertIsNotNone(stored_other_token.revoked_at)
+        self.assertIsNotNone(
+            db.session.get(UserSession, active_session.id).revoked_at
+        )
         send_changed.assert_called_once_with(stored_user.email, stored_user.username)
 
         with self._request_patches():
@@ -376,8 +391,13 @@ class EmailLifecycleRouteTests(unittest.TestCase):
 
     def test_reset_commit_failure_preserves_password_and_token(self):
         user = self._save_user("reset-rollback@example.com")
-        old_session_id = user.get_id()
+        old_auth_version = user.auth_version
         token_record, plaintext_token = PasswordResetToken.issue_for_user(user)
+        active_session = UserSession.issue_for_user(
+            user,
+            ip_address='192.0.2.51',
+            user_agent='reset-rollback-agent',
+        )
         db.session.commit()
 
         with self._request_patches(), patch.object(
@@ -402,14 +422,22 @@ class EmailLifecycleRouteTests(unittest.TestCase):
         stored_user = db.session.get(User, user.id)
         stored_token = db.session.get(PasswordResetToken, token_record.id)
         self.assertTrue(stored_user.check_password("test-password"))
-        self.assertEqual(stored_user.get_id(), old_session_id)
+        self.assertEqual(stored_user.auth_version, old_auth_version)
         self.assertIsNone(stored_token.consumed_at)
         self.assertIsNone(stored_token.revoked_at)
+        self.assertIsNone(
+            db.session.get(UserSession, active_session.id).revoked_at
+        )
         send_changed.assert_not_called()
 
     def test_user_delete_removes_reset_tokens_on_sqlite(self):
         user = self._save_user("delete-reset-user@example.com")
         PasswordResetToken.issue_for_user(user)
+        UserSession.issue_for_user(
+            user,
+            ip_address='192.0.2.52',
+            user_agent='delete-session-agent',
+        )
         db.session.commit()
         user_id = user.id
 
@@ -420,6 +448,10 @@ class EmailLifecycleRouteTests(unittest.TestCase):
         self.assertIsNone(db.session.get(User, user_id))
         self.assertEqual(
             PasswordResetToken.query.filter_by(user_id=user_id).count(),
+            0,
+        )
+        self.assertEqual(
+            UserSession.query.filter_by(user_id=user_id).count(),
             0,
         )
 

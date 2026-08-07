@@ -20,8 +20,10 @@ from app.models import (
     MfaRecoveryCode,
     PasswordResetToken,
     User,
+    UserSession,
 )
 from app.routes.login import login_bp
+from app.routes.logout import logout_bp
 from app.routes.mfa.mfa import mfa_bp
 from app.routes.reset import reset_bp
 
@@ -80,6 +82,7 @@ class LoginAuditRouteTests(unittest.TestCase):
             return 'dashboard'
 
         cls.app.register_blueprint(login_bp)
+        cls.app.register_blueprint(logout_bp)
         cls.app.register_blueprint(mfa_bp)
         cls.app.register_blueprint(reset_bp)
         cls.app.register_blueprint(admin_bp)
@@ -178,6 +181,9 @@ class LoginAuditRouteTests(unittest.TestCase):
             patch('app.routes.login.render_template', return_value='login')
         )
         stack.enter_context(
+            patch('app.routes.logout.audit_activity_enabled', return_value=False)
+        )
+        stack.enter_context(
             patch('app.routes.mfa.mfa.audit_activity_enabled', return_value=False)
         )
         stack.enter_context(
@@ -232,6 +238,7 @@ class LoginAuditRouteTests(unittest.TestCase):
             'remember_token',
         )
         self.assertIsNotNone(self.client.get_cookie(remember_cookie_name))
+        active_session = UserSession.query.filter_by(user_id=user.id).one()
 
         with self._request_patches(), patch(
             'app.routes.reset.send_password_changed_email',
@@ -256,6 +263,9 @@ class LoginAuditRouteTests(unittest.TestCase):
         self.assertNotEqual(stored_user.get_id(), old_session_id)
         self.assertIsNone(User.load_from_session_id(old_session_id))
         self.assertIsNotNone(stored_token.revoked_at)
+        self.assertIsNotNone(
+            db.session.get(UserSession, active_session.id).revoked_at
+        )
         send_changed.assert_called_once_with(stored_user.email, stored_user.username)
 
         with self.client.session_transaction() as login_session:
@@ -264,7 +274,6 @@ class LoginAuditRouteTests(unittest.TestCase):
 
     def test_change_password_commit_failure_preserves_session_and_token(self):
         user = self._save_user(username='password-change-rollback-user')
-        old_session_id = user.get_id()
         reset_token, _ = PasswordResetToken.issue_for_user(user)
         db.session.commit()
 
@@ -273,6 +282,9 @@ class LoginAuditRouteTests(unittest.TestCase):
             'correct-password',
             remember=True,
         )
+        with self.client.session_transaction() as login_session:
+            active_session_identity = login_session.get('_user_id')
+        active_session = UserSession.query.filter_by(user_id=user.id).one()
         remember_cookie_name = self.app.config.get(
             'REMEMBER_COOKIE_NAME',
             'remember_token',
@@ -300,12 +312,18 @@ class LoginAuditRouteTests(unittest.TestCase):
         stored_user = db.session.get(User, user.id)
         stored_token = db.session.get(PasswordResetToken, reset_token.id)
         self.assertTrue(stored_user.check_password('correct-password'))
-        self.assertEqual(stored_user.get_id(), old_session_id)
+        self.assertEqual(stored_user.get_id(), active_session_identity)
         self.assertIsNone(stored_token.revoked_at)
+        self.assertIsNone(
+            db.session.get(UserSession, active_session.id).revoked_at
+        )
         send_changed.assert_not_called()
 
         with self.client.session_transaction() as login_session:
-            self.assertEqual(login_session.get('_user_id'), old_session_id)
+            self.assertEqual(
+                login_session.get('_user_id'),
+                active_session_identity,
+            )
         self.assertIsNotNone(self.client.get_cookie(remember_cookie_name))
 
     def test_nonexistent_user_and_wrong_password_share_failure_reason(self):
@@ -391,6 +409,30 @@ class LoginAuditRouteTests(unittest.TestCase):
         stored_user = db.session.get(User, user.id)
         self.assertIsNone(stored_user.last_active)
         self.assertEqual(AuditActivity.query.filter_by(action='login').count(), 0)
+        self.assertEqual(UserSession.query.count(), 0)
+
+    def test_login_commit_failure_leaves_no_server_or_browser_session(self):
+        user = self._save_user(username='login-commit-failure-user')
+
+        with patch.object(
+            db.session,
+            'commit',
+            side_effect=SQLAlchemyError('forced login commit failure'),
+        ):
+            response = self._post_login(
+                'login-commit-failure-user',
+                'correct-password',
+            )
+
+        self.assertEqual(response.status_code, 200)
+        db.session.expire_all()
+        self.assertIsNone(db.session.get(User, user.id).last_active)
+        self.assertEqual(UserSession.query.count(), 0)
+        login_row = AuditLogin.query.one()
+        self.assertFalse(login_row.success)
+        self.assertEqual(login_row.failure_reason, 'login_rejected')
+        with self.client.session_transaction() as login_session:
+            self.assertNotIn('_user_id', login_session)
 
     def test_success_is_recorded_only_after_flask_login_accepts(self):
         user = self._save_user(username='accepted-user')
@@ -407,8 +449,76 @@ class LoginAuditRouteTests(unittest.TestCase):
         db.session.expire_all()
         stored_user = db.session.get(User, user.id)
         self.assertIsNotNone(stored_user.last_active)
+        stored_session = UserSession.query.filter_by(user_id=user.id).one()
+        self.assertEqual(stored_session.ip_address, '127.0.0.1')
+        self.assertEqual(stored_session.user_agent, 'login-audit-test-agent')
+        self.assertFalse(stored_session.remembered)
+        self.assertIsNone(stored_session.revoked_at)
+        self.assertIsNone(stored_session.ended_at)
         with self.client.session_transaction() as login_session:
+            identity = login_session.get('_user_id')
             self.assertIsInstance(login_session.get('last_activity_at'), float)
+        self.assertEqual(len(identity.split(':', 2)), 3)
+        raw_token = identity.split(':', 2)[2]
+        self.assertNotEqual(raw_token, stored_session.token_hash)
+        self.assertEqual(
+            stored_session.token_hash,
+            UserSession.hash_token(raw_token),
+        )
+
+    def test_new_login_ends_the_browser_previous_session(self):
+        user = self._save_user(username='relogin-user')
+        self._post_login('relogin-user', 'correct-password', remember=True)
+        first_session = UserSession.query.filter_by(user_id=user.id).one()
+        remember_cookie_name = self.app.config.get(
+            'REMEMBER_COOKIE_NAME',
+            'remember_token',
+        )
+        self.assertIsNotNone(self.client.get_cookie(remember_cookie_name))
+
+        response = self._post_login(
+            'relogin-user',
+            'correct-password',
+            remember=False,
+        )
+
+        self.assertEqual(response.status_code, 302)
+        db.session.expire_all()
+        sessions = (
+            UserSession.query
+            .filter_by(user_id=user.id)
+            .order_by(UserSession.id)
+            .all()
+        )
+        self.assertEqual(len(sessions), 2)
+        self.assertEqual(sessions[0].id, first_session.id)
+        self.assertIsNotNone(sessions[0].ended_at)
+        self.assertIsNone(sessions[1].ended_at)
+        self.assertIsNone(sessions[1].revoked_at)
+        self.assertIsNone(self.client.get_cookie(remember_cookie_name))
+
+    def test_logout_ends_current_session_and_clears_remember_cookie(self):
+        user = self._save_user(username='logout-user')
+        self._post_login('logout-user', 'correct-password', remember=True)
+        user_session = UserSession.query.filter_by(user_id=user.id).one()
+        remember_cookie_name = self.app.config.get(
+            'REMEMBER_COOKIE_NAME',
+            'remember_token',
+        )
+        self.assertIsNotNone(self.client.get_cookie(remember_cookie_name))
+
+        with self._request_patches():
+            response = self.client.get('/logout', follow_redirects=False)
+
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(response.location.endswith('/login'))
+        db.session.expire_all()
+        self.assertIsNotNone(
+            db.session.get(UserSession, user_session.id).ended_at
+        )
+        with self.client.session_transaction() as login_session:
+            self.assertNotIn('_user_id', login_session)
+        self.assertIsNone(self.client.get_cookie(remember_cookie_name))
 
     def test_mfa_setup_marks_current_session_verified(self):
         user = self._save_user(username='mfa-setup-user')
@@ -479,8 +589,13 @@ class LoginAuditRouteTests(unittest.TestCase):
         row = AuditLogin.query.one()
         self.assertTrue(row.success)
         self.assertIsNone(row.failure_reason)
+        stored_session = UserSession.query.one()
+        self.assertEqual(stored_session.user_agent, 'login-audit-test-agent')
+        self.assertIsNone(stored_session.revoked_at)
+        self.assertIsNone(stored_session.ended_at)
         with self.client.session_transaction() as login_session:
             self.assertIsInstance(login_session.get('last_activity_at'), float)
+            self.assertEqual(len(login_session['_user_id'].split(':', 2)), 3)
 
     def test_mfa_rechecks_unverified_account_before_authentication(self):
         secret = pyotp.random_base32()
@@ -975,6 +1090,56 @@ class LoginAuditRouteTests(unittest.TestCase):
         db.session.expire_all()
         stored_user = db.session.get(User, user.id)
         self.assertIsNone(stored_user.last_totp_counter)
+        with self.client.session_transaction() as login_session:
+            self.assertNotIn('_user_id', login_session)
+            self.assertNotIn('pre_2fa_user_id', login_session)
+            self.assertNotIn('mfa_verified', login_session)
+
+    def test_mfa_session_commit_failure_leaves_no_authenticated_session(self):
+        secret = pyotp.random_base32()
+        self.settings.use_mfa = True
+        db.session.commit()
+        EnvSettings._cached_instance = None
+        user = self._save_user(
+            username='mfa-session-commit-failure-user',
+            mfa_enabled=True,
+            otp_secret=secret,
+        )
+
+        self._post_login(
+            'mfa-session-commit-failure-user',
+            'correct-password',
+        )
+        real_commit = db.session.commit
+        commit_count = 0
+
+        def commit_once_then_fail():
+            nonlocal commit_count
+            commit_count += 1
+            if commit_count == 2:
+                raise SQLAlchemyError('forced session commit failure')
+            return real_commit()
+
+        with self._request_patches(), patch.object(
+            db.session,
+            'commit',
+            side_effect=commit_once_then_fail,
+        ):
+            response = self.client.post(
+                '/mfa/verify',
+                data={'code': pyotp.TOTP(secret).now()},
+                follow_redirects=False,
+            )
+
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(response.location.endswith('/login'))
+        db.session.expire_all()
+        stored_user = db.session.get(User, user.id)
+        self.assertIsNotNone(stored_user.last_totp_counter)
+        self.assertEqual(UserSession.query.count(), 0)
+        login_row = AuditLogin.query.one()
+        self.assertFalse(login_row.success)
+        self.assertEqual(login_row.failure_reason, 'login_rejected')
         with self.client.session_transaction() as login_session:
             self.assertNotIn('_user_id', login_session)
             self.assertNotIn('pre_2fa_user_id', login_session)
