@@ -24,7 +24,7 @@ from app.core.security import (
     track_lockout_attempts,
 )
 from app.core.trackers import audit_activity_enabled, log_action, log_action_isolated
-from app.models import PasswordResetToken, User
+from app.models import PasswordResetToken, User, UserSession
 
 logger = logging.getLogger(__name__)
 
@@ -163,6 +163,7 @@ def reset_password(token):
         revoked_at=changed_at,
         exclude_id=consumed_token.id,
     )
+    UserSession.revoke_for_user(user.id, revoked_at=changed_at)
 
     if audit_activity_enabled():
         log_action(
@@ -318,6 +319,7 @@ def change_password():
     user.last_active = changed_at
     user.ip_address = ip
     PasswordResetToken.revoke_for_user(user.id, revoked_at=changed_at)
+    UserSession.revoke_for_user(user.id, revoked_at=changed_at)
 
     if audit_activity_enabled():
         log_action(

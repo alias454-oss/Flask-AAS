@@ -54,7 +54,10 @@ class MailConfigurationRouteTests(unittest.TestCase):
 
         @cls.login_manager.user_loader
         def load_user(session_id):
-            return User.load_from_session_id(session_id)
+            return User.load_from_session_id(
+                session_id,
+                require_session_record=False,
+            )
 
         login_bp = Blueprint("login", __name__)
 

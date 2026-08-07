@@ -21,6 +21,7 @@ from app.core.extensions import db, limiter
 from app.core.security import get_client_ip, reset_lockout_attempts
 from app.core.meta import page_metadata
 from app.core.inactivity import mark_session_activity
+from app.core.sessions import close_current_session, create_login_session
 from app.core.mailer import send_mfa_change_email
 from app.core.decorators import nocache, log_view_action
 from app.core.trackers import (
@@ -175,6 +176,7 @@ def _clear_pending_mfa_state():
 
 
 def _force_full_login(message):
+    close_current_session()
     logout_user()
     session.clear()
     session['_remember'] = 'clear'
@@ -344,8 +346,10 @@ def mfa_setup():
 
     if not login_fresh():
         logger.warning(f"Non-fresh MFA setup attempt for user_id={user.id} ip={ip}")
-        session.clear()
+        close_current_session()
         logout_user()
+        session.clear()
+        session['_remember'] = 'clear'
         flash("Please log in again before enabling MFA.", "warning")
         return redirect(url_for('login.login'))
 
@@ -499,6 +503,11 @@ def mfa_verify():
                 db.session.commit()
             except SQLAlchemyError:
                 db.session.rollback()
+                _log_pending_mfa_login(
+                    success=False,
+                    failure_reason=LOGIN_FAILURE_REJECTED,
+                    user=user,
+                )
                 logger.exception(f"Failed to finalize MFA login for user_id={user.id} ip={ip}")
                 session.clear()
                 flash("Login could not be completed. Please try again.", "danger")
@@ -517,8 +526,34 @@ def mfa_verify():
                 flash("This account is not currently available for sign-in.", "warning")
                 return redirect(url_for('login.login'))
 
+            try:
+                create_login_session(
+                    user,
+                    remembered=remember,
+                    ip_address=login_ip,
+                    user_agent=request.headers.get('User-Agent'),
+                )
+            except SQLAlchemyError:
+                db.session.rollback()
+                user.clear_session_identity()
+                _log_pending_mfa_login(
+                    success=False,
+                    failure_reason=LOGIN_FAILURE_REJECTED,
+                    user=user,
+                )
+                logger.exception(
+                    "Could not create an MFA login session for user_id=%s ip=%s",
+                    user.id,
+                    ip,
+                )
+                session.clear()
+                flash("Login could not be completed. Please try again.", "danger")
+                return redirect(url_for('login.login'))
+
             accepted = login_user(user, remember=remember, fresh=True)
             if not accepted:
+                db.session.rollback()
+                user.clear_session_identity()
                 _log_pending_mfa_login(
                     success=False,
                     failure_reason=LOGIN_FAILURE_REJECTED,
@@ -527,6 +562,27 @@ def mfa_verify():
                 logger.warning(f"Flask-Login rejected MFA user_id={user.id} ip={ip}")
                 session.clear()
                 flash("Invalid login state. Please log in again.", "danger")
+                return redirect(url_for('login.login'))
+
+            try:
+                db.session.commit()
+            except SQLAlchemyError:
+                db.session.rollback()
+                logout_user()
+                session.clear()
+                session['_remember'] = 'clear'
+                user.clear_session_identity()
+                _log_pending_mfa_login(
+                    success=False,
+                    failure_reason=LOGIN_FAILURE_REJECTED,
+                    user=user,
+                )
+                logger.exception(
+                    "MFA session commit failed for user_id=%s ip=%s",
+                    user.id,
+                    ip,
+                )
+                flash("Login could not be completed. Please try again.", "danger")
                 return redirect(url_for('login.login'))
 
             _log_pending_mfa_login(success=True, user=user)

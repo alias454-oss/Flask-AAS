@@ -6,6 +6,8 @@ import time
 from flask import current_app, flash, redirect, request, session, url_for
 from flask_login import current_user, logout_user
 
+from app.core.sessions import close_current_session
+
 logger = logging.getLogger(__name__)
 
 SESSION_ACTIVITY_KEY = 'last_activity_at'
@@ -86,6 +88,7 @@ def enforce_inactivity_timeout():
         user_id = current_user.id
         endpoint = request.endpoint or request.path
 
+        close_current_session()
         logout_user()
         session.clear()
         # logout_user() requests remember-cookie deletion, but session.clear()
