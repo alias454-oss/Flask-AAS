@@ -3,6 +3,7 @@
 from typing import Any
 
 from app.plugins import ApplicationPlugin, PluginConfiguration
+from app.plugins.example.routes import example_bp
 
 
 class ExamplePlugin(ApplicationPlugin):
@@ -12,17 +13,15 @@ class ExamplePlugin(ApplicationPlugin):
     api_version = 1
 
     def validate_config(self) -> PluginConfiguration:
-        # AAS-039 will give the reference plugin real configuration and Flask
-        # surfaces. For AAS-037 it proves the configuration contract only.
+        # The reference web surface has no required configuration yet.
         return PluginConfiguration(configured=True)
 
     def clear_secrets(self) -> None:
-        # The AAS-037 example plugin stores no managed secrets.
+        # The reference plugin currently stores no managed secrets.
         return None
 
     def register(self, app: Any) -> None:
-        # Runtime registration surfaces are intentionally added in AAS-039.
-        return None
+        app.register_blueprint(example_bp)
 
 
 plugin = ExamplePlugin()
