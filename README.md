@@ -151,41 +151,46 @@ The current `example` application is a deliberately small compatibility/referenc
 
 ## API / Route Endpoints
 
-| Endpoint | Methods | Rule |
-|----------|---------|------|
-| about.about | GET | `/about` |
-| account.account | GET, POST | `/account` |
-| account.revoke_other_sessions | POST | `/account/sessions/revoke-others` |
-| account.revoke_session | POST | `/account/sessions/<int:session_id>/revoke` |
-| admin.admin_home | GET | `/admin/` |
-| captcha.captcha_image | GET | `/captcha_image` |
-| contact.contact | GET, POST | `/contact` |
-| dashboard.dashboard | GET | `/dashboard` |
-| favicon.favicon | GET | `/favicon.ico` |
-| index.index | GET | `/` |
-| login.login | GET, POST | `/login` |
-| logout.logout | GET | `/logout` |
-| mfa.mfa_disable | GET, POST | `/mfa/disable` |
-| mfa.mfa_reauth | GET, POST | `/mfa/reauth` |
-| mfa.mfa_recovery_codes | GET, POST | `/mfa/recovery-codes` |
-| mfa.mfa_replace | GET, POST | `/mfa/replace` |
-| mfa.mfa_setup | GET, POST | `/mfa/setup` |
-| mfa.mfa_verify | GET, POST | `/mfa/verify` |
-| privacy.privacy | GET | `/privacy` |
-| register.register | GET, POST | `/register` |
-| reset.change_password | GET, POST | `/change-password` |
-| reset.forgot_password | GET, POST | `/forgot-password` |
-| reset.reset_password | GET, POST | `/reset-password/<token>` |
-| robots.robots | GET | `/robots.txt` |
-| settings.settings | GET, POST | `/admin/settings/` |
-| sitemap.sitemap | GET | `/sitemap.xml` |
-| static | GET | `/static/<path:filename>` |
-| tos.tos | GET | `/tos` |
-| users.delete_user | POST | `/admin/users/<int:user_id>/delete` |
-| users.edit_user | GET, POST | `/admin/users/<int:user_id>/edit` |
-| users.list_users | GET | `/admin/users/` |
-| verify.verify_email_token | GET | `/email/<token>` |
-| verify.verify_reset_token | GET | `/reset/<token>` |
+| Endpoint                      | Methods   | Rule                                                  |
+| ----------------------------- | --------- | ----------------------------------------------------- |
+| about.about                   | GET       | `/about`                                              |
+| account.account               | GET, POST | `/account`                                            |
+| account.revoke_other_sessions | POST      | `/account/sessions/revoke-others`                     |
+| account.revoke_session        | POST      | `/account/sessions/<int:session_id>/revoke`           |
+| admin.admin_home              | GET       | `/admin/`                                             |
+| captcha.captcha_image         | GET       | `/captcha_image`                                      |
+| contact.contact               | GET, POST | `/contact`                                            |
+| dashboard.dashboard           | GET       | `/dashboard`                                          |
+| favicon.favicon               | GET       | `/favicon.ico`                                        |
+| index.index                   | GET       | `/`                                                   |
+| login.login                   | GET, POST | `/login`                                              |
+| logout.logout                 | GET       | `/logout`                                             |
+| mfa.mfa_disable               | GET, POST | `/mfa/disable`                                        |
+| mfa.mfa_reauth                | GET, POST | `/mfa/reauth`                                         |
+| mfa.mfa_recovery_codes        | GET, POST | `/mfa/recovery-codes`                                 |
+| mfa.mfa_replace               | GET, POST | `/mfa/replace`                                        |
+| mfa.mfa_setup                 | GET, POST | `/mfa/setup`                                          |
+| mfa.mfa_verify                | GET, POST | `/mfa/verify`                                         |
+| plugins.disable               | POST      | `/admin/plugins/<int:registration_id>/disable`        |
+| plugins.enable                | POST      | `/admin/plugins/<int:registration_id>/enable`         |
+| plugins.list_plugins          | GET       | `/admin/plugins/`                                     |
+| plugins.reload_config         | POST      | `/admin/plugins/reload`                               |
+| plugins.upgrade_schema        | POST      | `/admin/plugins/<int:registration_id>/upgrade-schema` |
+| privacy.privacy               | GET       | `/privacy`                                            |
+| register.register             | GET, POST | `/register`                                           |
+| reset.change_password         | GET, POST | `/change-password`                                    |
+| reset.forgot_password         | GET, POST | `/forgot-password`                                    |
+| reset.reset_password          | GET, POST | `/reset-password/<token>`                             |
+| robots.robots                 | GET       | `/robots.txt`                                         |
+| settings.settings             | GET, POST | `/admin/settings/`                                    |
+| sitemap.sitemap               | GET       | `/sitemap.xml`                                        |
+| static                        | GET       | `/static/<path:filename>`                             |
+| tos.tos                       | GET       | `/tos`                                                |
+| users.delete_user             | POST      | `/admin/users/<int:user_id>/delete`                   |
+| users.edit_user               | GET, POST | `/admin/users/<int:user_id>/edit`                     |
+| users.list_users              | GET       | `/admin/users/`                                       |
+| verify.verify_email_token     | GET       | `/email/<token>`                                      |
+| verify.verify_reset_token     | GET       | `/reset/<token>`                                      |
 
 Application-plugin routes are intentionally omitted from this static core-route table because their structural registration depends on the persisted plugin state at worker startup. The host request guard independently denies plugin endpoints that are not effectively usable.
 
