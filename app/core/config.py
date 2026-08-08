@@ -28,12 +28,6 @@ class Settings(BaseSettings):
     # Registration control
     REGISTRATION_ENABLED: bool = True
 
-    # Application plugin host
-    # Runtime discovery/loading is implemented under AAS-038. Keeping the
-    # switch deployment-owned allows Flask-AAS to run with the subsystem fully
-    # disabled without changing ordinary core behavior.
-    PLUGIN_SYSTEM_ENABLED: bool = False
-
     # --- CORS ---
     # Control which frontend domains can access the API.
     # [https://example.com,https://app.example.com]

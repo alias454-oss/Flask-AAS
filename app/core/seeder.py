@@ -155,6 +155,7 @@ def seed_env_settings():
         "maint_mode": 0,
         "visitor_tracking": 0,
         "use_fancy_urls": 0,
+        "enable_plugins": False,
         "enable_delete_old_users": 0,
         "users_delete_after_days": 15,
         "email_after_days": 45,

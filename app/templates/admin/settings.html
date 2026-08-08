@@ -126,6 +126,13 @@
           {{ form.use_fancy_urls.label.text }}
         </label>
       </div>
+      <div class="checkbox-inline">
+        <label for="{{ form.enable_plugins.id }}">
+          {{ form.enable_plugins() }}
+          {{ form.enable_plugins.label.text }}
+        </label>
+      </div>
+      <p>Changing the application plugin loader setting requires a restart.</p>
     </fieldset>
 
     <fieldset>

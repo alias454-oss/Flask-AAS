@@ -101,6 +101,7 @@ class AdminSettingsForm(FlaskForm):
     maint_mode = BooleanField("Maintenance Mode")
     visitor_tracking = BooleanField("Track Online Users")
     use_fancy_urls = BooleanField("Enable Fancy URLs")
+    enable_plugins = BooleanField("Enable Application Plugins")
 
     # Maintenance
     enable_delete_old_users = BooleanField("Auto-delete Old Users")
@@ -439,6 +440,12 @@ def settings():
                 f"Site settings updated by {current_user.username}",
                 "success",
             )
+            if "enable_plugins" in changed_fields:
+                flash(
+                    "Application plugin loader setting changed. Restart Flask-AAS "
+                    "for the new plugin runtime state to take effect.",
+                    "warning",
+                )
             return redirect(url_for("settings.settings"))
         except Exception:
             db.session.rollback()

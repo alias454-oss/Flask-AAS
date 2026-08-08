@@ -4,7 +4,6 @@ from pathlib import Path
 
 from flask import Flask
 
-from app.core.config import Settings
 from app.core.extensions import db
 from app.models.plugin import PluginRegistration
 from app.plugins import (
@@ -121,15 +120,6 @@ class PluginContractTests(unittest.TestCase):
 
     def test_plugin_api_version_is_fixed_at_one(self):
         self.assertEqual(PLUGIN_API_VERSION, 1)
-
-    def test_plugin_system_defaults_disabled(self):
-        settings = Settings(
-            ADMIN_SECRET="test-admin-secret",
-            SQLALCHEMY_DATABASE_URI="sqlite:///:memory:",
-            FLASK_ENV="testing",
-            _env_file=None,
-        )
-        self.assertFalse(settings.PLUGIN_SYSTEM_ENABLED)
 
     def test_example_plugin_satisfies_v1_contract(self):
         self.assertIs(validate_plugin_contract(example_plugin), example_plugin)

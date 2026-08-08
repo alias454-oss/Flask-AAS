@@ -19,6 +19,7 @@ from app.core.sessions import touch_current_session
 from app.core.trackers import track_online_user, expire_stale_online_users, visitor_tracking_enabled
 from app.models.user import EnvSettings, User
 from app.models.plugin import PluginRegistration  # noqa: F401 - register model metadata
+from app.plugins.loader import initialize_plugins
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -83,8 +84,10 @@ def create_app():
     # Register all blueprints
     register_all_routes(app)
 
-    # Set log level from DB/cached settings
+    # Initialize optional application plugins and DB-backed runtime settings.
+    # Both fail closed while a fresh database is being created or migrated.
     with app.app_context():
+        initialize_plugins(app)
         update_log_level()
 
     # Apply a sliding inactivity window to authenticated browser sessions.
