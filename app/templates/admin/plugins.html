@@ -15,12 +15,28 @@
 
   {% if plugin_system_requested != plugin_runtime.system_enabled %}
     <p class="form-error">
-      The saved plugin-loader setting differs from this process. Restart Flask-AAS
-      to apply the global plugin-system change.
+      The saved plugin-loader setting differs from this process. Finish selecting
+      the applications you want enabled, then use Reload App Config once to apply
+      all requested runtime changes.
     </p>
   {% endif %}
 
-  {% if rows %}
+  {% if app_reload_required %}
+    <form method="POST"
+          action="{{ url_for('plugins.reload_config') }}"
+          class="inline-action-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+      <button type="submit" class="button-link">Reload App Config</button>
+    </form>
+    <p>
+      Apply all saved application enable/disable changes with one graceful
+      Gunicorn reload.
+    </p>
+  {% endif %}
+
+  {% if not plugin_system_requested %}
+    <p>Enable Application Plugins in Site Settings to manage installed applications.</p>
+  {% elif rows %}
     <div class="user-list">
       {% for row in rows %}
         {% set registration = row.registration %}
@@ -50,7 +66,7 @@
               {% endif %}
 
               {% if row.restart_required %}
-                <p><strong>Restart required for the requested runtime state.</strong></p>
+                <p><strong>App config reload required for the requested runtime state.</strong></p>
               {% endif %}
 
               <div class="user-actions">

@@ -23,6 +23,7 @@ from app.plugins.loader import (
     resolve_plugin,
 )
 from app.plugins.registry import disable_plugin, enable_plugin
+from app.plugins.reload import AppConfigReloadUnavailable, reload_app_config
 
 logger = logging.getLogger(__name__)
 
@@ -95,6 +96,17 @@ def _registered_plugin(registration):
     return plugin
 
 
+def _app_reload_required(env, runtime, rows):
+    plugin_system_requested = bool(env and env.enable_plugins)
+    return (
+        plugin_system_requested != runtime.system_enabled
+        or (
+            plugin_system_requested
+            and any(row.restart_required for row in rows)
+        )
+    )
+
+
 @plugins_bp.route("/", methods=["GET"])
 @limiter.limit("20 per minute", key_func=get_client_ip)
 @log_view_action()
@@ -107,12 +119,14 @@ def list_plugins():
     registrations = PluginRegistration.query.order_by(
         PluginRegistration.plugin_id
     ).all()
+    rows = _admin_rows(registrations, env, runtime)
 
     return render_template(
         "admin/plugins.html",
-        rows=_admin_rows(registrations, env, runtime),
+        rows=rows,
         plugin_runtime=runtime,
         plugin_system_requested=bool(env and env.enable_plugins),
+        app_reload_required=_app_reload_required(env, runtime, rows),
         quick_stats=get_admin_quick_stats(),
         **meta,
     )
@@ -147,7 +161,7 @@ def enable(registration_id):
         )
         db.session.commit()
         logger.info(
-            "Admin user=%s enabled plugin=%s configured=%s restart_required=True",
+            "Admin user=%s enabled plugin=%s configured=%s app_config_reload_required=True",
             current_user.username,
             registration.plugin_id,
             configuration.configured,
@@ -163,7 +177,8 @@ def enable(registration_id):
 
     if configuration.configured:
         flash(
-            f"Plugin {registration.plugin_id} enabled. Restart Flask-AAS to activate it.",
+            f"Plugin {registration.plugin_id} enabled. Finish selecting applications, "
+            "then use Reload App Config once to activate the requested runtime state.",
             "success",
         )
     else:
@@ -206,7 +221,7 @@ def disable(registration_id):
         db.session.commit()
         logger.info(
             "Admin user=%s disabled plugin=%s configured=%s "
-            "secrets_cleared=True restart_required=True",
+            "secrets_cleared=True app_config_reload_required=True",
             current_user.username,
             registration.plugin_id,
             configuration.configured,
@@ -223,8 +238,77 @@ def disable(registration_id):
 
     flash(
         f"Plugin {registration.plugin_id} disabled; application access is blocked "
-        "immediately and plugin-managed secrets were cleared. Restart Flask-AAS "
-        "to unload its runtime surfaces.",
+        "immediately and plugin-managed secrets were cleared. Use Reload App Config "
+        "once after finishing application changes to unload its runtime surfaces.",
+        "success",
+    )
+    return redirect(url_for("plugins.list_plugins"))
+
+
+@plugins_bp.route("/reload", methods=["POST"])
+@limiter.limit("3 per minute", key_func=get_client_ip)
+@login_required
+@admin_required
+def reload_config():
+    env = EnvSettings.get_cached_instance()
+    runtime = get_plugin_runtime(current_app)
+    registrations = PluginRegistration.query.order_by(
+        PluginRegistration.plugin_id
+    ).all()
+    rows = _admin_rows(registrations, env, runtime)
+    if not _app_reload_required(env, runtime, rows):
+        flash(
+            "No application configuration changes are waiting to be applied.",
+            "warning",
+        )
+        return redirect(url_for("plugins.list_plugins"))
+
+    try:
+        log_action(
+            action="reload_app_config",
+            user_id=current_user.id,
+            target="/admin/plugins/reload",
+            extra_data={
+                "plugin_system_enabled": bool(env and env.enable_plugins),
+                "enabled_plugins": [
+                    registration.plugin_id
+                    for registration in registrations
+                    if registration.enabled
+                ],
+                "ip": get_client_ip(),
+                "user_agent": request.headers.get("User-Agent"),
+            },
+        )
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        logger.exception(
+            "Failed to persist app config reload audit for admin user=%s",
+            current_user.username,
+        )
+        flash(
+            "App config reload was not requested because audit logging failed.",
+            "error",
+        )
+        return redirect(url_for("plugins.list_plugins"))
+
+    try:
+        reload_app_config()
+    except AppConfigReloadUnavailable as exc:
+        logger.warning(
+            "Admin user=%s could not reload app config: %s",
+            current_user.username,
+            exc,
+        )
+        flash(str(exc), "error")
+        return redirect(url_for("plugins.list_plugins"))
+
+    logger.info(
+        "Admin user=%s requested app config reload via Gunicorn SIGHUP",
+        current_user.username,
+    )
+    flash(
+        "App config reload requested. Gunicorn is gracefully reloading the application.",
         "success",
     )
     return redirect(url_for("plugins.list_plugins"))

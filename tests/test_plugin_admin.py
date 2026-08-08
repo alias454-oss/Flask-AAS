@@ -16,6 +16,7 @@ from app.plugins.loader import (
     PluginRuntime,
     PluginRuntimeState,
 )
+from app.plugins.reload import AppConfigReloadUnavailable
 from app.routes.admin.plugins import plugins_bp
 
 
@@ -219,6 +220,7 @@ class PluginAdminRouteTests(unittest.TestCase):
         self.assertEqual(row.runtime_status, STATUS_ACTIVE)
         self.assertEqual(row.access_status, "Available")
         self.assertFalse(row.restart_required)
+        self.assertFalse(render.call_args.kwargs["app_reload_required"])
 
     def test_enable_persists_requested_state_and_configuration(self):
         self._login(self.admin_id)
@@ -240,7 +242,7 @@ class PluginAdminRouteTests(unittest.TestCase):
         self.assertTrue(record.configured)
         self.assertIn(
             "Admin user=plugin-admin enabled plugin=admin-plugin configured=True "
-            "restart_required=True",
+            "app_config_reload_required=True",
             "\n".join(logs.output),
         )
 
@@ -285,7 +287,7 @@ class PluginAdminRouteTests(unittest.TestCase):
         self.assertEqual(PluginRegistration.query.count(), 1)
         self.assertIn(
             "Admin user=plugin-admin disabled plugin=admin-plugin configured=False "
-            "secrets_cleared=True restart_required=True",
+            "secrets_cleared=True app_config_reload_required=True",
             "\n".join(logs.output),
         )
 
@@ -362,3 +364,100 @@ class PluginAdminRouteTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertTrue(render.call_args.kwargs["rows"][0].restart_required)
+        self.assertTrue(render.call_args.kwargs["app_reload_required"])
+
+    def test_admin_reload_applies_pending_runtime_change(self):
+        self._login(self.admin_id)
+        self._registration(enabled=True, configured=True)
+        self.app.extensions[PLUGIN_RUNTIME_EXTENSION].plugins["admin-plugin"] = (
+            PluginRuntimeState(
+                plugin_id="admin-plugin",
+                status=STATUS_DISABLED,
+            )
+        )
+
+        with self.assertLogs("app.routes.admin.plugins", level="INFO") as logs, patch(
+            "app.routes.admin.plugins.log_action"
+        ) as log_action_mock, patch(
+            "app.routes.admin.plugins.reload_app_config"
+        ) as reload_mock:
+            response = self.client.post(
+                "/admin/plugins/reload",
+                follow_redirects=False,
+            )
+
+        self.assertEqual(response.status_code, 302)
+        reload_mock.assert_called_once_with()
+        log_action_mock.assert_called_once()
+        self.assertEqual(
+            log_action_mock.call_args.kwargs["action"],
+            "reload_app_config",
+        )
+        self.assertIn(
+            "Admin user=plugin-admin requested app config reload via Gunicorn SIGHUP",
+            "\n".join(logs.output),
+        )
+
+    def test_admin_reload_skips_when_no_runtime_change_is_pending(self):
+        self._login(self.admin_id)
+        self._registration(enabled=True, configured=True)
+        self.app.extensions[PLUGIN_RUNTIME_EXTENSION].plugins["admin-plugin"] = (
+            PluginRuntimeState(
+                plugin_id="admin-plugin",
+                status=STATUS_ACTIVE,
+                name="Admin Plugin",
+                version="1.0.0",
+            )
+        )
+
+        with patch("app.routes.admin.plugins.log_action") as log_action_mock, patch(
+            "app.routes.admin.plugins.reload_app_config"
+        ) as reload_mock:
+            response = self.client.post(
+                "/admin/plugins/reload",
+                follow_redirects=False,
+            )
+
+        self.assertEqual(response.status_code, 302)
+        reload_mock.assert_not_called()
+        log_action_mock.assert_not_called()
+
+    def test_non_admin_cannot_reload_app_config(self):
+        self._login(self.regular_id)
+        self._registration(enabled=True, configured=True)
+        self.app.extensions[PLUGIN_RUNTIME_EXTENSION].plugins["admin-plugin"] = (
+            PluginRuntimeState(
+                plugin_id="admin-plugin",
+                status=STATUS_DISABLED,
+            )
+        )
+
+        with patch("app.routes.admin.plugins.reload_app_config") as reload_mock:
+            response = self.client.post(
+                "/admin/plugins/reload",
+                follow_redirects=False,
+            )
+
+        self.assertEqual(response.status_code, 302)
+        reload_mock.assert_not_called()
+
+    def test_admin_reload_reports_unsupported_server_without_500(self):
+        self._login(self.admin_id)
+        self._registration(enabled=True, configured=True)
+        self.app.extensions[PLUGIN_RUNTIME_EXTENSION].plugins["admin-plugin"] = (
+            PluginRuntimeState(
+                plugin_id="admin-plugin",
+                status=STATUS_DISABLED,
+            )
+        )
+
+        with patch("app.routes.admin.plugins.log_action"), patch(
+            "app.routes.admin.plugins.reload_app_config",
+            side_effect=AppConfigReloadUnavailable("unsupported deployment"),
+        ):
+            response = self.client.post(
+                "/admin/plugins/reload",
+                follow_redirects=False,
+            )
+
+        self.assertEqual(response.status_code, 302)

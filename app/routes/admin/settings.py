@@ -444,14 +444,15 @@ def settings():
             if "enable_plugins" in changed_fields:
                 logger.info(
                     "Application plugin loader changed %s -> %s by user=%s; "
-                    "restart required",
+                    "app config reload required",
                     "enabled" if previous_plugin_loader_enabled else "disabled",
                     "enabled" if env.enable_plugins else "disabled",
                     current_user.username,
                 )
                 flash(
-                    "Application plugin loader setting changed. Restart Flask-AAS "
-                    "for the new plugin runtime state to take effect.",
+                    "Application plugin loader setting changed. Open Applications, "
+                    "select the apps you want enabled, then use Reload App Config once "
+                    "to apply the requested runtime state.",
                     "warning",
                 )
             return redirect(url_for("settings.settings"))
