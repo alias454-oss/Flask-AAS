@@ -146,6 +146,12 @@ def enable(registration_id):
             },
         )
         db.session.commit()
+        logger.info(
+            "Admin user=%s enabled plugin=%s configured=%s restart_required=True",
+            current_user.username,
+            registration.plugin_id,
+            configuration.configured,
+        )
     except Exception:
         db.session.rollback()
         logger.exception("Failed to enable plugin %s", registration.plugin_id)
@@ -198,6 +204,13 @@ def disable(registration_id):
             },
         )
         db.session.commit()
+        logger.info(
+            "Admin user=%s disabled plugin=%s configured=%s "
+            "secrets_cleared=True restart_required=True",
+            current_user.username,
+            registration.plugin_id,
+            configuration.configured,
+        )
     except Exception:
         db.session.rollback()
         logger.exception("Failed to disable plugin %s", registration.plugin_id)

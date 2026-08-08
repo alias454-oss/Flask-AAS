@@ -164,23 +164,38 @@ class PluginLifecycleTests(unittest.TestCase):
         self._add_settings(enable_plugins=False)
         self._add_registration(enabled=True)
 
-        with patch("app.plugins.loader.resolve_plugin") as resolve:
+        with self.assertLogs("app.plugins.loader", level="INFO") as logs, patch(
+            "app.plugins.loader.resolve_plugin"
+        ) as resolve:
             runtime = initialize_plugins(self.app)
 
         self.assertFalse(runtime.system_enabled)
         self.assertEqual(runtime.plugins, {})
         resolve.assert_not_called()
+        self.assertIn(
+            "Application plugin loader disabled by site settings",
+            "\n".join(logs.output),
+        )
 
     def test_disabled_registration_is_not_imported(self):
         self._add_settings(enable_plugins=True)
         self._add_registration(enabled=False, configured=True)
 
-        with patch("app.plugins.loader.resolve_plugin") as resolve:
+        with self.assertLogs("app.plugins.loader", level="INFO") as logs, patch(
+            "app.plugins.loader.resolve_plugin"
+        ) as resolve:
             runtime = initialize_plugins(self.app)
 
         self.assertTrue(runtime.system_enabled)
         self.assertEqual(runtime.plugins["lifecycle"].status, STATUS_DISABLED)
         resolve.assert_not_called()
+        output = "\n".join(logs.output)
+        self.assertIn("Plugin lifecycle disabled; runtime loading skipped", output)
+        self.assertIn(
+            "Application plugin startup complete: active=0 disabled=1 "
+            "pending_config=0 incompatible=0 errors=0",
+            output,
+        )
 
     def test_loader_records_plugin_owned_endpoints(self):
         self._add_settings(enable_plugins=True)
@@ -204,13 +219,25 @@ class PluginLifecycleTests(unittest.TestCase):
         registration = self._add_registration(enabled=True, configured=False)
         plugin = LifecyclePlugin(configured=True)
 
-        with patch("app.plugins.loader.resolve_plugin", return_value=plugin):
+        with self.assertLogs("app.plugins.loader", level="INFO") as logs, patch(
+            "app.plugins.loader.resolve_plugin", return_value=plugin
+        ):
             runtime = initialize_plugins(self.app)
 
         db.session.refresh(registration)
         self.assertEqual(runtime.plugins["lifecycle"].status, STATUS_ACTIVE)
         self.assertEqual(plugin.register_calls, 1)
         self.assertTrue(registration.configured)
+        output = "\n".join(logs.output)
+        self.assertIn(
+            "Activated application plugin lifecycle version=1.0.0 api=1",
+            output,
+        )
+        self.assertIn(
+            "Application plugin startup complete: active=1 disabled=0 "
+            "pending_config=0 incompatible=0 errors=0",
+            output,
+        )
 
     def test_enabled_unconfigured_plugin_registers_structural_surfaces(self):
         self._add_settings(enable_plugins=True)

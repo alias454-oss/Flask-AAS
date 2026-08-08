@@ -79,6 +79,22 @@ def _invoke_plugin_cli(plugin_id: str, args: Sequence[str]) -> None:
             f"Plugin {plugin_id!r} returned an invalid CLI command surface."
         )
 
+    command_name = "<default>"
+    if args:
+        first_arg = str(args[0])
+        if first_arg in {"--help", "-h"}:
+            command_name = "<help>"
+        elif first_arg.startswith("-"):
+            command_name = "<option>"
+        else:
+            command_name = first_arg
+
+    logger.info(
+        "Dispatching plugin CLI plugin=%s command=%s",
+        plugin_id,
+        command_name,
+    )
+
     try:
         command.main(
             args=list(args),

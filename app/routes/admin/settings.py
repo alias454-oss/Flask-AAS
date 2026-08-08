@@ -422,6 +422,7 @@ def settings():
 
     if form_valid and mail_valid:
         changed_fields = safe_changed_fields(form, env)
+        previous_plugin_loader_enabled = bool(env.enable_plugins)
 
         try:
             update_env_settings(form, env, db)
@@ -441,6 +442,13 @@ def settings():
                 "success",
             )
             if "enable_plugins" in changed_fields:
+                logger.info(
+                    "Application plugin loader changed %s -> %s by user=%s; "
+                    "restart required",
+                    "enabled" if previous_plugin_loader_enabled else "disabled",
+                    "enabled" if env.enable_plugins else "disabled",
+                    current_user.username,
+                )
                 flash(
                     "Application plugin loader setting changed. Restart Flask-AAS "
                     "for the new plugin runtime state to take effect.",

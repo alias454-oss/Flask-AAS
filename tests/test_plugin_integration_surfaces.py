@@ -81,11 +81,31 @@ class ExamplePluginIntegrationSurfaceTests(unittest.TestCase):
         db.session.commit()
 
         runner = self.app.test_cli_runner()
-        result = runner.invoke(args=["plugin", "run", "example", "status"])
+        with self.assertLogs("app.plugins.cli", level="INFO") as logs:
+            result = runner.invoke(args=["plugin", "run", "example", "status"])
 
         self.assertEqual(result.exit_code, 0)
         self.assertIn("Example Application plugin CLI is available.", result.output)
         self.assertNotIn("example", self.app.cli.commands)
+        self.assertIn(
+            "Dispatching plugin CLI plugin=example command=status",
+            "\n".join(logs.output),
+        )
+
+    def test_plugin_cli_logging_does_not_include_arguments(self):
+        runner = self.app.test_cli_runner()
+        with self.assertLogs("app.plugins.cli", level="INFO") as logs:
+            result = runner.invoke(
+                args=["plugin", "run", "example", "status", "opaque-secret-value"]
+            )
+
+        self.assertNotEqual(result.exit_code, 0)
+        output = "\n".join(logs.output)
+        self.assertIn(
+            "Dispatching plugin CLI plugin=example command=status",
+            output,
+        )
+        self.assertNotIn("opaque-secret-value", output)
 
     def test_plugin_cli_help_is_passed_through(self):
         result = self.app.test_cli_runner().invoke(

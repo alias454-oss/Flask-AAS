@@ -156,7 +156,15 @@ def _read_plugin_system_enabled() -> bool:
         db.session.rollback()
         return False
 
-    return bool(env and env.enable_plugins)
+    if env is None:
+        logger.info("Application plugin loader disabled; site settings are unavailable")
+        return False
+
+    if not env.enable_plugins:
+        logger.info("Application plugin loader disabled by site settings")
+        return False
+
+    return True
 
 
 def _runtime_state(
@@ -205,6 +213,13 @@ def initialize_plugins(app: Any) -> PluginRuntime:
         db.session.rollback()
         return runtime
 
+    registration_count = len(registrations)
+    logger.info(
+        "Application plugin loader enabled; %d plugin%s registered",
+        registration_count,
+        "" if registration_count == 1 else "s",
+    )
+
     configuration_changed = False
 
     for registration in registrations:
@@ -213,9 +228,14 @@ def initialize_plugins(app: Any) -> PluginRuntime:
                 registration,
                 STATUS_DISABLED,
             )
+            logger.info(
+                "Plugin %s disabled; runtime loading skipped",
+                registration.plugin_id,
+            )
             continue
 
         plugin: ApplicationPlugin | None = None
+        logger.info("Loading application plugin %s", registration.plugin_id)
 
         try:
             plugin = resolve_plugin(registration.import_path)
@@ -304,8 +324,10 @@ def initialize_plugins(app: Any) -> PluginRuntime:
                 reason=configuration.reason,
             )
             logger.info(
-                "Loaded application plugin %s with access gated pending configuration",
+                "Loaded application plugin %s version=%s api=%s with access gated pending configuration",
                 registration.plugin_id,
+                plugin.version,
+                plugin.api_version,
             )
             continue
 
@@ -314,7 +336,12 @@ def initialize_plugins(app: Any) -> PluginRuntime:
             STATUS_ACTIVE,
             plugin=plugin,
         )
-        logger.info("Activated application plugin %s", registration.plugin_id)
+        logger.info(
+            "Activated application plugin %s version=%s api=%s",
+            registration.plugin_id,
+            plugin.version,
+            plugin.api_version,
+        )
 
     if configuration_changed:
         try:
@@ -322,5 +349,26 @@ def initialize_plugins(app: Any) -> PluginRuntime:
         except SQLAlchemyError:
             db.session.rollback()
             logger.exception("Failed to persist plugin configuration status")
+
+    status_counts = {
+        STATUS_ACTIVE: 0,
+        STATUS_DISABLED: 0,
+        STATUS_NEEDS_CONFIGURATION: 0,
+        STATUS_INCOMPATIBLE: 0,
+        STATUS_ERROR: 0,
+    }
+    for state in runtime.plugins.values():
+        if state.status in status_counts:
+            status_counts[state.status] += 1
+
+    logger.info(
+        "Application plugin startup complete: active=%d disabled=%d "
+        "pending_config=%d incompatible=%d errors=%d",
+        status_counts[STATUS_ACTIVE],
+        status_counts[STATUS_DISABLED],
+        status_counts[STATUS_NEEDS_CONFIGURATION],
+        status_counts[STATUS_INCOMPATIBLE],
+        status_counts[STATUS_ERROR],
+    )
 
     return runtime

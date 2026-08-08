@@ -225,7 +225,7 @@ class PluginAdminRouteTests(unittest.TestCase):
         record = self._registration(enabled=False, configured=False)
         plugin = AdminPlugin(configured=True)
 
-        with patch(
+        with self.assertLogs("app.routes.admin.plugins", level="INFO") as logs, patch(
             "app.routes.admin.plugins.resolve_plugin",
             return_value=plugin,
         ), patch("app.routes.admin.plugins.log_action"):
@@ -238,6 +238,11 @@ class PluginAdminRouteTests(unittest.TestCase):
         db.session.refresh(record)
         self.assertTrue(record.enabled)
         self.assertTrue(record.configured)
+        self.assertIn(
+            "Admin user=plugin-admin enabled plugin=admin-plugin configured=True "
+            "restart_required=True",
+            "\n".join(logs.output),
+        )
 
     def test_enable_can_leave_plugin_needing_configuration(self):
         self._login(self.admin_id)
@@ -263,7 +268,7 @@ class PluginAdminRouteTests(unittest.TestCase):
         record = self._registration(enabled=True, configured=True)
         plugin = AdminPlugin(configured=True)
 
-        with patch(
+        with self.assertLogs("app.routes.admin.plugins", level="INFO") as logs, patch(
             "app.routes.admin.plugins.resolve_plugin",
             return_value=plugin,
         ), patch("app.routes.admin.plugins.log_action"):
@@ -278,6 +283,11 @@ class PluginAdminRouteTests(unittest.TestCase):
         self.assertFalse(record.configured)
         self.assertEqual(plugin.clear_calls, 1)
         self.assertEqual(PluginRegistration.query.count(), 1)
+        self.assertIn(
+            "Admin user=plugin-admin disabled plugin=admin-plugin configured=False "
+            "secrets_cleared=True restart_required=True",
+            "\n".join(logs.output),
+        )
 
     def test_disable_cleanup_failure_rolls_back_enabled_state(self):
         self._login(self.admin_id)
