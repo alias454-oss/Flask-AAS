@@ -92,7 +92,26 @@ The 2026-08-05 inactivity checkpoint established these invariants:
 - pre-authentication MFA state remains governed by its separate expiry and attempt limits;
 - inactivity expiry clears authenticated, transient MFA, and other browser-session state.
 
-Focused inactivity coverage is maintained in `tests.test_inactivity`, with login integration assertions in `tests.test_login_audit`. The complete regression suite contains 104 tests.
+Focused inactivity coverage is maintained in `tests/test_inactivity.py`, with login integration assertions in `tests/test_login_audit.py`.
+
+## Current application-plugin checkpoint
+
+The 2026-08-08 application-plugin checkpoint establishes these invariants:
+
+- the global plugin-system switch may remain disabled without loading application-plugin runtime code;
+- bundled plugin registration is explicit metadata, not writable-directory discovery;
+- registration alone does not import plugin implementation or model modules and does not deploy plugin schema;
+- explicit administrator enablement is the selected plugin's native-code trust/setup boundary;
+- structural runtime activation occurs only when a fresh Gunicorn worker starts;
+- disabled plugins do not contribute routes or navigation after reload, while the request guard denies a newly disabled plugin immediately;
+- enabled-but-unconfigured plugins remain inaccessible until their plugin-owned validation succeeds;
+- plugin configuration and persistence remain plugin-owned rather than moving domain settings into Flask-AAS core;
+- disabling a plugin preserves ordinary configuration, business data, and schema while clearing plugin-managed persisted secrets;
+- generic plugin CLI dispatch logs plugin and command identity without logging arbitrary command arguments;
+- plugin pages inherit the host template/theme baseline and add only plugin-local presentation overrides;
+- enabled Python plugins execute with Flask-AAS process privileges and are not treated as sandboxed code.
+
+Focused plugin coverage is maintained in `tests/test_plugin_contract.py`, `tests/test_plugin_lifecycle.py`, `tests/test_plugin_admin.py`, `tests/test_plugin_web_surface.py`, `tests/test_plugin_integration_surfaces.py`, `tests/test_plugin_bundled.py`, `tests/test_plugin_reload.py`, and `tests/test_plugin_example_persistence.py`.
 
 ## Recommended baseline
 
@@ -114,7 +133,10 @@ Use for framework-aware and project-specific checks. Add local rules for Flask-A
 - CSRF-exempt browser routes;
 - security-sensitive routes without fresh reauthentication;
 - request metadata capture that fails to exclude authorization or cookie headers;
-- `ProxyFix` enabled without explicit configuration.
+- `ProxyFix` enabled without explicit configuration;
+- normal application startup importing disabled plugin implementation/model modules;
+- filesystem scanning or implicit import of undeclared plugin packages;
+- plugin operational logging that records arbitrary CLI arguments.
 
 ### Dependency audit
 
@@ -168,6 +190,12 @@ The security regression suite is the most important control in this list. Static
 - SMTP credentials never appear in rendered forms, logs, or audit metadata.
 - Queued email is not represented as completed SMTP delivery.
 - Migrations upgrade a new database and a representative prior schema.
+- A globally disabled plugin system leaves the Flask-AAS core usable and does not load plugin runtime code.
+- Registered-but-disabled plugins do not import implementation/model modules, deploy schema, register routes, or contribute navigation during ordinary startup.
+- Explicit plugin enablement may perform trusted setup, but structural runtime activation requires a fresh worker.
+- Disabling a plugin immediately denies access, clears plugin-managed persisted secrets, preserves ordinary data/schema/configuration, and removes runtime registration after reload.
+- Plugin CLI logging never exposes arbitrary command arguments or managed secret values.
+- An incompatible or failed optional plugin does not prevent core startup.
 - CSP tests cover interactive controls without allowing inline script.
 
 ## Larger platforms

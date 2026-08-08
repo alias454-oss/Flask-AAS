@@ -11,6 +11,8 @@ Use this checklist when adding or reviewing a route. It is a review aid, not a s
 - Are inactive, unapproved, and unverified users handled consistently?
 - Does the route require a fresh login for a sensitive operation?
 - Does a privileged operation require stronger reauthentication?
+- For a plugin-owned route, is access gated by the host's effective plugin state rather than merely by route registration?
+- Are platform roles kept distinct from application entitlement and plugin-owned authorization semantics?
 
 High-risk examples:
 
@@ -84,6 +86,8 @@ Per-IP controls alone do not stop distributed attacks. Per-account hard lockouts
 - Are secrets stored in the correct configuration layer?
 - If a secret is runtime-managed, is it encrypted with a key stored outside the database?
 - Are blank-update and explicit-clear semantics defined for stored secrets?
+- For plugin-managed persisted credentials, is disable-time cleanup explicit and atomic with the disable decision?
+- Do plugin CLI/audit logs omit arbitrary command arguments and secret values?
 - Are secret values ever rendered back into forms?
 - Are exception messages safe for the user-facing response?
 
@@ -121,7 +125,28 @@ Do not record raw credentials, live tokens, or entire form submissions. Ordinary
 - Are sensitive pages marked `no-store`?
 - Are cookie flags appropriate to the active deployment mode?
 
-## 11. Required route test cases
+
+## 11. Application-plugin boundary
+
+When reviewing plugin host or plugin-owned code:
+
+- Does registration remain metadata-only, without importing plugin implementation or model modules?
+- Does a globally disabled plugin system avoid plugin runtime imports and route/navigation registration?
+- Does a registered but disabled application remain inert during ordinary startup?
+- Is explicit administrator **Enable** the point where selected plugin Python may execute and plugin-owned schema may be prepared?
+- Is the trust implication clear that an enabled Python plugin executes with Flask-AAS process privileges?
+- Are structural enable/disable changes completed through a fresh Gunicorn worker rather than live Blueprint mutation?
+- Does disabling immediately deny effective route/navigation access before the reload finishes structural removal?
+- Does disable preserve ordinary plugin configuration, schema, and business data unless a separate destructive operation is explicitly requested?
+- Does plugin-managed persisted secret cleanup complete before the registration is reported disabled?
+- Can one incompatible or failed optional plugin fail closed without taking down the Flask-AAS core or unrelated plugins?
+- Are plugin package `__init__.py` files and metadata paths kept free of unnecessary import-time side effects?
+- Is filesystem presence kept distinct from trust, registration, enablement, and runtime activation?
+
+Do not treat an in-process Python plugin as sandboxed. Least-privilege process/container permissions limit blast radius; they do not make untrusted plugin code safe.
+
+## 12. Required route test cases
+
 
 At minimum, test:
 
@@ -160,6 +185,7 @@ At minimum, test:
 - Audit metadata policy:
 - Redacted fields:
 - Failure behavior:
+- Plugin/runtime guard (if applicable):
 - Required tests:
 - Open risks:
 ```
