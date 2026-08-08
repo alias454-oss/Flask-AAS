@@ -3,9 +3,12 @@
 from pathlib import Path
 from typing import Any
 
+from sqlalchemy import inspect
+
+from app.core.extensions import db
 from app.plugins import ApplicationPlugin, PluginConfiguration, load_plugin_manifest
 from app.plugins.example.cli import cli as example_cli
-from app.plugins.example.models import ensure_example_schema, get_example_settings
+from app.plugins.example.models import ExampleSettings, get_example_settings
 from app.plugins.example.routes import example_bp
 from app.plugins.navigation import register_plugin_navigation
 
@@ -16,9 +19,6 @@ class ExamplePlugin(ApplicationPlugin):
     name = manifest.name
     version = manifest.version
     api_version = manifest.api_version
-
-    def prepare_enable(self) -> None:
-        ensure_example_schema()
 
     def validate_config(self) -> PluginConfiguration:
         settings = get_example_settings()
@@ -49,6 +49,9 @@ class ExamplePlugin(ApplicationPlugin):
         return PluginConfiguration(configured=True)
 
     def clear_secrets(self) -> None:
+        if not inspect(db.engine).has_table(ExampleSettings.__tablename__):
+            return
+
         settings = get_example_settings()
         if settings is not None:
             settings.managed_secret = None

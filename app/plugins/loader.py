@@ -17,6 +17,7 @@ from app.plugins.interface import (
     PluginCompatibilityError,
     validate_plugin_contract,
 )
+from app.plugins.migrations import PluginMigrationManager
 from app.plugins.registry import refresh_configuration
 
 logger = logging.getLogger(__name__)
@@ -25,6 +26,7 @@ PLUGIN_RUNTIME_EXTENSION = "flask_aas_plugins"
 
 STATUS_DISABLED = "DISABLED"
 STATUS_NEEDS_CONFIGURATION = "NEEDS_CONFIGURATION"
+STATUS_NEEDS_MIGRATION = "NEEDS_MIGRATION"
 STATUS_INCOMPATIBLE = "INCOMPATIBLE"
 STATUS_ACTIVE = "ACTIVE"
 STATUS_ERROR = "ERROR"
@@ -270,6 +272,46 @@ def initialize_plugins(app: Any) -> PluginRuntime:
             )
             continue
 
+        manifest = getattr(plugin, "manifest", None)
+        if manifest is not None and manifest.migrations is not None:
+            try:
+                schema_current = PluginMigrationManager(manifest).schema_current()
+            except Exception:
+                registration.configured = False
+                configuration_changed = True
+                runtime.plugins[registration.plugin_id] = _runtime_state(
+                    registration,
+                    STATUS_ERROR,
+                    plugin=plugin,
+                    reason="Plugin schema state could not be validated. Check application logs.",
+                )
+                logger.exception(
+                    "Plugin %s schema validation failed",
+                    registration.plugin_id,
+                )
+                continue
+
+            if not schema_current:
+                registration.configured = False
+                configuration_changed = True
+                runtime.plugins[registration.plugin_id] = _runtime_state(
+                    registration,
+                    STATUS_NEEDS_MIGRATION,
+                    plugin=plugin,
+                    reason=(
+                        "Plugin schema is not current. Run "
+                        f"'python manage.py plugin run {registration.plugin_id} db upgrade', "
+                        "then use Reload App Config."
+                    ),
+                )
+                logger.info(
+                    "Plugin %s version=%s api=%s requires schema migration before runtime registration",
+                    registration.plugin_id,
+                    plugin.version,
+                    plugin.api_version,
+                )
+                continue
+
         try:
             configuration = refresh_configuration(registration, plugin)
             configuration_changed = True
@@ -353,6 +395,7 @@ def initialize_plugins(app: Any) -> PluginRuntime:
         STATUS_ACTIVE: 0,
         STATUS_DISABLED: 0,
         STATUS_NEEDS_CONFIGURATION: 0,
+        STATUS_NEEDS_MIGRATION: 0,
         STATUS_INCOMPATIBLE: 0,
         STATUS_ERROR: 0,
     }
@@ -362,10 +405,11 @@ def initialize_plugins(app: Any) -> PluginRuntime:
 
     logger.info(
         "Application plugin startup complete: active=%d disabled=%d "
-        "pending_config=%d incompatible=%d errors=%d",
+        "pending_config=%d pending_migration=%d incompatible=%d errors=%d",
         status_counts[STATUS_ACTIVE],
         status_counts[STATUS_DISABLED],
         status_counts[STATUS_NEEDS_CONFIGURATION],
+        status_counts[STATUS_NEEDS_MIGRATION],
         status_counts[STATUS_INCOMPATIBLE],
         status_counts[STATUS_ERROR],
     )

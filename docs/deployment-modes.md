@@ -104,9 +104,9 @@ Application hosting is optional. The database-backed **Enable Application Plugin
 
 Bundled applications may have registration rows so the host can present their metadata after the plugin system is enabled. Registration is metadata only. A registered but disabled application must not import its plugin implementation or model modules, deploy plugin-owned schema, register routes, or contribute navigation during ordinary application startup.
 
-Enabling an application is the explicit trust and setup boundary. At that point Flask-AAS may import that selected plugin's Python implementation, prepare plugin-owned schema, and validate plugin-owned configuration. Python plugins execute with the permissions of the Flask-AAS process; enabling one is therefore equivalent to trusting native application code. Flask-AAS does not claim to sandbox enabled plugins.
+Enabling an application is the explicit trust/code-execution boundary. At that point Flask-AAS may import that selected plugin's Python implementation and inspect its declared migration/configuration state. **Enable does not create, migrate, or stamp plugin-owned schema.** Python plugins execute with the permissions of the Flask-AAS process; enabling one is therefore equivalent to trusting native application code. Flask-AAS does not claim to sandbox enabled plugins.
 
-Structural activation still occurs at a fresh-process boundary:
+Schema readiness, configuration readiness, and structural runtime activation are separate boundaries:
 
 ```text
 registered + disabled
@@ -115,17 +115,29 @@ registered + disabled
 administrator enables application
         |
         v
-trusted plugin setup/config validation
-        |
-        v
 Reload App Config
         |
-        v
-fresh Gunicorn worker
+        +--> NEEDS_MIGRATION
+        |         |
+        |         v
+        |    explicit plugin schema upgrade
+        |         |
+        |         v
+        |    Reload App Config
+        |
+        +--> NEEDS_CONFIGURATION
+        |         |
+        |         v
+        |    plugin-owned configuration
+        |         |
+        |         v
+        |    Reload App Config
         |
         v
-enabled plugin runtime registered
+ACTIVE
 ```
+
+A persisted schema/configuration change does not mutate an already running worker's plugin status snapshot. Schema migration from `NEEDS_MIGRATION` still requires a fresh worker before the plugin can be structurally registered. For a plugin that is already structurally loaded as `ACTIVE` or `NEEDS_CONFIGURATION`, request and navigation access follow the current persisted `enabled/configured` flags immediately; **Reload App Config** reconciles the worker's startup-time status and any startup-only plugin behavior.
 
 The repository container runs Gunicorn as the unprivileged `flaskaas` user. **Reload App Config** uses a fixed `SIGHUP` to the Gunicorn master at PID 1 after verifying that PID 1 is Gunicorn; it does not invoke a shell or accept an arbitrary process or signal. If that deployment shape is not present, the action fails normally rather than attempting an unsafe fallback.
 
@@ -161,9 +173,20 @@ This policy has a strict boundary:
 3. concurrent bootstrap must be avoided;
 4. before the first supported upgrade, reviewed migration sources must be versioned and normal startup must apply known upgrades only.
 
-Plugin registration does not import plugin models merely so Alembic can see them. The current reference plugin instead proves plugin-owned persistence by preparing only its own schema after an administrator explicitly enables/trusts that application. Disabled applications therefore do not execute model code during ordinary startup.
+Plugin registration does not import plugin models merely so Alembic can see them. Plugin API v1 now provides an independent plugin migration mechanism driven by static `plugin.toml` metadata. A plugin may declare a package-local migration directory such as `migrations = "migrations"`; the host derives a portable table namespace `plugin_<id>_*` and an independent version table `plugin_<id>_alembic_version`.
 
-That reference behavior is not yet the final versioned plugin-migration contract. Before Flask-AAS supports durable in-place upgrades, migration tooling must explicitly load metadata for installed/trusted plugins when performing migration operations, preserve plugin migration history, and handle plugin install/upgrade/schema requirements deterministically without making disabled runtime startup execute plugin code.
+The plugin migration manager follows these rules:
+
+- a fresh namespace with no plugin-owned tables and no plugin version table may create the current plugin model schema and stamp the current head;
+- an existing versioned plugin runs its own Alembic history normally;
+- existing plugin-owned tables without the plugin version table fail closed instead of being blindly stamped;
+- migration/autogenerate is constrained to the plugin-owned table prefix;
+- migration operations are explicit and do not occur merely because the plugin was enabled;
+- a disabled plugin remains inert during ordinary web startup; explicit operator migration CLI is a separate deliberate code-execution boundary.
+
+Development migration directories remain disposable/ignored during the current pre-release phase and may be regenerated or squashed. At the first supported release/checkpoint, published plugin schema transitions become durable upgrade history.
+
+`AAS-039` still requires final release-grade acceptance proving core Alembic preserves its own `plugin_registrations` table while excluding plugin-owned namespaces such as `plugin_example_*`, a representative `0001 -> 0002` upgrade reaches the same final schema as greenfield bootstrap, failed migrations do not falsely advance the plugin version table, and focused PostgreSQL lifecycle/migration coverage is green.
 
 ## Configuration validation goals
 
@@ -179,7 +202,7 @@ Examples:
 - UI-managed SMTP credentials require `MAIL_CONFIG_UI_ENABLED=true` and an external Fernet encryption key.
 - HTTPS external URL enables secure cookies and HSTS at the correct boundary.
 - The global application-plugin switch may remain off without importing plugin runtime code.
-- Enabling an individual application is an explicit native-code trust boundary and may initialize that plugin's schema/configuration.
+- Enabling an individual application is an explicit native-code trust boundary; schema migration and runtime activation remain separate explicit operations.
 - Structural plugin changes are realized through a fresh Gunicorn worker rather than live Blueprint mutation.
 
 The base should fail only when the requested capability cannot operate safely, not merely because optional production infrastructure is absent.

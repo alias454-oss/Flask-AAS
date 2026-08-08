@@ -1,3 +1,4 @@
+# plugins/example/models.py
 """Plugin-owned persistence for the Flask-AAS reference application."""
 
 from app.core.extensions import db
@@ -46,16 +47,3 @@ def get_example_settings(*, create: bool = False) -> ExampleSettings | None:
         db.session.add(settings)
         db.session.flush()
     return settings
-
-
-def ensure_example_schema() -> None:
-    """Create the reference plugin tables when Example is explicitly trusted.
-
-    This is intentionally scoped to Example-owned tables and is safe across
-    SQLite/PostgreSQL through SQLAlchemy's portable Table.create(checkfirst).
-    Schema evolution still belongs to the final migration workflow.
-    """
-
-    bind = db.engine
-    ExampleSettings.__table__.create(bind=bind, checkfirst=True)
-    ExampleItem.__table__.create(bind=bind, checkfirst=True)

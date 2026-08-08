@@ -54,12 +54,12 @@ class ApplicationPlugin(ABC):
         """
 
     def prepare_enable(self) -> None:
-        """Prepare plugin-owned persistence before configuration validation.
+        """Perform optional trusted setup after plugin schema is current.
 
-        Flask-AAS calls this only during an explicit enable operation. Normal
-        startup does not call it for disabled plugins. Implementations may use
-        this hook to install or verify plugin-owned schema needed by
-        ``validate_config()``. The default implementation does nothing.
+        Flask-AAS calls this only during an explicit enable operation and only
+        after any declared plugin migration history is current. Implementations
+        must not create, migrate, or stamp plugin-owned schema here; schema
+        changes belong to the plugin-owned migration CLI.
         """
 
         return None

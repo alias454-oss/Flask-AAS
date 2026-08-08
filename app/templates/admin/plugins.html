@@ -70,6 +70,15 @@
               {% endif %}
 
               <div class="user-actions">
+                {% if row.can_upgrade_schema %}
+                  <form method="POST"
+                        action="{{ url_for('plugins.upgrade_schema', registration_id=registration.id) }}"
+                        class="inline-action-form">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+                    <button type="submit" class="button-link">Upgrade Database Schema</button>
+                  </form>
+                {% endif %}
+
                 {% if registration.enabled %}
                   <form method="POST"
                         action="{{ url_for('plugins.disable', registration_id=registration.id) }}"

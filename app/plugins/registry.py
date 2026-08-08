@@ -7,6 +7,7 @@ from app.plugins.interface import (
     PluginContractError,
     validate_plugin_contract,
 )
+from app.plugins.migrations import PluginMigrationManager
 
 
 class PluginRegistrationError(PluginContractError):
@@ -108,10 +109,23 @@ def enable_plugin(
     validate_plugin_contract(plugin)
     _require_matching_plugin(registration, plugin)
 
-    # Enabling is the explicit trust/activation boundary. Disabled plugins are
-    # not imported during normal startup merely to expose model metadata. Give
-    # the plugin one chance to prepare its own persistence before config
-    # validation queries it.
+    # Enabling is the explicit trust/code-execution boundary, but it is not a
+    # schema-upgrade operation. A plugin with declared migrations remains enabled
+    # but unavailable until its own operator CLI advances that schema to head.
+    manifest = getattr(plugin, "manifest", None)
+    if manifest is not None and manifest.migrations is not None:
+        manager = PluginMigrationManager(manifest)
+        if not manager.schema_current():
+            registration.enabled = True
+            registration.configured = False
+            return PluginConfiguration(
+                configured=False,
+                reason=(
+                    f"Plugin schema is not current. Run 'python manage.py plugin run "
+                    f"{plugin.plugin_id} db upgrade', then use Reload App Config."
+                ),
+            )
+
     plugin.prepare_enable()
     configuration = refresh_configuration(registration, plugin)
     registration.enabled = True
@@ -133,8 +147,22 @@ def disable_plugin(
     _require_matching_plugin(registration, plugin)
 
     # Clear secrets before changing activation state. If cleanup fails, callers
-    # can roll back without recording a successful disable operation.
+    # can roll back without recording a successful disable operation. Plugins
+    # must tolerate a schema that was never installed when no managed secret can
+    # exist yet.
     plugin.clear_secrets()
+
+    manifest = getattr(plugin, "manifest", None)
+    if manifest is not None and manifest.migrations is not None:
+        manager = PluginMigrationManager(manifest)
+        if not manager.schema_current():
+            registration.configured = False
+            registration.enabled = False
+            return PluginConfiguration(
+                configured=False,
+                reason="Plugin schema is not current.",
+            )
+
     configuration = refresh_configuration(registration, plugin)
     registration.enabled = False
     return configuration

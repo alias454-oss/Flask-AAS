@@ -32,6 +32,13 @@ class PluginManifestTests(unittest.TestCase):
             manifest.entrypoint,
             "app.plugins.example.plugin:plugin",
         )
+        self.assertEqual(manifest.migrations, "migrations")
+        self.assertEqual(manifest.table_prefix, "plugin_example_")
+        self.assertEqual(manifest.version_table, "plugin_example_alembic_version")
+        self.assertEqual(
+            manifest.migration_path,
+            EXAMPLE_MANIFEST.parent / "migrations",
+        )
 
         self.assertEqual(example_plugin.manifest, manifest)
         self.assertEqual(example_plugin.plugin_id, manifest.plugin_id)
@@ -77,6 +84,22 @@ class PluginManifestTests(unittest.TestCase):
         )
 
         with self.assertRaisesRegex(PluginManifestError, "plugin.api_version"):
+            load_plugin_manifest(path)
+
+    def test_manifest_rejects_migration_path_escape(self):
+        path = self._write_manifest(
+            """
+            [plugin]
+            id = "fake"
+            name = "Fake"
+            version = "1.0.0"
+            api_version = 1
+            entrypoint = "some.plugin:plugin"
+            migrations = "../outside"
+            """
+        )
+
+        with self.assertRaisesRegex(PluginManifestError, "plugin.migrations"):
             load_plugin_manifest(path)
 
     def test_manifest_rejects_invalid_entrypoint(self):

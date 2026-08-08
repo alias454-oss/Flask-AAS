@@ -20,7 +20,28 @@ class PluginManifest:
     version: str
     api_version: int
     entrypoint: str
+    migrations: str | None
     path: Path
+
+    @property
+    def table_prefix(self) -> str:
+        """Database table namespace reserved for this plugin."""
+
+        return f"plugin_{self.plugin_id}_"
+
+    @property
+    def version_table(self) -> str:
+        """Independent Alembic version table for this plugin."""
+
+        return f"{self.table_prefix}alembic_version"
+
+    @property
+    def migration_path(self) -> Path | None:
+        """Absolute path to the plugin-owned Alembic environment, if declared."""
+
+        if self.migrations is None:
+            return None
+        return (self.path.parent / self.migrations).resolve()
 
 
 def _nonempty_string(value: object, field_name: str, *, path: Path) -> str:
@@ -60,6 +81,32 @@ def _entrypoint(value: object, *, path: Path) -> str:
             "'package.module:attribute'"
         )
     return entrypoint
+
+
+def _migration_directory(value: object, *, path: Path) -> str | None:
+    if value is None:
+        return None
+
+    migrations = _nonempty_string(value, "migrations", path=path)
+    relative_path = Path(migrations)
+    if (
+        relative_path.is_absolute()
+        or migrations != relative_path.as_posix()
+        or any(part in {"", ".", ".."} for part in relative_path.parts)
+    ):
+        raise PluginManifestError(
+            f"{path}: plugin.migrations must be a relative plugin-package path"
+        )
+
+    resolved = (path.parent / relative_path).resolve()
+    try:
+        resolved.relative_to(path.parent.resolve())
+    except ValueError as exc:
+        raise PluginManifestError(
+            f"{path}: plugin.migrations must remain inside the plugin package"
+        ) from exc
+
+    return relative_path.as_posix()
 
 
 def load_plugin_manifest(path: str | Path) -> PluginManifest:
@@ -103,6 +150,10 @@ def load_plugin_manifest(path: str | Path) -> PluginManifest:
         )
 
     entrypoint = _entrypoint(plugin_section.get("entrypoint"), path=manifest_path)
+    migrations = _migration_directory(
+        plugin_section.get("migrations"),
+        path=manifest_path,
+    )
 
     return PluginManifest(
         plugin_id=plugin_id,
@@ -110,5 +161,6 @@ def load_plugin_manifest(path: str | Path) -> PluginManifest:
         version=version,
         api_version=api_version,
         entrypoint=entrypoint,
+        migrations=migrations,
         path=manifest_path,
     )

@@ -11,6 +11,7 @@ from app.models import EnvSettings, PluginRegistration, User
 from app.plugins.example import plugin as example_plugin
 from app.plugins.example.models import ExampleItem, ExampleSettings
 from app.plugins.interface import PluginConfiguration
+from app.plugins.migrations import PluginMigrationManager
 from app.plugins.loader import (
     STATUS_ACTIVE,
     STATUS_DISABLED,
@@ -69,7 +70,13 @@ class ExamplePluginWebSurfaceTests(unittest.TestCase):
 
         self.app_context = self.app.app_context()
         self.app_context.push()
-        db.create_all()
+        core_tables = [
+            table
+            for table in db.metadata.tables.values()
+            if not table.name.startswith(example_plugin.manifest.table_prefix)
+        ]
+        db.metadata.create_all(bind=db.engine, tables=core_tables)
+        PluginMigrationManager(example_plugin.manifest).upgrade()
         EnvSettings._cached_instance = None
 
         owner = User(

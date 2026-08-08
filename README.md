@@ -76,13 +76,17 @@ The base is intentionally designed to remain easy to run locally. Direct HTTP, g
 
 ### Application Plugin Host
 - Global **Enable Application Plugins** switch; Flask-AAS operates normally with the plugin host disabled
-- Database-backed registration for bundled application metadata
-- Explicit per-application enable/disable and configuration state
+- Database-backed registration for explicitly trusted bundled applications
+- Canonical package metadata in `plugin.toml`, inspectable without importing plugin implementation Python
+- Explicit per-application enable/disable plus derived configuration and runtime state
 - Metadata-only registration: a registered but disabled application does not import its implementation/models, deploy plugin schema, register routes, or contribute navigation during ordinary startup
-- Explicit **Enable** trust/setup boundary where the selected plugin's Python code may execute, prepare plugin-owned persistence, and validate plugin-owned configuration
-- **Reload App Config** applies structural changes through a fresh Gunicorn worker instead of mutating Flask Blueprints in a running process
+- Explicit **Enable** trust/code-execution boundary; enabling does **not** silently create or migrate plugin schema
+- Independent plugin-owned Alembic histories declared by the manifest, with `plugin_<id>_*` table ownership and `plugin_<id>_alembic_version` version tables
+- Fail-closed `NEEDS_MIGRATION`, `NEEDS_CONFIGURATION`, `INCOMPATIBLE`, `ACTIVE`, and `ERROR` runtime states
+- Admin **Upgrade Database Schema** action for an enabled compatible plugin that is migration-pending; the browser path upgrades only to `head`
+- **Reload App Config** applies structural/runtime-snapshot changes through a fresh Gunicorn worker instead of mutating Flask Blueprints in a running process; already-loaded route/navigation access still follows the current persisted `enabled/configured` gate
 - Immediate request/navigation denial after disable, followed by structural removal on reload
-- Plugin-owned CLI commands through `python manage.py plugin run <plugin_id> ...`
+- Plugin-owned CLI commands through `python manage.py plugin run <plugin_id> ...`, including plugin-owned migration/configuration commands
 - Host-owned navigation integration and host theme/template inheritance for plugin pages
 - Plugin-owned ordinary configuration and persistence; disabling preserves business data/schema while clearing plugin-managed persisted secrets
 - Versioned `PLUGIN_API_VERSION = 1` compatibility boundary
@@ -207,9 +211,36 @@ python manage.py db migrate -m "Describe change"
 python manage.py db upgrade
 ```
 
-This is acceptable only while Flask-AAS is pre-release and deployments are treated as clean installs. The host bootstrap boundary is established, but durable in-place upgrades and the final versioned plugin-owned migration/install/upgrade contract are not yet release-ready.
+This is acceptable only while Flask-AAS is pre-release and deployments are treated as clean installs. The host bootstrap boundary is established, but durable in-place **core** release upgrades are not yet claimed.
 
-A registered but disabled plugin is not imported merely to expose its models to Alembic during normal startup. The reference plugin currently prepares only its own schema after explicit administrator enablement/trust. Final migration tooling must explicitly load installed/trusted plugin metadata during migration operations without weakening that disabled-runtime boundary.
+Application plugins have a separate migration boundary. A plugin manifest may declare a package-local migration environment, for example:
+
+```toml
+[plugin]
+id = "example"
+entrypoint = "app.plugins.example.plugin:plugin"
+migrations = "migrations"
+```
+
+For a plugin with declared migrations:
+
+- **Enable** is permission to execute the selected trusted plugin, not permission to mutate its schema;
+- an enabled plugin whose schema is behind reports `NEEDS_MIGRATION` and is not structurally registered for normal application use;
+- a fresh plugin namespace may create the current plugin-owned model tables and stamp the current migration head;
+- an existing versioned plugin runs its own Alembic history;
+- existing unversioned `plugin_<id>_*` tables fail closed rather than being blindly stamped;
+- plugin history uses its own `plugin_<id>_alembic_version` table and must not own Flask-AAS core tables.
+
+Example migration operations are explicit:
+
+```bash
+python manage.py plugin run example db current
+python manage.py plugin run example db migrate -m "Describe plugin schema change"
+python manage.py plugin run example db upgrade
+python manage.py plugin run example db downgrade
+```
+
+Development migration history remains disposable before the first supported release/checkpoint. Published schema checkpoints become durable upgrade origins. `AAS-039` remains open for the remaining release-grade acceptance work, including explicit core-Alembic exclusion of plugin-owned namespaces such as `plugin_example_*` while preserving the core-owned `plugin_registrations` table, a real `0001 -> 0002` upgrade, failed-migration semantics, and focused PostgreSQL coverage.
 
 ---
 
@@ -339,6 +370,8 @@ Run the Plugin API/lifecycle/reference-application suites with:
 ```bash
 python -m pytest \
   tests/test_plugin_contract.py \
+  tests/test_plugin_manifest.py \
+  tests/test_plugin_migrations.py \
   tests/test_plugin_lifecycle.py \
   tests/test_plugin_admin.py \
   tests/test_plugin_web_surface.py \
@@ -385,14 +418,20 @@ Admin → Site Settings
 → Enable Application Plugins
 → Applications
 → Enable the desired application
-→ satisfy any plugin-owned configuration
 → Reload App Config
+→ if NEEDS_MIGRATION: Upgrade Database Schema
+→ Reload App Config
+→ if NEEDS_CONFIGURATION: complete plugin-owned configuration
+→ Reload App Config
+→ ACTIVE
 ```
 
-`Reload App Config` performs the structural Gunicorn reload. The explicit plugin CLI remains available for diagnostics/configuration when deliberately invoked:
+`Reload App Config` performs the structural Gunicorn reload and reconciles the worker runtime snapshot with persisted state. For an already structurally loaded plugin, request/navigation gating reads the current persisted `enabled/configured` flags immediately; reload is still the normal administrative step for reconciling runtime status and any startup-time plugin behavior. Database migration remains a separate privileged operation. The explicit plugin CLI is also available for diagnostics, migration, configuration, and plugin-owned maintenance when deliberately invoked:
 
 ```bash
 python manage.py plugin run example status
+python manage.py plugin run example db current
+python manage.py plugin run example db upgrade
 python manage.py plugin run example configure
 python manage.py plugin run example add-item "example value"
 ```

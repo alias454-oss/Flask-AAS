@@ -100,9 +100,15 @@ The 2026-08-08 application-plugin checkpoint establishes these invariants:
 
 - the global plugin-system switch may remain disabled without loading application-plugin runtime code;
 - bundled plugin registration is explicit metadata, not writable-directory discovery;
+- canonical static plugin identity/compatibility metadata comes from `plugin.toml` and can be validated without importing implementation Python;
 - registration alone does not import plugin implementation or model modules and does not deploy plugin schema;
-- explicit administrator enablement is the selected plugin's native-code trust/setup boundary;
+- explicit administrator enablement is the selected plugin's native-code trust boundary, not a schema-migration operation;
+- plugins with declared migrations use independent `plugin_<id>_*` namespaces and `plugin_<id>_alembic_version` histories;
+- an enabled plugin with stale schema fails closed as `NEEDS_MIGRATION` before structural application registration;
+- fresh plugin namespaces may bootstrap the current owned model schema and stamp head, while existing unversioned owned tables fail closed;
+- the admin schema-upgrade path is POST/admin/CSRF/rate-limit protected, upgrades only to `head`, and does not expose browser downgrade/arbitrary revision execution;
 - structural runtime activation occurs only when a fresh Gunicorn worker starts;
+- persisted schema/configuration changes are distinct from the running worker's status snapshot; already-loaded route/navigation gates follow current persisted `enabled/configured` state immediately, while **Reload App Config** reconciles startup-time runtime status and structure;
 - disabled plugins do not contribute routes or navigation after reload, while the request guard denies a newly disabled plugin immediately;
 - enabled-but-unconfigured plugins remain inaccessible until their plugin-owned validation succeeds;
 - plugin configuration and persistence remain plugin-owned rather than moving domain settings into Flask-AAS core;
@@ -111,7 +117,7 @@ The 2026-08-08 application-plugin checkpoint establishes these invariants:
 - plugin pages inherit the host template/theme baseline and add only plugin-local presentation overrides;
 - enabled Python plugins execute with Flask-AAS process privileges and are not treated as sandboxed code.
 
-Focused plugin coverage is maintained in `tests/test_plugin_contract.py`, `tests/test_plugin_lifecycle.py`, `tests/test_plugin_admin.py`, `tests/test_plugin_web_surface.py`, `tests/test_plugin_integration_surfaces.py`, `tests/test_plugin_bundled.py`, `tests/test_plugin_reload.py`, and `tests/test_plugin_example_persistence.py`.
+Focused plugin coverage is maintained in `tests/test_plugin_contract.py`, `tests/test_plugin_manifest.py`, `tests/test_plugin_migrations.py`, `tests/test_plugin_lifecycle.py`, `tests/test_plugin_admin.py`, `tests/test_plugin_web_surface.py`, `tests/test_plugin_integration_surfaces.py`, `tests/test_plugin_bundled.py`, `tests/test_plugin_reload.py`, and `tests/test_plugin_example_persistence.py`. The current full suite passes **239 tests, 11 warnings, and 15 subtests**.
 
 ## Recommended baseline
 
@@ -192,7 +198,11 @@ The security regression suite is the most important control in this list. Static
 - Migrations upgrade a new database and a representative prior schema.
 - A globally disabled plugin system leaves the Flask-AAS core usable and does not load plugin runtime code.
 - Registered-but-disabled plugins do not import implementation/model modules, deploy schema, register routes, or contribute navigation during ordinary startup.
-- Explicit plugin enablement may perform trusted setup, but structural runtime activation requires a fresh worker.
+- Plugin manifests and migration declarations are validated without importing plugin implementation code.
+- Core Alembic autogeneration preserves the core-owned `plugin_registrations` table while never adopting plugin-domain namespaces such as `plugin_example_*` that belong to plugin migration histories.
+- Plugin migration failure never falsely advances `plugin_<id>_alembic_version`.
+- Persisted plugin configuration drift is tested explicitly: request/navigation gating follows current persisted state on already-loaded surfaces, while worker runtime status remains stale until Reload App Config.
+- Explicit plugin enablement is a trusted code-execution boundary but does not migrate schema; structural runtime activation requires a fresh worker.
 - Disabling a plugin immediately denies access, clears plugin-managed persisted secrets, preserves ordinary data/schema/configuration, and removes runtime registration after reload.
 - Plugin CLI logging never exposes arbitrary command arguments or managed secret values.
 - An incompatible or failed optional plugin does not prevent core startup.

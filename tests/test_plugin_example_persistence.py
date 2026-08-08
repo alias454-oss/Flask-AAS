@@ -9,6 +9,7 @@ from app.core.extensions import db
 from app.models.plugin import PluginRegistration
 from app.plugins.example.models import ExampleItem, ExampleSettings
 from app.plugins.example.plugin import plugin as example_plugin
+from app.plugins.migrations import PluginMigrationManager
 from app.plugins.registry import disable_plugin, enable_plugin, refresh_configuration
 
 
@@ -39,7 +40,17 @@ class ExamplePluginPersistenceTests(unittest.TestCase):
         self.app_context.push()
         db.session.remove()
         db.drop_all()
-        db.create_all()
+        with db.engine.begin() as connection:
+            connection.exec_driver_sql(
+                f"DROP TABLE IF EXISTS {example_plugin.manifest.version_table}"
+            )
+        core_tables = [
+            table
+            for table in db.metadata.tables.values()
+            if not table.name.startswith(example_plugin.manifest.table_prefix)
+        ]
+        db.metadata.create_all(bind=db.engine, tables=core_tables)
+        PluginMigrationManager(example_plugin.manifest).upgrade()
 
         self.registration = PluginRegistration(
             plugin_id="example",
@@ -100,9 +111,13 @@ class ExamplePluginPersistenceTests(unittest.TestCase):
             "business-data-survives-disable",
         )
 
-    def test_first_enable_prepares_plugin_schema_before_validation(self):
+    def test_enable_does_not_install_plugin_schema(self):
         ExampleItem.__table__.drop(bind=db.engine, checkfirst=True)
         ExampleSettings.__table__.drop(bind=db.engine, checkfirst=True)
+        with db.engine.begin() as connection:
+            connection.exec_driver_sql(
+                f"DROP TABLE IF EXISTS {example_plugin.manifest.version_table}"
+            )
         self.registration.enabled = False
         self.registration.configured = False
         db.session.commit()
@@ -112,8 +127,29 @@ class ExamplePluginPersistenceTests(unittest.TestCase):
 
         self.assertTrue(self.registration.enabled)
         self.assertFalse(configuration.configured)
-        self.assertIn("plugin_example_settings", inspect(db.engine).get_table_names())
-        self.assertIn("plugin_example_items", inspect(db.engine).get_table_names())
+        self.assertIn("db upgrade", configuration.reason)
+        table_names = inspect(db.engine).get_table_names()
+        self.assertNotIn("plugin_example_settings", table_names)
+        self.assertNotIn("plugin_example_items", table_names)
+        self.assertNotIn(example_plugin.manifest.version_table, table_names)
+
+    def test_disable_before_schema_install_succeeds(self):
+        ExampleItem.__table__.drop(bind=db.engine, checkfirst=True)
+        ExampleSettings.__table__.drop(bind=db.engine, checkfirst=True)
+        with db.engine.begin() as connection:
+            connection.exec_driver_sql(
+                f"DROP TABLE IF EXISTS {example_plugin.manifest.version_table}"
+            )
+        self.registration.enabled = True
+        self.registration.configured = False
+        db.session.commit()
+
+        configuration = disable_plugin(self.registration, example_plugin)
+        db.session.commit()
+
+        self.assertFalse(self.registration.enabled)
+        self.assertFalse(self.registration.configured)
+        self.assertFalse(configuration.configured)
 
     def test_reenable_requires_managed_secret_to_be_resupplied(self):
         disable_plugin(self.registration, example_plugin)

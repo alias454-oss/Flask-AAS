@@ -11,6 +11,7 @@ from app.plugins import (
     PLUGIN_API_VERSION,
     ApplicationPlugin,
     PluginConfiguration,
+    load_plugin_manifest,
 )
 from app.plugins.loader import (
     STATUS_ACTIVE,
@@ -18,6 +19,7 @@ from app.plugins.loader import (
     STATUS_ERROR,
     STATUS_INCOMPATIBLE,
     STATUS_NEEDS_CONFIGURATION,
+    STATUS_NEEDS_MIGRATION,
     PluginRuntime,
     PluginRuntimeState,
     enforce_plugin_access,
@@ -62,6 +64,19 @@ class EndpointLifecyclePlugin(LifecyclePlugin):
     def register(self, app):
         super().register(app)
         app.view_functions["endpoint_plugin.surface"] = lambda: None
+
+
+EXAMPLE_MANIFEST = load_plugin_manifest(
+    Path(__file__).resolve().parents[1] / "app" / "plugins" / "example" / "plugin.toml"
+)
+
+
+class MigratingLifecyclePlugin(LifecyclePlugin):
+    manifest = EXAMPLE_MANIFEST
+    plugin_id = manifest.plugin_id
+    name = manifest.name
+    version = manifest.version
+    api_version = manifest.api_version
 
 
 class PluginLifecycleTests(unittest.TestCase):
@@ -193,7 +208,7 @@ class PluginLifecycleTests(unittest.TestCase):
         self.assertIn("Plugin lifecycle disabled; runtime loading skipped", output)
         self.assertIn(
             "Application plugin startup complete: active=0 disabled=1 "
-            "pending_config=0 incompatible=0 errors=0",
+            "pending_config=0 pending_migration=0 incompatible=0 errors=0",
             output,
         )
 
@@ -235,9 +250,29 @@ class PluginLifecycleTests(unittest.TestCase):
         )
         self.assertIn(
             "Application plugin startup complete: active=1 disabled=0 "
-            "pending_config=0 incompatible=0 errors=0",
+            "pending_config=0 pending_migration=0 incompatible=0 errors=0",
             output,
         )
+
+    def test_enabled_plugin_with_outdated_schema_needs_migration_before_registration(self):
+        self._add_settings(enable_plugins=True)
+        registration = self._add_registration(
+            plugin_id="example",
+            import_path="tests.fake_plugins:example",
+            enabled=True,
+            configured=True,
+        )
+        plugin = MigratingLifecyclePlugin(configured=True)
+
+        with patch("app.plugins.loader.resolve_plugin", return_value=plugin):
+            runtime = initialize_plugins(self.app)
+
+        db.session.refresh(registration)
+        state = runtime.plugins["example"]
+        self.assertEqual(state.status, STATUS_NEEDS_MIGRATION)
+        self.assertIn("plugin run example db upgrade", state.reason)
+        self.assertEqual(plugin.register_calls, 0)
+        self.assertFalse(registration.configured)
 
     def test_enabled_unconfigured_plugin_registers_structural_surfaces(self):
         self._add_settings(enable_plugins=True)

@@ -15,13 +15,16 @@ from app.core.meta import page_metadata
 from app.core.security import get_client_ip
 from app.core.trackers import get_admin_quick_stats, log_action
 from app.models import EnvSettings, PluginRegistration
+from app.plugins.interface import validate_plugin_contract
 from app.plugins.loader import (
     STATUS_ACTIVE,
     STATUS_DISABLED,
     STATUS_NEEDS_CONFIGURATION,
+    STATUS_NEEDS_MIGRATION,
     get_plugin_runtime,
     resolve_plugin,
 )
+from app.plugins.migrations import PluginMigrationManager
 from app.plugins.registry import disable_plugin, enable_plugin
 from app.plugins.reload import AppConfigReloadUnavailable, reload_app_config
 
@@ -38,6 +41,7 @@ class PluginAdminRow:
     runtime_name: str | None
     runtime_version: str | None
     access_status: str
+    can_upgrade_schema: bool
     restart_required: bool
 
 
@@ -63,9 +67,32 @@ def _admin_rows(registrations, env, runtime):
             and state.status in {STATUS_ACTIVE, STATUS_NEEDS_CONFIGURATION}
         )
         loaded_at_startup = state is not None and state.status != STATUS_DISABLED
-        registration_restart_required = registration.enabled != loaded_at_startup
+        registration_restart_required = (
+            registration.enabled != loaded_at_startup
+            or (
+                registration.enabled
+                and state is not None
+                and (
+                    state.status == STATUS_NEEDS_MIGRATION
+                    or (
+                        state.status == STATUS_NEEDS_CONFIGURATION
+                        and registration.configured
+                    )
+                    or (
+                        state.status == STATUS_ACTIVE
+                        and not registration.configured
+                    )
+                )
+            )
+        )
 
-        if not runtime.system_enabled or not access_capable_runtime:
+        if not runtime.system_enabled:
+            access_status = "Unavailable"
+        elif state is not None and state.status == STATUS_NEEDS_MIGRATION:
+            access_status = "Needs migration"
+        elif state is not None and state.status == STATUS_NEEDS_CONFIGURATION:
+            access_status = "Needs configuration"
+        elif not access_capable_runtime:
             access_status = "Unavailable"
         elif not registration.enabled:
             access_status = "Disabled"
@@ -82,6 +109,11 @@ def _admin_rows(registrations, env, runtime):
                 runtime_name=runtime_name,
                 runtime_version=runtime_version,
                 access_status=access_status,
+                can_upgrade_schema=(
+                    registration.enabled
+                    and state is not None
+                    and state.status == STATUS_NEEDS_MIGRATION
+                ),
                 restart_required=(
                     global_restart_required or registration_restart_required
                 ),
@@ -184,7 +216,7 @@ def enable(registration_id):
     else:
         reason = configuration.reason or "Required configuration is incomplete."
         flash(
-            f"Plugin {registration.plugin_id} enabled but needs configuration: {reason}",
+            f"Plugin {registration.plugin_id} enabled but is not ready: {reason}",
             "warning",
         )
 
@@ -240,6 +272,134 @@ def disable(registration_id):
         f"Plugin {registration.plugin_id} disabled; application access is blocked "
         "immediately and plugin-managed secrets were cleared. Use Reload App Config "
         "once after finishing application changes to unload its runtime surfaces.",
+        "success",
+    )
+    return redirect(url_for("plugins.list_plugins"))
+
+
+@plugins_bp.route("/<int:registration_id>/upgrade-schema", methods=["POST"])
+@limiter.limit("3 per minute", key_func=get_client_ip)
+@login_required
+@admin_required
+def upgrade_schema(registration_id):
+    registration = db.session.get(PluginRegistration, registration_id)
+    if registration is None:
+        return "Plugin registration not found", 404
+
+    if not registration.enabled:
+        flash(
+            f"Plugin {registration.plugin_id} must be enabled before its schema can be upgraded.",
+            "warning",
+        )
+        return redirect(url_for("plugins.list_plugins"))
+
+    previous_revision = None
+    target_revision = None
+    try:
+        plugin = _registered_plugin(registration)
+        validate_plugin_contract(plugin)
+        if plugin.plugin_id != registration.plugin_id:
+            raise ValueError(
+                f"Registered plugin ID {registration.plugin_id!r} does not match "
+                f"loaded plugin ID {plugin.plugin_id!r}"
+            )
+
+        manifest = getattr(plugin, "manifest", None)
+        if manifest is None or manifest.migrations is None:
+            flash(
+                f"Plugin {registration.plugin_id} does not declare database migrations.",
+                "warning",
+            )
+            return redirect(url_for("plugins.list_plugins"))
+
+        manager = PluginMigrationManager(manifest)
+        previous_revision = manager.current_revision()
+        target_revision = manager.head_revision()
+        if target_revision is None:
+            raise RuntimeError(
+                f"Plugin {registration.plugin_id!r} has no migration head"
+            )
+
+        if previous_revision == target_revision:
+            flash(
+                f"Plugin {registration.plugin_id} database schema is already current "
+                f"at revision {target_revision}.",
+                "warning",
+            )
+            return redirect(url_for("plugins.list_plugins"))
+
+        resulting_revision = manager.upgrade("head")
+    except Exception as exc:
+        db.session.rollback()
+        logger.exception(
+            "Admin user=%s failed to upgrade plugin=%s schema",
+            current_user.username,
+            registration.plugin_id,
+        )
+        try:
+            log_action(
+                action="upgrade_plugin_schema",
+                user_id=current_user.id,
+                target=f"/admin/plugins/{registration.id}",
+                extra_data={
+                    "plugin_id": registration.plugin_id,
+                    "outcome": "failed",
+                    "previous_revision": previous_revision,
+                    "target_revision": target_revision,
+                    "error_type": type(exc).__name__,
+                    "ip": get_client_ip(),
+                    "user_agent": request.headers.get("User-Agent"),
+                },
+            )
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+            logger.exception(
+                "Failed to persist plugin schema-upgrade failure audit for plugin=%s",
+                registration.plugin_id,
+            )
+        flash(
+            f"Plugin {registration.plugin_id} database schema upgrade failed. "
+            "Check the application logs.",
+            "error",
+        )
+        return redirect(url_for("plugins.list_plugins"))
+
+    registration.configured = False
+    try:
+        log_action(
+            action="upgrade_plugin_schema",
+            user_id=current_user.id,
+            target=f"/admin/plugins/{registration.id}",
+            extra_data={
+                "plugin_id": registration.plugin_id,
+                "outcome": "success",
+                "previous_revision": previous_revision,
+                "target_revision": target_revision,
+                "resulting_revision": resulting_revision,
+                "ip": get_client_ip(),
+                "user_agent": request.headers.get("User-Agent"),
+            },
+        )
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        logger.exception(
+            "Plugin %s schema upgraded successfully but audit/configuration-state persistence failed",
+            registration.plugin_id,
+        )
+
+    logger.info(
+        "Admin user=%s upgraded plugin=%s schema from=%s to=%s app_config_reload_required=True",
+        current_user.username,
+        registration.plugin_id,
+        previous_revision or "<base>",
+        resulting_revision or target_revision,
+    )
+    flash(
+        f"Plugin {registration.plugin_id} database schema upgraded from "
+        f"{previous_revision or '<base>'} to {resulting_revision or target_revision}. "
+        "Use Reload App Config to revalidate configuration and apply the runtime state.",
         "success",
     )
     return redirect(url_for("plugins.list_plugins"))
@@ -308,7 +468,18 @@ def reload_config():
         current_user.username,
     )
     flash(
-        "App config reload requested. Gunicorn is gracefully reloading the application.",
+        "App config reload requested.",
         "success",
     )
-    return redirect(url_for("plugins.list_plugins"))
+    refresh_url = url_for("plugins.list_plugins")
+    response = current_app.make_response(
+        render_template(
+            "admin/plugin_reload.html",
+            refresh_url=refresh_url,
+        )
+    )
+    # Do not immediately redirect into the old worker after SIGHUP. Give Gunicorn
+    # a short handoff window, then let the browser request the page again.
+    response.headers["Refresh"] = f"2; url={refresh_url}"
+    response.headers["Cache-Control"] = "no-store"
+    return response
