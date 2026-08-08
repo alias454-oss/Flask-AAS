@@ -18,6 +18,10 @@ from app.core.inactivity import enforce_inactivity_timeout
 from app.core.sessions import touch_current_session
 from app.core.trackers import track_online_user, expire_stale_online_users, visitor_tracking_enabled
 from app.models.user import EnvSettings, User
+from app.models.plugin import PluginRegistration  # noqa: F401 - register model metadata
+from app.plugins.cli import plugin_cli
+from app.plugins.loader import enforce_plugin_access, initialize_plugins
+from app.plugins.navigation import visible_plugin_navigation
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -75,6 +79,10 @@ def create_app():
     mail.init_app(app)
     login_manager.init_app(app)
 
+    # Keep application-specific commands out of the Flask-AAS CLI. Plugins may
+    # expose their own command groups through this single generic dispatcher.
+    app.cli.add_command(plugin_cli)
+
     # Initialize DB layer
     db.init_app(app)
     migrate.init_app(app, db)
@@ -82,9 +90,17 @@ def create_app():
     # Register all blueprints
     register_all_routes(app)
 
-    # Set log level from DB/cached settings
+    # Initialize optional application plugins and DB-backed runtime settings.
+    # Both fail closed while a fresh database is being created or migrated.
     with app.app_context():
+        initialize_plugins(app)
         update_log_level()
+
+    # Plugin routes are structural startup state, but current enablement and
+    # configuration are persisted state. Gate plugin application surfaces before
+    # ordinary request processing so disable/configuration changes take effect
+    # without mutating Flask's live route map.
+    app.before_request(enforce_plugin_access)
 
     # Apply a sliding inactivity window to authenticated browser sessions.
     # Pre-authentication MFA state remains governed by its own expiry controls.
@@ -172,6 +188,10 @@ def create_app():
     @app.context_processor
     def inject_nonce():
         return dict(nonce=getattr(g, 'nonce', ''))
+
+    # Plugins contribute navigation structurally, while visibility follows the
+    # same current enabled/configured access state as plugin application routes.
+    app.jinja_env.globals["plugin_navigation"] = visible_plugin_navigation
 
     @app.context_processor
     def inject_timing():

@@ -10,6 +10,7 @@ from pydantic import field_validator, model_validator
 
 logger = logging.getLogger(__name__)
 
+
 class Settings(BaseSettings):
     APP_NAME: str = "Flask Authentication & Audit System"
     API_V1_STR: str = "/api/v1"
@@ -28,7 +29,8 @@ class Settings(BaseSettings):
     REGISTRATION_ENABLED: bool = True
 
     # --- CORS ---
-    # Control which frontend domains can access the API. [https://example.com,https://app.example.com]
+    # Control which frontend domains can access the API.
+    # [https://example.com,https://app.example.com]
     BACKEND_CORS_ORIGINS: List[str] = []
 
     # Additional CSP sources required by a downstream application.
@@ -37,8 +39,9 @@ class Settings(BaseSettings):
     CSP_IMG_SRC: List[str] = []
     CSP_MEDIA_SRC: List[str] = []
 
-    # TRUSTED_PROXIES should contain the IP addresses or CIDR ranges of any reverse proxies,
-    # load balancers, or gateways that sit in front of your Flask app and forward client requests
+    # TRUSTED_PROXIES should contain the IP addresses or CIDR ranges of any
+    # reverse proxies, load balancers, or gateways that sit in front of your
+    # Flask app and forward client requests.
     TRUSTED_PROXIES: List[str] = []
     PROXY_HOPS: int = 0
 
@@ -58,14 +61,16 @@ class Settings(BaseSettings):
 
         for item in values:
             if any(character in item for character in (";", "\r", "\n")):
-                raise ValueError("Configured origins must not contain CSP delimiters")
+                raise ValueError(
+                    "Configured origins must not contain CSP delimiters"
+                )
 
         return values
 
-    @field_validator('PROXY_HOPS')
+    @field_validator("PROXY_HOPS")
     def validate_proxy_hops(cls, value):
         if value < 0 or value > 10:
-            raise ValueError('PROXY_HOPS must be between 0 and 10')
+            raise ValueError("PROXY_HOPS must be between 0 and 10")
         return value
 
     # --- Cache ---
@@ -74,16 +79,18 @@ class Settings(BaseSettings):
     CACHE_REDIS_URL: Optional[str] = "redis://localhost:6379/0"
 
     # --- Session ---
-    SESSION_COOKIE_SECURE: Optional[bool] = False  # TRUE recommended in prod with HTTPS
+    SESSION_COOKIE_SECURE: Optional[bool] = False
     SESSION_COOKIE_HTTPONLY: Optional[bool] = True
-    SESSION_COOKIE_SAMESITE: Optional[str] = 'Lax'
+    SESSION_COOKIE_SAMESITE: Optional[str] = "Lax"
     PERMANENT_SESSION_LIFETIME: timedelta = timedelta(minutes=30)
     SESSION_INACTIVITY_TIMEOUT_SECONDS: int = 900
 
-    @field_validator('SESSION_INACTIVITY_TIMEOUT_SECONDS')
+    @field_validator("SESSION_INACTIVITY_TIMEOUT_SECONDS")
     def validate_session_inactivity_timeout(cls, value):
         if value is not None and value < 0:
-            raise ValueError('SESSION_INACTIVITY_TIMEOUT_SECONDS must be zero or greater')
+            raise ValueError(
+                "SESSION_INACTIVITY_TIMEOUT_SECONDS must be zero or greater"
+            )
         return value
 
     # --- Online tracking ---
@@ -111,11 +118,39 @@ class Settings(BaseSettings):
     @model_validator(mode="after")
     def validate_mail_transport_security(self):
         if self.MAIL_USE_TLS and self.MAIL_USE_SSL:
-            raise ValueError("MAIL_USE_TLS and MAIL_USE_SSL cannot both be enabled")
+            raise ValueError(
+                "MAIL_USE_TLS and MAIL_USE_SSL cannot both be enabled"
+            )
         return self
 
     # --- Environment ---
-    FLASK_ENV: str = "production"
+    FLASK_ENV: Literal["development", "testing", "production"] = "production"
+    DEBUG: bool = False
+    TESTING: bool = False
+
+    @model_validator(mode="after")
+    def configure_environment(self):
+        if self.FLASK_ENV == "production":
+            self.SESSION_COOKIE_SECURE = True
+            self.DEBUG = False
+            self.TESTING = False
+
+            # Reject known development/example credentials in production.
+            if self.SECRET_KEY == "put-your-secret-key-here":
+                raise ValueError(
+                    "SECRET_KEY must not use the example default in production"
+                )
+
+            if self.ADMIN_SECRET == "adminpass":
+                raise ValueError(
+                    "ADMIN_SECRET must not use the development default in production"
+                )
+
+        elif self.FLASK_ENV == "testing":
+            self.DEBUG = False
+            self.TESTING = True
+
+        return self
 
     # Determine which env file to use
     @staticmethod
@@ -127,7 +162,7 @@ class Settings(BaseSettings):
             return ".env"
         return None
 
-    # store it as non-field classvar so Pydantic ignores it
+    # Store it as non-field ClassVar so Pydantic ignores it.
     env_file_path: ClassVar[str | None] = detect_env_file()
 
     model_config = {
@@ -148,8 +183,15 @@ class Settings(BaseSettings):
             )
 
         # Validate EXPIRE_INTERVAL_SECONDS toggle logic
-        if self.EXPIRE_INTERVAL_SECONDS is not None and self.EXPIRE_INTERVAL_SECONDS <= 0:
-            logger.warning("EXPIRE_INTERVAL_SECONDS is <= 0. Disabling expiration checks.")
+        if (
+            self.EXPIRE_INTERVAL_SECONDS is not None
+            and self.EXPIRE_INTERVAL_SECONDS <= 0
+        ):
+            logger.warning(
+                "EXPIRE_INTERVAL_SECONDS is <= 0. "
+                "Disabling expiration checks."
+            )
             self.EXPIRE_INTERVAL_SECONDS = None
+
 
 settings = Settings()

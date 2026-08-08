@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta http-equiv="refresh" content="2;url={{ refresh_url }}" />
+  <title>Reloading Application Configuration</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='themes/default/style.css') }}" />
+</head>
+<body>
+  <main class="container">
+    <h1>Reloading Application Configuration</h1>
+    <p>Gunicorn is gracefully replacing the application worker.</p>
+    <p>This page will return to Applications automatically.</p>
+    <p><a href="{{ refresh_url }}">Return to Applications</a></p>
+  </main>
+</body>
+</html>

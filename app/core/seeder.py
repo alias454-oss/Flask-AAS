@@ -10,6 +10,8 @@ from app.models.state import State
 from app.models.env_settings import EnvSettings
 from app.models.user import User
 from app.models.role import Role
+from app.models.plugin import PluginRegistration
+from app.plugins.bundled import bundled_plugin_registrations
 from app.core.mailer import environment_mail_configuration
 
 logger = logging.getLogger(__name__)
@@ -155,6 +157,7 @@ def seed_env_settings():
         "maint_mode": 0,
         "visitor_tracking": 0,
         "use_fancy_urls": 0,
+        "enable_plugins": False,
         "enable_delete_old_users": 0,
         "users_delete_after_days": 15,
         "email_after_days": 45,
@@ -175,6 +178,55 @@ def seed_env_settings():
     db.session.add(env)
     db.session.commit()
     logger.info(f"Global EnvSettings initialized for user_id {admin_user.id}.")
+
+
+def seed_bundled_plugins():
+    """Ensure plugins shipped with this build exist in the deployment registry.
+
+    Bundled applications are registered disabled and unconfigured on first seed.
+    Existing registrations are left untouched so administrator-requested enabled
+    state and the last validated configuration result survive repeat hydration.
+    Runtime loading remains entirely DB-driven.
+    """
+
+    added = 0
+    for bundled in bundled_plugin_registrations():
+        by_id = db.session.scalar(
+            select(PluginRegistration).filter_by(plugin_id=bundled.plugin_id)
+        )
+        if by_id is not None:
+            if by_id.import_path != bundled.import_path:
+                raise ValueError(
+                    f"Bundled plugin {bundled.plugin_id!r} is registered from "
+                    f"unexpected path {by_id.import_path!r}"
+                )
+            continue
+
+        by_path = db.session.scalar(
+            select(PluginRegistration).filter_by(import_path=bundled.import_path)
+        )
+        if by_path is not None:
+            raise ValueError(
+                f"Bundled plugin path {bundled.import_path!r} is already registered "
+                f"as {by_path.plugin_id!r}"
+            )
+
+        db.session.add(
+            PluginRegistration(
+                plugin_id=bundled.plugin_id,
+                import_path=bundled.import_path,
+                enabled=False,
+                configured=False,
+            )
+        )
+        added += 1
+
+    db.session.commit()
+    logger.info(
+        "Bundled application plugins verified/seeded; added=%d total=%d",
+        added,
+        len(bundled_plugin_registrations()),
+    )
 
 
 def seed_countries():
@@ -511,6 +563,7 @@ def run_all_seeds():
         seed_roles()
         seed_admin_user()
         seed_env_settings()
+        seed_bundled_plugins()
         seed_countries()
         seed_states()
         logger.info("Database Hydration Complete.")

@@ -21,6 +21,7 @@ from .account.dashboard import dashboard_bp
 
 from .admin.admin import admin_bp
 from .admin.settings import settings_bp
+from .admin.plugins import plugins_bp
 from .admin.users import users_bp
 
 from .mfa.mfa import mfa_bp
@@ -54,6 +55,7 @@ all_blueprints = [
     dashboard_bp,
     admin_bp,
     settings_bp,
+    plugins_bp,
     users_bp
 ]
 

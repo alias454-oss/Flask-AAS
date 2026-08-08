@@ -41,6 +41,7 @@ class EnvSettings(db.Model):
     maint_mode = db.Column(db.Boolean, nullable=False, server_default=db.false())
     visitor_tracking = db.Column(db.Boolean, nullable=False, server_default=db.false())
     use_fancy_urls = db.Column(db.Boolean, nullable=False, server_default=db.false())
+    enable_plugins = db.Column(db.Boolean, nullable=False, server_default=db.false())
 
     # User Cleanup Policies
     enable_delete_old_users = db.Column(db.Boolean,nullable=False, server_default=db.false())

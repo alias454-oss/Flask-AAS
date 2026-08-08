@@ -4,8 +4,7 @@ Work In Progress — usable for development, testing, and controlled internal ev
 
 > **Pre-release status:** Flask-AAS is under active development. Review the documented configuration and deployment guidance before use.
 
-Flask-AAS is a  **modular Flask-based authentication and auditing system** with built-in user management, log tracking,
-and optional abuse prevention features. Designed for small projects but scalable for larger apps that require **robust security tooling**.
+Flask-AAS is a **modular Flask-based authentication, auditing, and application-host foundation** with built-in user management, session security, log tracking, optional abuse prevention, and an opt-in first-class application-plugin system. It is designed to stay understandable for small projects while providing a reusable security foundation for larger applications.
 
 ---
 
@@ -20,6 +19,7 @@ This project focuses on:
 - Keeping external dependencies minimal
 - Providing practical features that work out of the box
 - Leaving optional integrations and extras up to you
+- Hosting application-specific functionality behind a small, explicit plugin contract
 - Staying adaptable for both small projects and larger ones
 
 ## Project Documentation
@@ -73,6 +73,27 @@ The base is intentionally designed to remain easy to run locally. Direct HTTP, g
 - Explicit dispatch results: `queued`, `disabled`, or `failed`
 - Deployment-managed SMTP with an optional encrypted Site Settings override
 - Runtime display of the active mail source: Debug, Site Settings, Environment, Disabled, or Not configured
+
+### Application Plugin Host
+- Global **Enable Application Plugins** switch; Flask-AAS operates normally with the plugin host disabled
+- Database-backed registration for explicitly trusted bundled applications
+- Canonical package metadata in `plugin.toml`, inspectable without importing plugin implementation Python
+- Explicit per-application enable/disable plus derived configuration and runtime state
+- Metadata-only registration: a registered but disabled application does not import its implementation/models, deploy plugin schema, register routes, or contribute navigation during ordinary startup
+- Explicit **Enable** trust/code-execution boundary; enabling does **not** silently create or migrate plugin schema
+- Independent plugin-owned Alembic histories declared by the manifest, with `plugin_<id>_*` table ownership and `plugin_<id>_alembic_version` version tables
+- Fail-closed `NEEDS_MIGRATION`, `NEEDS_CONFIGURATION`, `INCOMPATIBLE`, `ACTIVE`, and `ERROR` runtime states
+- Admin **Upgrade Database Schema** action for an enabled compatible plugin that is migration-pending; the browser path upgrades only to `head`
+- **Reload App Config** applies structural/runtime-snapshot changes through a fresh Gunicorn worker instead of mutating Flask Blueprints in a running process; already-loaded route/navigation access still follows the current persisted `enabled/configured` gate
+- Immediate request/navigation denial after disable, followed by structural removal on reload
+- Plugin-owned CLI commands through `python manage.py plugin run <plugin_id> ...`, including plugin-owned migration/configuration commands
+- Host-owned navigation integration and host theme/template inheritance for plugin pages
+- Plugin-owned ordinary configuration and persistence; disabling preserves business data/schema while clearing plugin-managed persisted secrets
+- Versioned `PLUGIN_API_VERSION = 1` compatibility boundary
+
+Bundled applications are trusted native Python code shipped with the deployment. Enabling a plugin means trusting that code to run with the permissions of the Flask-AAS process; Flask-AAS does not claim to sandbox in-process Python plugins. Filesystem presence alone does not imply trust or activation.
+
+The current `example` application is a deliberately small compatibility/reference plugin. OpenAuto is intended to be the first substantial consumer after the remaining Plugin API v1 migration and application-entitlement work is complete.
 
 ---
 
@@ -130,35 +151,48 @@ The base is intentionally designed to remain easy to run locally. Direct HTTP, g
 
 ## API / Route Endpoints
 
-| Endpoint | Methods | Rule |
-|----------|---------|------|
-| about.about | GET | `/about` |
-| admin.admin_home | GET | `/admin/` |
-| captcha.captcha_image | GET | `/captcha_image` |
-| contact.contact | GET, POST | `/contact` |
-| dashboard.dashboard | GET | `/dashboard` |
-| favicon.favicon | GET | `/favicon.ico` |
-| index.index | GET | `/` |
-| login.login | GET, POST | `/login` |
-| logout.logout | GET | `/logout` |
-| mfa.mfa_disable | GET, POST | `/mfa/disable` |
-| mfa.mfa_setup | GET, POST | `/mfa/setup` |
-| mfa.mfa_verify | GET, POST | `/mfa/verify` |
-| privacy.privacy | GET | `/privacy` |
-| register.register | GET, POST | `/register` |
-| reset.change_password | GET, POST | `/change-password` |
-| reset.forgot_password | GET, POST | `/forgot-password` |
-| reset.reset_password | GET, POST | `/reset-password/<token>` |
-| robots.robots | GET | `/robots.txt` |
-| settings.settings | GET, POST | `/admin/settings/` |
-| sitemap.sitemap | GET | `/sitemap.xml` |
-| static | GET | `/static/<path:filename>` |
-| tos.tos | GET | `/tos` |
-| users.delete_user | POST | `/admin/users/<int:user_id>/delete` |
-| users.edit_user | GET, POST | `/admin/users/<int:user_id>/edit` |
-| users.list_users | GET | `/admin/users/` |
-| verify.verify_email_token | GET | `/email/<token>` |
-| verify.verify_reset_token | GET | `/reset/<token>` |
+| Endpoint                      | Methods   | Rule                                                  |
+| ----------------------------- | --------- | ----------------------------------------------------- |
+| about.about                   | GET       | `/about`                                              |
+| account.account               | GET, POST | `/account`                                            |
+| account.revoke_other_sessions | POST      | `/account/sessions/revoke-others`                     |
+| account.revoke_session        | POST      | `/account/sessions/<int:session_id>/revoke`           |
+| admin.admin_home              | GET       | `/admin/`                                             |
+| captcha.captcha_image         | GET       | `/captcha_image`                                      |
+| contact.contact               | GET, POST | `/contact`                                            |
+| dashboard.dashboard           | GET       | `/dashboard`                                          |
+| favicon.favicon               | GET       | `/favicon.ico`                                        |
+| index.index                   | GET       | `/`                                                   |
+| login.login                   | GET, POST | `/login`                                              |
+| logout.logout                 | GET       | `/logout`                                             |
+| mfa.mfa_disable               | GET, POST | `/mfa/disable`                                        |
+| mfa.mfa_reauth                | GET, POST | `/mfa/reauth`                                         |
+| mfa.mfa_recovery_codes        | GET, POST | `/mfa/recovery-codes`                                 |
+| mfa.mfa_replace               | GET, POST | `/mfa/replace`                                        |
+| mfa.mfa_setup                 | GET, POST | `/mfa/setup`                                          |
+| mfa.mfa_verify                | GET, POST | `/mfa/verify`                                         |
+| plugins.disable               | POST      | `/admin/plugins/<int:registration_id>/disable`        |
+| plugins.enable                | POST      | `/admin/plugins/<int:registration_id>/enable`         |
+| plugins.list_plugins          | GET       | `/admin/plugins/`                                     |
+| plugins.reload_config         | POST      | `/admin/plugins/reload`                               |
+| plugins.upgrade_schema        | POST      | `/admin/plugins/<int:registration_id>/upgrade-schema` |
+| privacy.privacy               | GET       | `/privacy`                                            |
+| register.register             | GET, POST | `/register`                                           |
+| reset.change_password         | GET, POST | `/change-password`                                    |
+| reset.forgot_password         | GET, POST | `/forgot-password`                                    |
+| reset.reset_password          | GET, POST | `/reset-password/<token>`                             |
+| robots.robots                 | GET       | `/robots.txt`                                         |
+| settings.settings             | GET, POST | `/admin/settings/`                                    |
+| sitemap.sitemap               | GET       | `/sitemap.xml`                                        |
+| static                        | GET       | `/static/<path:filename>`                             |
+| tos.tos                       | GET       | `/tos`                                                |
+| users.delete_user             | POST      | `/admin/users/<int:user_id>/delete`                   |
+| users.edit_user               | GET, POST | `/admin/users/<int:user_id>/edit`                     |
+| users.list_users              | GET       | `/admin/users/`                                       |
+| verify.verify_email_token     | GET       | `/email/<token>`                                      |
+| verify.verify_reset_token     | GET       | `/reset/<token>`                                      |
+
+Application-plugin routes are intentionally omitted from this static core-route table because their structural registration depends on the persisted plugin state at worker startup. The host request guard independently denies plugin endpoints that are not effectively usable.
 
 ---
 
@@ -182,7 +216,36 @@ python manage.py db migrate -m "Describe change"
 python manage.py db upgrade
 ```
 
-This is acceptable only while Flask-AAS is pre-release and deployments are treated as clean installs. Durable in-place upgrades require a future versioned migration policy; that work remains tracked as `AAS-021` / `SR-019`.
+This is acceptable only while Flask-AAS is pre-release and deployments are treated as clean installs. The host bootstrap boundary is established, but durable in-place **core** release upgrades are not yet claimed.
+
+Application plugins have a separate migration boundary. A plugin manifest may declare a package-local migration environment, for example:
+
+```toml
+[plugin]
+id = "example"
+entrypoint = "app.plugins.example.plugin:plugin"
+migrations = "migrations"
+```
+
+For a plugin with declared migrations:
+
+- **Enable** is permission to execute the selected trusted plugin, not permission to mutate its schema;
+- an enabled plugin whose schema is behind reports `NEEDS_MIGRATION` and is not structurally registered for normal application use;
+- a fresh plugin namespace may create the current plugin-owned model tables and stamp the current migration head;
+- an existing versioned plugin runs its own Alembic history;
+- existing unversioned `plugin_<id>_*` tables fail closed rather than being blindly stamped;
+- plugin history uses its own `plugin_<id>_alembic_version` table and must not own Flask-AAS core tables.
+
+Example migration operations are explicit:
+
+```bash
+python manage.py plugin run example db current
+python manage.py plugin run example db migrate -m "Describe plugin schema change"
+python manage.py plugin run example db upgrade
+python manage.py plugin run example db downgrade
+```
+
+Development migration history remains disposable before the first supported release/checkpoint. Published schema checkpoints become durable upgrade origins. `AAS-039` remains open for the remaining release-grade acceptance work, including explicit core-Alembic exclusion of plugin-owned namespaces such as `plugin_example_*` while preserving the core-owned `plugin_registrations` table, a real `0001 -> 0002` upgrade, failed-migration semantics, and focused PostgreSQL coverage.
 
 ---
 
@@ -289,10 +352,10 @@ The two SMTP sources are never blended field by field. A partial Site Settings o
 Run the email lifecycle, transport-resolution, encryption, settings-route, and account-state regression suites with:
 
 ```bash
-python -m unittest -v \
-  tests.test_mailer \
-  tests.test_mail_config \
-  tests.test_email_lifecycle
+python -m pytest \
+  tests/test_mailer.py \
+  tests/test_mail_config.py \
+  tests/test_email_lifecycle.py
 ```
 
 ### Focused Audit and MFA Validation
@@ -300,19 +363,36 @@ python -m unittest -v \
 Run the audit transaction, metadata-redaction, tracking, login-outcome, and MFA lifecycle regression suites with:
 
 ```bash
-python -m unittest discover \
-  -s tests \
-  -p 'test_login_audit.py' \
-  -v
+python -m pytest \
+  tests/test_audit_tracking.py \
+  tests/test_login_audit.py
+```
+
+### Focused Plugin Validation
+
+Run the Plugin API/lifecycle/reference-application suites with:
+
+```bash
+python -m pytest \
+  tests/test_plugin_contract.py \
+  tests/test_plugin_manifest.py \
+  tests/test_plugin_migrations.py \
+  tests/test_plugin_lifecycle.py \
+  tests/test_plugin_admin.py \
+  tests/test_plugin_web_surface.py \
+  tests/test_plugin_integration_surfaces.py \
+  tests/test_plugin_bundled.py \
+  tests/test_plugin_reload.py \
+  tests/test_plugin_example_persistence.py
 ```
 
 Run the complete regression suite with:
 
 ```bash
-python -m unittest discover -s tests -p 'test_*.py'
+python -m pytest
 ```
 
-The current suite contains 104 tests. Tests use SQLite by default. Set `AUDIT_TEST_DATABASE_URI` to a disposable PostgreSQL database URI for the audit suite, or `ACCOUNT_TEST_DATABASE_URI` for the account and password-reset lifecycle suite, to exercise the same portable behavior against PostgreSQL.
+Tests use SQLite by default. Selected audit/account lifecycle suites can also target a disposable PostgreSQL database through the documented test database environment variables so the portable transaction and schema behavior can be exercised on both backends.
 
 ### Build and Run
 
@@ -334,13 +414,43 @@ docker run --rm -it --env-file .env -p 5000:5000 flask-aas:local
 
 Open your browser and go to [http://localhost:5000](http://localhost:5000)
 
+### Enabling an Application Plugin
+
+The plugin host is disabled by default. The normal bundled-application flow is:
+
+```text
+Admin → Site Settings
+→ Enable Application Plugins
+→ Applications
+→ Enable the desired application
+→ Reload App Config
+→ if NEEDS_MIGRATION: Upgrade Database Schema
+→ Reload App Config
+→ if NEEDS_CONFIGURATION: complete plugin-owned configuration
+→ Reload App Config
+→ ACTIVE
+```
+
+`Reload App Config` performs the structural Gunicorn reload and reconciles the worker runtime snapshot with persisted state. For an already structurally loaded plugin, request/navigation gating reads the current persisted `enabled/configured` flags immediately; reload is still the normal administrative step for reconciling runtime status and any startup-time plugin behavior. Database migration remains a separate privileged operation. The explicit plugin CLI is also available for diagnostics, migration, configuration, and plugin-owned maintenance when deliberately invoked:
+
+```bash
+python manage.py plugin run example status
+python manage.py plugin run example db current
+python manage.py plugin run example db upgrade
+python manage.py plugin run example configure
+python manage.py plugin run example add-item "example value"
+```
+
+The CLI dispatcher does not make the plugin globally active by itself; web runtime activation still follows persisted enablement and the worker reload boundary.
+
 ---
 
 ## Notes
 - Seed scripts run once on clean DB
 - `default_role_id` in `.env` controls default user role
-- Admin panel for user/role/settings management
+- Admin panel for user/role/settings/application management
 - Keep deployment SMTP credentials in external configuration, or enable the encrypted Site Settings override deliberately.
+- Treat enabled Python application plugins as trusted native application code and keep the Flask-AAS process/container least-privileged.
 
 
 ## Maintenance

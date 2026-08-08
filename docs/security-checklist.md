@@ -11,6 +11,8 @@ Use this checklist when adding or reviewing a route. It is a review aid, not a s
 - Are inactive, unapproved, and unverified users handled consistently?
 - Does the route require a fresh login for a sensitive operation?
 - Does a privileged operation require stronger reauthentication?
+- For a plugin-owned route, is access gated by the host's effective plugin state rather than merely by route registration?
+- Are platform roles kept distinct from application entitlement and plugin-owned authorization semantics?
 
 High-risk examples:
 
@@ -84,6 +86,8 @@ Per-IP controls alone do not stop distributed attacks. Per-account hard lockouts
 - Are secrets stored in the correct configuration layer?
 - If a secret is runtime-managed, is it encrypted with a key stored outside the database?
 - Are blank-update and explicit-clear semantics defined for stored secrets?
+- For plugin-managed persisted credentials, is disable-time cleanup explicit and atomic with the disable decision?
+- Do plugin CLI/audit logs omit arbitrary command arguments and secret values?
 - Are secret values ever rendered back into forms?
 - Are exception messages safe for the user-facing response?
 
@@ -121,7 +125,37 @@ Do not record raw credentials, live tokens, or entire form submissions. Ordinary
 - Are sensitive pages marked `no-store`?
 - Are cookie flags appropriate to the active deployment mode?
 
-## 11. Required route test cases
+
+## 11. Application-plugin boundary
+
+When reviewing plugin host or plugin-owned code:
+
+- Does registration remain metadata-only, without importing plugin implementation or model modules?
+- Can static identity/compatibility metadata be inspected from `plugin.toml` without importing plugin implementation Python?
+- Does a globally disabled plugin system avoid plugin runtime imports and route/navigation registration?
+- Does a registered but disabled application remain inert during ordinary startup?
+- Is explicit administrator **Enable** the point where selected trusted plugin Python may execute **without** treating enablement as permission to create or migrate schema?
+- If the plugin declares migrations, does an outdated schema fail closed as `NEEDS_MIGRATION` before structural application registration?
+- Are plugin migrations isolated to the plugin's `plugin_<id>_*` namespace and independent `plugin_<id>_alembic_version` table?
+- Does core Alembic retain ownership of the host `plugin_registrations` table while excluding plugin-domain namespaces such as `plugin_example_*` from core autogeneration?
+- Does a fresh namespace bootstrap only plugin-owned model tables and stamp the plugin head?
+- Do existing unversioned plugin-owned tables fail closed rather than being silently stamped?
+- Does the browser migration action use a fixed target of `head`, refuse disabled/incompatible plugins, and avoid arbitrary downgrade/revision input?
+- Is the trust implication clear that an enabled Python plugin executes with Flask-AAS process privileges?
+- Are structural enable/disable and persisted schema/configuration changes completed through a fresh Gunicorn worker rather than live Blueprint mutation?
+- Is the persisted/runtime drift contract explicit: already-loaded route/navigation gates follow current persisted state, while **Reload App Config** reconciles the stale worker runtime-status snapshot?
+- Does disabling immediately deny effective route/navigation access before the reload finishes structural removal?
+- Does disable preserve ordinary plugin configuration, schema, and business data unless a separate destructive operation is explicitly requested?
+- Does plugin-managed persisted secret cleanup complete before the registration is reported disabled, including when schema was never installed?
+- Can one incompatible or failed optional plugin fail closed without taking down the Flask-AAS core or unrelated plugins?
+- Are plugin package `__init__.py` files and metadata paths kept free of unnecessary import-time side effects?
+- Is filesystem presence kept distinct from trust, registration, enablement, schema readiness, configuration readiness, and runtime activation?
+- Do sensitive host admin/plugin-management responses retain the host `no-store` policy without forcing that cache policy onto intentionally public plugin content?
+
+Do not treat an in-process Python plugin as sandboxed. Least-privilege process/container permissions limit blast radius; they do not make untrusted plugin code safe.
+
+## 12. Required route test cases
+
 
 At minimum, test:
 
@@ -160,6 +194,7 @@ At minimum, test:
 - Audit metadata policy:
 - Redacted fields:
 - Failure behavior:
+- Plugin/runtime guard (if applicable):
 - Required tests:
 - Open risks:
 ```

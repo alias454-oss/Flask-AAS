@@ -1,0 +1,7 @@
+.example-plugin-meta dt {
+  font-weight: 700;
+}
+
+.example-plugin-meta dd {
+  margin-bottom: 0.75rem;
+}

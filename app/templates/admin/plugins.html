@@ -1,0 +1,111 @@
+{% if current_user.is_authenticated and current_user.is_admin %}
+{% extends "admin/includes/base.html" %}
+
+{% block header %}
+  {% include "admin/includes/header.html" %}
+{% endblock %}
+
+{% block content %}
+  <h2>Applications</h2>
+
+  <p>
+    Application plugin loader:
+    <strong>{{ "Enabled" if plugin_system_requested else "Disabled" }}</strong>
+  </p>
+
+  {% if plugin_system_requested != plugin_runtime.system_enabled %}
+    <p class="form-error">
+      The saved plugin-loader setting differs from this process. Finish selecting
+      the applications you want enabled, then use Reload App Config once to apply
+      all requested runtime changes.
+    </p>
+  {% endif %}
+
+  {% if app_reload_required %}
+    <form method="POST"
+          action="{{ url_for('plugins.reload_config') }}"
+          class="inline-action-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+      <button type="submit" class="button-link">Reload App Config</button>
+    </form>
+    <p>
+      Apply all saved application enable/disable changes with one graceful
+      Gunicorn reload.
+    </p>
+  {% endif %}
+
+  {% if not plugin_system_requested %}
+    <p>Enable Application Plugins in Site Settings to manage installed applications.</p>
+  {% elif rows %}
+    <div class="user-list">
+      {% for row in rows %}
+        {% set registration = row.registration %}
+        <div class="user-card">
+          <div class="user-meta">
+            <div class="meta-left">
+              <strong>{{ row.runtime_name or registration.plugin_id }}</strong>
+              {% if row.runtime_version %}v{{ row.runtime_version }}{% endif %}
+            </div>
+            <div class="meta-right">
+              <strong>Runtime:</strong> {{ row.runtime_status }}
+            </div>
+          </div>
+
+          <div class="user-content">
+            <div class="user-info">
+              <p>
+                <strong>Plugin ID:</strong> {{ registration.plugin_id }}<br />
+                <strong>Import Path:</strong> {{ registration.import_path }}<br />
+                <strong>Enabled:</strong> {{ "Yes" if registration.enabled else "No" }}<br />
+                <strong>Configured:</strong> {{ "Yes" if registration.configured else "No" }}<br />
+                <strong>Application Access:</strong> {{ row.access_status }}
+              </p>
+
+              {% if row.runtime_reason %}
+                <p class="form-error">{{ row.runtime_reason }}</p>
+              {% endif %}
+
+              {% if row.restart_required %}
+                <p><strong>App config reload required for the requested runtime state.</strong></p>
+              {% endif %}
+
+              <div class="user-actions">
+                {% if row.can_upgrade_schema %}
+                  <form method="POST"
+                        action="{{ url_for('plugins.upgrade_schema', registration_id=registration.id) }}"
+                        class="inline-action-form">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+                    <button type="submit" class="button-link">Upgrade Database Schema</button>
+                  </form>
+                {% endif %}
+
+                {% if registration.enabled %}
+                  <form method="POST"
+                        action="{{ url_for('plugins.disable', registration_id=registration.id) }}"
+                        class="inline-action-form">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+                    <button type="submit" class="button-link danger">Disable</button>
+                  </form>
+                {% else %}
+                  <form method="POST"
+                        action="{{ url_for('plugins.enable', registration_id=registration.id) }}"
+                        class="inline-action-form">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+                    <button type="submit" class="button-link">Enable</button>
+                  </form>
+                {% endif %}
+              </div>
+            </div>
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+  {% else %}
+    <p>No application plugins are registered for this deployment.</p>
+  {% endif %}
+{% endblock %}
+
+{% block footer %}
+  {% include "admin/includes/footer.html" %}
+{% endblock %}
+{% endif %}

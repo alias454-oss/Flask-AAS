@@ -101,6 +101,7 @@ class AdminSettingsForm(FlaskForm):
     maint_mode = BooleanField("Maintenance Mode")
     visitor_tracking = BooleanField("Track Online Users")
     use_fancy_urls = BooleanField("Enable Fancy URLs")
+    enable_plugins = BooleanField("Enable Application Plugins")
 
     # Maintenance
     enable_delete_old_users = BooleanField("Auto-delete Old Users")
@@ -421,6 +422,7 @@ def settings():
 
     if form_valid and mail_valid:
         changed_fields = safe_changed_fields(form, env)
+        previous_plugin_loader_enabled = bool(env.enable_plugins)
 
         try:
             update_env_settings(form, env, db)
@@ -439,6 +441,20 @@ def settings():
                 f"Site settings updated by {current_user.username}",
                 "success",
             )
+            if "enable_plugins" in changed_fields:
+                logger.info(
+                    "Application plugin loader changed %s -> %s by user=%s; "
+                    "app config reload required",
+                    "enabled" if previous_plugin_loader_enabled else "disabled",
+                    "enabled" if env.enable_plugins else "disabled",
+                    current_user.username,
+                )
+                flash(
+                    "Application plugin loader setting changed. Open Applications, "
+                    "select the apps you want enabled, then use Reload App Config once "
+                    "to apply the requested runtime state.",
+                    "warning",
+                )
             return redirect(url_for("settings.settings"))
         except Exception:
             db.session.rollback()

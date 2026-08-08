@@ -35,6 +35,10 @@ from sqlalchemy import delete
 
 from app import create_app, db
 from app.core.mailer import get_mail_env_settings, send_email
+from app.core.migrations import (
+    core_migration_include_name,
+    core_migration_include_object,
+)
 from app.core.seeder import run_all_seeds
 from app.models.audit_login import AuditLogin
 
@@ -49,7 +53,12 @@ def create_cli_app():
 # Initialize Migrate for the 'flask db' commands
 # We instantiate the app once here for the migration context
 app = create_app()
-migrate = Migrate(app, db)
+migrate = Migrate(
+    app,
+    db,
+    include_name=core_migration_include_name,
+    include_object=core_migration_include_object,
+)
 
 # Create CLI group
 cli = FlaskGroup(create_app=create_cli_app)

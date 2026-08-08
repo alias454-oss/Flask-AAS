@@ -11,6 +11,12 @@
           <li class="menu__item"><a class="menu__link" href="{{ url_for('contact.contact') }}">Contact</a></li>
         {% endif %}
 
+        {% if plugin_navigation is defined %}
+          {% for item in plugin_navigation() %}
+            <li class="menu__item"><a class="menu__link" href="{{ url_for(item.endpoint) }}">{{ item.label }}</a></li>
+          {% endfor %}
+        {% endif %}
+
         {% if current_user.is_authenticated %}
           {% if current_user.is_admin %}
             <li class="menu__item"><a class="menu__link" href="{{ url_for('admin.admin_home') }}">Admin</a></li>
