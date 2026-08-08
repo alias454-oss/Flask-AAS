@@ -1,5 +1,4 @@
-"""Generic Flask-AAS CLI dispatch for registered application plugins."""
-
+# plugins/cli.py
 from __future__ import annotations
 
 import logging

@@ -1,8 +1,9 @@
-"""Supported Flask-AAS application plugin contract."""
-
+# plugins/interface.py
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Any
+
+from app.plugins.manifest import PluginManifest
 
 
 PLUGIN_API_VERSION = 1
@@ -36,6 +37,7 @@ class ApplicationPlugin(ABC):
     name: str
     version: str
     api_version: int
+    manifest: PluginManifest | None = None
 
     @abstractmethod
     def validate_config(self) -> PluginConfiguration:
@@ -109,6 +111,23 @@ def validate_plugin_contract(plugin: ApplicationPlugin) -> ApplicationPlugin:
         value = getattr(plugin, field_name, None)
         if not isinstance(value, str) or not value.strip():
             raise PluginContractError(f"{field_name} must be a non-empty string")
+
+    manifest = getattr(plugin, "manifest", None)
+    if manifest is not None:
+        if not isinstance(manifest, PluginManifest):
+            raise PluginContractError("manifest must be a PluginManifest or None")
+
+        manifest_values = {
+            "plugin_id": manifest.plugin_id,
+            "name": manifest.name,
+            "version": manifest.version,
+            "api_version": manifest.api_version,
+        }
+        for field_name, manifest_value in manifest_values.items():
+            if getattr(plugin, field_name, None) != manifest_value:
+                raise PluginContractError(
+                    f"Plugin {field_name} must match plugin.toml"
+                )
 
     api_version = getattr(plugin, "api_version", None)
     if not isinstance(api_version, int) or isinstance(api_version, bool):

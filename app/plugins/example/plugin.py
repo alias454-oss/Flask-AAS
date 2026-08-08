@@ -1,8 +1,9 @@
 """Minimal built-in compatibility fixture for Plugin API v1."""
 
+from pathlib import Path
 from typing import Any
 
-from app.plugins import ApplicationPlugin, PluginConfiguration
+from app.plugins import ApplicationPlugin, PluginConfiguration, load_plugin_manifest
 from app.plugins.example.cli import cli as example_cli
 from app.plugins.example.models import ensure_example_schema, get_example_settings
 from app.plugins.example.routes import example_bp
@@ -10,10 +11,11 @@ from app.plugins.navigation import register_plugin_navigation
 
 
 class ExamplePlugin(ApplicationPlugin):
-    plugin_id = "example"
-    name = "Example Application"
-    version = "0.1.0"
-    api_version = 1
+    manifest = load_plugin_manifest(Path(__file__).with_name("plugin.toml"))
+    plugin_id = manifest.plugin_id
+    name = manifest.name
+    version = manifest.version
+    api_version = manifest.api_version
 
     def prepare_enable(self) -> None:
         ensure_example_schema()

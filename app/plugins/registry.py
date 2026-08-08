@@ -1,5 +1,4 @@
-"""Persistence helpers for registered Flask-AAS application plugins."""
-
+# plugins/registry.py
 from app.core.extensions import db
 from app.models.plugin import PluginRegistration
 from app.plugins.interface import (

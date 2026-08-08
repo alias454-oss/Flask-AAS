@@ -1,5 +1,4 @@
-"""Host application reload support for plugin runtime configuration changes."""
-
+# plugins/reload.py
 from __future__ import annotations
 
 import os

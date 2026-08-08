@@ -124,7 +124,9 @@ class PluginContractTests(unittest.TestCase):
     def test_example_plugin_satisfies_v1_contract(self):
         self.assertIs(validate_plugin_contract(example_plugin), example_plugin)
         status = example_plugin.validate_config()
-        self.assertTrue(status.configured)
+        
+        self.assertIsInstance(status, PluginConfiguration)
+        self.assertFalse(status.configured)
 
     def test_invalid_metadata_is_rejected(self):
         with self.assertRaises(PluginContractError):

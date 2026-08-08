@@ -1,5 +1,4 @@
-"""Startup loader and runtime state for Flask-AAS application plugins."""
-
+# plugins/loader.py
 from __future__ import annotations
 
 from dataclasses import dataclass, field

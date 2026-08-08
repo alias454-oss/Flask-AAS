@@ -1,5 +1,4 @@
-"""Host-owned navigation registry for Flask-AAS application plugins."""
-
+# plugins/navigation.py
 from __future__ import annotations
 
 from dataclasses import dataclass

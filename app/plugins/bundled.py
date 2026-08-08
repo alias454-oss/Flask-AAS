@@ -1,30 +1,58 @@
-"""Trusted application plugin registrations shipped with Flask-AAS."""
-
+# plugins/bundled.py
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
+
+from app.plugins.manifest import PluginManifest, load_plugin_manifest
 
 
 @dataclass(frozen=True)
 class BundledPluginRegistration:
-    """Stable identity needed to seed one bundled application registration."""
+    """Deployment-trusted bundled plugin backed by static package metadata."""
 
-    plugin_id: str
-    import_path: str
-    model_modules: tuple[str, ...] = ()
+    manifest: PluginManifest
+
+    @property
+    def plugin_id(self) -> str:
+        return self.manifest.plugin_id
+
+    @property
+    def import_path(self) -> str:
+        return self.manifest.entrypoint
+
+    @property
+    def model_modules(self) -> tuple[str, ...]:
+        """Return the conventional model module for explicit setup tooling.
+
+        This remains a temporary bridge until plugin-owned Alembic migration
+        environments replace direct model-table preparation.
+        """
+
+        module_name, _, _ = self.import_path.partition(":")
+        package_name, separator, _ = module_name.rpartition(".")
+        if not separator:
+            return ()
+        return (f"{package_name}.models",)
+
+
+def _bundled_manifest(relative_path: str) -> PluginManifest:
+    """Read trusted bundled metadata without importing the plugin package."""
+
+    return load_plugin_manifest(
+        Path(__file__).resolve().parent / relative_path
+    )
 
 
 BUNDLED_PLUGIN_REGISTRATIONS = (
     BundledPluginRegistration(
-        plugin_id="example",
-        import_path="app.plugins.example.plugin:plugin",
-        model_modules=("app.plugins.example.models",),
+        manifest=_bundled_manifest("example/plugin.toml"),
     ),
 )
 
 
 def bundled_plugin_registrations() -> tuple[BundledPluginRegistration, ...]:
-    """Return plugins that are installed as part of this Flask-AAS build."""
+    """Return bundled registrations without importing plugin runtime code."""
 
     return BUNDLED_PLUGIN_REGISTRATIONS
 
