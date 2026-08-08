@@ -12,6 +12,7 @@
 
   <link rel="shortcut icon" href="{{ url_for('static', filename='favicon.ico') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='themes/default/style.css') }}" />
+  {% block extra_styles %}{% endblock %}
 </head>
 <body>
   <div class="page-container">

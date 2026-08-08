@@ -1,0 +1,13 @@
+{% extends tpl_path ~ "/base.html" %}
+
+{% block extra_styles %}
+  {% block plugin_styles %}{% endblock %}
+{% endblock %}
+
+{% block header %}
+  {% include tpl_path ~ "/header.html" %}
+{% endblock %}
+
+{% block footer %}
+  {% include tpl_path ~ "/footer.html" %}
+{% endblock %}

@@ -1,9 +1,10 @@
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
-from flask import Flask
+from flask import Blueprint, Flask
 
 from app.core.extensions import db
 from app.models import EnvSettings, PluginRegistration, User
@@ -23,7 +24,8 @@ class ExamplePluginWebSurfaceTests(unittest.TestCase):
         self.temp_dir = tempfile.TemporaryDirectory()
         database_path = Path(self.temp_dir.name) / "example-plugin-web.db"
 
-        self.app = Flask(__name__)
+        host_templates = Path(__file__).resolve().parents[1] / "app" / "templates"
+        self.app = Flask(__name__, template_folder=str(host_templates))
         self.app.config.update(
             TESTING=True,
             SECRET_KEY="plugin-web-surface-test",
@@ -32,6 +34,37 @@ class ExamplePluginWebSurfaceTests(unittest.TestCase):
         )
         db.init_app(self.app)
         self.app.before_request(enforce_plugin_access)
+
+        for blueprint_name, route_path in (
+            ("index", "/host-index"),
+            ("about", "/host-about"),
+            ("login", "/host-login"),
+        ):
+            blueprint = Blueprint(blueprint_name, __name__)
+            blueprint.add_url_rule(
+                route_path,
+                endpoint=blueprint_name,
+                view_func=lambda: "",
+            )
+            self.app.register_blueprint(blueprint)
+
+        @self.app.context_processor
+        def inject_host_template_context():
+            return {
+                "tpl_path": "themes/default",
+                "env": SimpleNamespace(
+                    site_name="Plugin Test",
+                    description="",
+                    keywords="",
+                    contact_enabled=False,
+                    allow_registration=False,
+                ),
+                "nonce": "",
+                "sidebar_position": "none",
+                "current_user": SimpleNamespace(is_authenticated=False),
+                "current_year": 2026,
+                "page_gen_time": 0,
+            }
 
         self.app_context = self.app.app_context()
         self.app_context.push()
@@ -104,6 +137,14 @@ class ExamplePluginWebSurfaceTests(unittest.TestCase):
         self.assertIn("example", body)
         self.assertIn("Plugin API", body)
         self.assertIn("v1", body)
+        host_css = "/static/themes/default/style.css"
+        plugin_css = "/example/static/example.css"
+        self.assertIn(host_css, body)
+        self.assertIn(plugin_css, body)
+        self.assertLess(body.index(host_css), body.index(plugin_css))
+        self.assertIn('class="site-header"', body)
+        self.assertIn('class="site-main"', body)
+        self.assertIn('class="site-footer"', body)
 
         response = client.get("/example/static/example.css")
         self.assertEqual(response.status_code, 200)

@@ -20,6 +20,7 @@ def index():
 
     return render_template(
         "example/index.html",
+        title="Example Application",
         plugin_id="example",
         plugin_api_version=PLUGIN_API_VERSION,
     )
