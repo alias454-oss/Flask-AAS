@@ -18,6 +18,7 @@ from app.core.inactivity import enforce_inactivity_timeout
 from app.core.sessions import touch_current_session
 from app.core.trackers import track_online_user, expire_stale_online_users, visitor_tracking_enabled
 from app.models.user import EnvSettings, User
+from app.models.plugin import PluginRegistration  # noqa: F401 - register model metadata
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
