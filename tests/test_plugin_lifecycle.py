@@ -18,6 +18,9 @@ from app.plugins.loader import (
     STATUS_ERROR,
     STATUS_INCOMPATIBLE,
     STATUS_NEEDS_CONFIGURATION,
+    PluginRuntime,
+    PluginRuntimeState,
+    enforce_plugin_access,
     initialize_plugins,
 )
 
@@ -53,6 +56,14 @@ class IncompatibleLifecyclePlugin(LifecyclePlugin):
     api_version = PLUGIN_API_VERSION + 1
 
 
+class EndpointLifecyclePlugin(LifecyclePlugin):
+    plugin_id = "endpoint-plugin"
+
+    def register(self, app):
+        super().register(app)
+        app.view_functions["endpoint_plugin.surface"] = lambda: None
+
+
 class PluginLifecycleTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -66,6 +77,12 @@ class PluginLifecycleTests(unittest.TestCase):
             SQLALCHEMY_TRACK_MODIFICATIONS=False,
         )
         db.init_app(cls.app)
+
+        @cls.app.route("/guarded-plugin-test", endpoint="guarded_plugin_test")
+        def guarded_plugin_test():
+            return "guarded"
+
+        cls.app.before_request(enforce_plugin_access)
 
     @classmethod
     def tearDownClass(cls):
@@ -87,6 +104,7 @@ class PluginLifecycleTests(unittest.TestCase):
         db.session.rollback()
         db.session.remove()
         EnvSettings._cached_instance = None
+        self.app.extensions.pop("flask_aas_plugins", None)
         self.app_context.pop()
 
     def _add_settings(self, *, enable_plugins=None):
@@ -164,6 +182,23 @@ class PluginLifecycleTests(unittest.TestCase):
         self.assertEqual(runtime.plugins["lifecycle"].status, STATUS_DISABLED)
         resolve.assert_not_called()
 
+    def test_loader_records_plugin_owned_endpoints(self):
+        self._add_settings(enable_plugins=True)
+        self._add_registration(
+            plugin_id="endpoint-plugin",
+            import_path="tests.fake_plugins:endpoint_plugin",
+            enabled=True,
+        )
+        plugin = EndpointLifecyclePlugin(configured=True)
+
+        with patch("app.plugins.loader.resolve_plugin", return_value=plugin):
+            runtime = initialize_plugins(self.app)
+
+        self.assertEqual(
+            runtime.plugin_for_endpoint("endpoint_plugin.surface"),
+            "endpoint-plugin",
+        )
+
     def test_enabled_configured_plugin_becomes_active(self):
         self._add_settings(enable_plugins=True)
         registration = self._add_registration(enabled=True, configured=False)
@@ -177,7 +212,7 @@ class PluginLifecycleTests(unittest.TestCase):
         self.assertEqual(plugin.register_calls, 1)
         self.assertTrue(registration.configured)
 
-    def test_enabled_unconfigured_plugin_is_not_registered(self):
+    def test_enabled_unconfigured_plugin_registers_structural_surfaces(self):
         self._add_settings(enable_plugins=True)
         registration = self._add_registration(enabled=True, configured=True)
         plugin = LifecyclePlugin(configured=False)
@@ -189,8 +224,40 @@ class PluginLifecycleTests(unittest.TestCase):
         state = runtime.plugins["lifecycle"]
         self.assertEqual(state.status, STATUS_NEEDS_CONFIGURATION)
         self.assertIn("Required configuration", state.reason)
-        self.assertEqual(plugin.register_calls, 0)
+        self.assertEqual(plugin.register_calls, 1)
         self.assertFalse(registration.configured)
+
+    def test_loaded_plugin_access_tracks_current_enabled_and_configured_state(self):
+        self._add_settings(enable_plugins=True)
+        registration = self._add_registration(
+            enabled=True,
+            configured=False,
+        )
+        runtime = PluginRuntime(system_enabled=True)
+        runtime.plugins["lifecycle"] = PluginRuntimeState(
+            plugin_id="lifecycle",
+            status=STATUS_NEEDS_CONFIGURATION,
+        )
+        runtime.endpoints["guarded_plugin_test"] = "lifecycle"
+        self.app.extensions["flask_aas_plugins"] = runtime
+        client = self.app.test_client()
+
+        # Structural route exists, but pending configuration keeps it closed.
+        response = client.get("/guarded-plugin-test")
+        self.assertEqual(response.status_code, 404)
+
+        # Completing configuration makes the already-loaded route usable.
+        registration.configured = True
+        db.session.commit()
+        response = client.get("/guarded-plugin-test")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_data(as_text=True), "guarded")
+
+        # Disabling the plugin blocks access immediately without route mutation.
+        registration.enabled = False
+        db.session.commit()
+        response = client.get("/guarded-plugin-test")
+        self.assertEqual(response.status_code, 404)
 
     def test_incompatible_plugin_isolated_from_core_startup(self):
         self._add_settings(enable_plugins=True)

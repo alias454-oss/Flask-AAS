@@ -53,7 +53,15 @@ class ApplicationPlugin(ABC):
 
     @abstractmethod
     def register(self, app: Any) -> None:
-        """Register runtime Flask surfaces during application startup."""
+        """Register structural Flask surfaces during application startup.
+
+        This method must be safe when ``validate_config()`` reports that the
+        plugin is not yet configured. Flask-AAS may install the plugin's route
+        structure while host-level request gating keeps those application
+        surfaces unavailable until configuration becomes valid. Runtime work
+        that requires credentials or other completed configuration must not be
+        started here.
+        """
 
 
 def validate_plugin_contract(plugin: ApplicationPlugin) -> ApplicationPlugin:

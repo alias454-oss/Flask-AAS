@@ -7,6 +7,7 @@ import importlib
 import logging
 from typing import Any
 
+from flask import abort, current_app, request
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.extensions import db
@@ -48,9 +49,15 @@ class PluginRuntime:
 
     system_enabled: bool = False
     plugins: dict[str, PluginRuntimeState] = field(default_factory=dict)
+    endpoints: dict[str, str] = field(default_factory=dict)
 
     def state_for(self, plugin_id: str) -> PluginRuntimeState | None:
         return self.plugins.get(plugin_id)
+
+    def plugin_for_endpoint(self, endpoint: str | None) -> str | None:
+        if endpoint is None:
+            return None
+        return self.endpoints.get(endpoint)
 
 
 def resolve_plugin(import_path: str) -> ApplicationPlugin:
@@ -84,6 +91,59 @@ def get_plugin_runtime(app: Any) -> PluginRuntime:
     runtime = PluginRuntime()
     app.extensions[PLUGIN_RUNTIME_EXTENSION] = runtime
     return runtime
+
+
+def _record_plugin_endpoints(
+    app: Any,
+    runtime: PluginRuntime,
+    plugin_id: str,
+    endpoints_before: set[str],
+) -> None:
+    """Associate endpoints added by one plugin with its host registration."""
+
+    for endpoint in set(app.view_functions) - endpoints_before:
+        runtime.endpoints[endpoint] = plugin_id
+
+
+def enforce_plugin_access() -> None:
+    """Fail closed for plugin routes that are not currently usable.
+
+    Structural Flask routes are installed only at startup. Persisted plugin
+    activation and configuration state can change later, so plugin requests are
+    gated against current database state. This lets disabling take effect
+    immediately and lets an already-loaded plugin become usable after pending
+    configuration is completed, without mutating Flask's route map.
+
+    The global plugin-system switch remains a startup boundary: changing it in
+    Site Settings still requires a restart, matching the loader contract.
+    """
+
+    runtime = get_plugin_runtime(current_app)
+    plugin_id = runtime.plugin_for_endpoint(request.endpoint)
+    if plugin_id is None:
+        return
+
+    state = runtime.state_for(plugin_id)
+    if (
+        not runtime.system_enabled
+        or state is None
+        or state.status not in {STATUS_ACTIVE, STATUS_NEEDS_CONFIGURATION}
+    ):
+        abort(404)
+
+    try:
+        registration = PluginRegistration.query.filter_by(plugin_id=plugin_id).first()
+    except SQLAlchemyError:
+        db.session.rollback()
+        logger.exception("Failed to read access state for plugin %s", plugin_id)
+        abort(404)
+
+    if (
+        registration is None
+        or not registration.enabled
+        or not registration.configured
+    ):
+        abort(404)
 
 
 def _read_plugin_system_enabled() -> bool:
@@ -209,18 +269,17 @@ def initialize_plugins(app: Any) -> PluginRuntime:
             )
             continue
 
-        if not configuration.configured:
-            runtime.plugins[registration.plugin_id] = _runtime_state(
-                registration,
-                STATUS_NEEDS_CONFIGURATION,
-                plugin=plugin,
-                reason=configuration.reason,
-            )
-            continue
-
+        endpoints_before = set(app.view_functions)
         try:
+            # Structural registration is intentionally independent of current
+            # configuration viability. The request guard keeps these routes
+            # unavailable until the persisted plugin state is both enabled and
+            # configured, without attempting to mutate Flask's route map live.
             plugin.register(app)
         except Exception as exc:
+            _record_plugin_endpoints(
+                app, runtime, registration.plugin_id, endpoints_before
+            )
             runtime.plugins[registration.plugin_id] = _runtime_state(
                 registration,
                 STATUS_ERROR,
@@ -229,6 +288,23 @@ def initialize_plugins(app: Any) -> PluginRuntime:
             )
             logger.exception(
                 "Plugin %s failed during runtime registration",
+                registration.plugin_id,
+            )
+            continue
+
+        _record_plugin_endpoints(
+            app, runtime, registration.plugin_id, endpoints_before
+        )
+
+        if not configuration.configured:
+            runtime.plugins[registration.plugin_id] = _runtime_state(
+                registration,
+                STATUS_NEEDS_CONFIGURATION,
+                plugin=plugin,
+                reason=configuration.reason,
+            )
+            logger.info(
+                "Loaded application plugin %s with access gated pending configuration",
                 registration.plugin_id,
             )
             continue

@@ -41,7 +41,8 @@
                 <strong>Plugin ID:</strong> {{ registration.plugin_id }}<br />
                 <strong>Import Path:</strong> {{ registration.import_path }}<br />
                 <strong>Enabled:</strong> {{ "Yes" if registration.enabled else "No" }}<br />
-                <strong>Configured:</strong> {{ "Yes" if registration.configured else "No" }}
+                <strong>Configured:</strong> {{ "Yes" if registration.configured else "No" }}<br />
+                <strong>Application Access:</strong> {{ row.access_status }}
               </p>
 
               {% if row.runtime_reason %}

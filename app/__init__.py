@@ -19,7 +19,7 @@ from app.core.sessions import touch_current_session
 from app.core.trackers import track_online_user, expire_stale_online_users, visitor_tracking_enabled
 from app.models.user import EnvSettings, User
 from app.models.plugin import PluginRegistration  # noqa: F401 - register model metadata
-from app.plugins.loader import initialize_plugins
+from app.plugins.loader import enforce_plugin_access, initialize_plugins
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -89,6 +89,12 @@ def create_app():
     with app.app_context():
         initialize_plugins(app)
         update_log_level()
+
+    # Plugin routes are structural startup state, but current enablement and
+    # configuration are persisted state. Gate plugin application surfaces before
+    # ordinary request processing so disable/configuration changes take effect
+    # without mutating Flask's live route map.
+    app.before_request(enforce_plugin_access)
 
     # Apply a sliding inactivity window to authenticated browser sessions.
     # Pre-authentication MFA state remains governed by its own expiry controls.

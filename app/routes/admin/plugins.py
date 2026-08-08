@@ -15,7 +15,13 @@ from app.core.meta import page_metadata
 from app.core.security import get_client_ip
 from app.core.trackers import get_admin_quick_stats, log_action
 from app.models import EnvSettings, PluginRegistration
-from app.plugins.loader import get_plugin_runtime, resolve_plugin
+from app.plugins.loader import (
+    STATUS_ACTIVE,
+    STATUS_DISABLED,
+    STATUS_NEEDS_CONFIGURATION,
+    get_plugin_runtime,
+    resolve_plugin,
+)
 from app.plugins.registry import disable_plugin, enable_plugin
 
 logger = logging.getLogger(__name__)
@@ -30,6 +36,7 @@ class PluginAdminRow:
     runtime_reason: str | None
     runtime_name: str | None
     runtime_version: str | None
+    access_status: str
     restart_required: bool
 
 
@@ -50,8 +57,21 @@ def _admin_rows(registrations, env, runtime):
             runtime_name = state.name
             runtime_version = state.version
 
-        loaded_enabled = state is not None and state.status != "DISABLED"
-        registration_restart_required = registration.enabled != loaded_enabled
+        access_capable_runtime = (
+            state is not None
+            and state.status in {STATUS_ACTIVE, STATUS_NEEDS_CONFIGURATION}
+        )
+        loaded_at_startup = state is not None and state.status != STATUS_DISABLED
+        registration_restart_required = registration.enabled != loaded_at_startup
+
+        if not runtime.system_enabled or not access_capable_runtime:
+            access_status = "Unavailable"
+        elif not registration.enabled:
+            access_status = "Disabled"
+        elif not registration.configured:
+            access_status = "Needs configuration"
+        else:
+            access_status = "Available"
 
         rows.append(
             PluginAdminRow(
@@ -60,6 +80,7 @@ def _admin_rows(registrations, env, runtime):
                 runtime_reason=runtime_reason,
                 runtime_name=runtime_name,
                 runtime_version=runtime_version,
+                access_status=access_status,
                 restart_required=(
                     global_restart_required or registration_restart_required
                 ),
@@ -188,8 +209,9 @@ def disable(registration_id):
         return redirect(url_for("plugins.list_plugins"))
 
     flash(
-        f"Plugin {registration.plugin_id} disabled and plugin-managed secrets cleared. "
-        "Restart Flask-AAS to unload its runtime surfaces.",
+        f"Plugin {registration.plugin_id} disabled; application access is blocked "
+        "immediately and plugin-managed secrets were cleared. Restart Flask-AAS "
+        "to unload its runtime surfaces.",
         "success",
     )
     return redirect(url_for("plugins.list_plugins"))

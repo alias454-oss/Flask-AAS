@@ -217,6 +217,7 @@ class PluginAdminRouteTests(unittest.TestCase):
         row = render.call_args.kwargs["rows"][0]
         self.assertEqual(row.registration.id, record.id)
         self.assertEqual(row.runtime_status, STATUS_ACTIVE)
+        self.assertEqual(row.access_status, "Available")
         self.assertFalse(row.restart_required)
 
     def test_enable_persists_requested_state_and_configuration(self):
@@ -297,6 +298,35 @@ class PluginAdminRouteTests(unittest.TestCase):
         self.assertTrue(record.enabled)
         self.assertTrue(record.configured)
         self.assertEqual(plugin.clear_calls, 1)
+
+    def test_disabled_loaded_plugin_reports_access_blocked_immediately(self):
+        self._login(self.admin_id)
+        self._registration(enabled=False, configured=True)
+        self.app.extensions[PLUGIN_RUNTIME_EXTENSION].plugins["admin-plugin"] = (
+            PluginRuntimeState(
+                plugin_id="admin-plugin",
+                status=STATUS_ACTIVE,
+                name="Admin Plugin",
+                version="1.0.0",
+            )
+        )
+
+        with patch(
+            "app.core.decorators.audit_activity_enabled",
+            return_value=False,
+        ), patch(
+            "app.routes.admin.plugins.get_admin_quick_stats",
+            return_value={},
+        ), patch(
+            "app.routes.admin.plugins.render_template",
+            return_value="plugins",
+        ) as render:
+            response = self.client.get("/admin/plugins/")
+
+        self.assertEqual(response.status_code, 200)
+        row = render.call_args.kwargs["rows"][0]
+        self.assertEqual(row.access_status, "Disabled")
+        self.assertTrue(row.restart_required)
 
     def test_requested_enablement_change_requires_restart(self):
         self._login(self.admin_id)
