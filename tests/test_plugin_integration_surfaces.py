@@ -9,6 +9,7 @@ from app.core.extensions import db
 from app.models import EnvSettings, PluginRegistration, User
 from app.plugins.cli import plugin_cli
 from app.plugins.example import plugin as example_plugin
+from app.plugins.example.models import ExampleSettings
 from app.plugins.interface import PluginConfiguration
 from app.plugins.loader import STATUS_NEEDS_CONFIGURATION, initialize_plugins
 from app.plugins.navigation import get_plugin_navigation, visible_plugin_navigation
@@ -55,13 +56,18 @@ class ExamplePluginIntegrationSurfaceTests(unittest.TestCase):
             users_stored_path="/tmp/users",
             enable_plugins=True,
         )
+        self.example_settings = ExampleSettings(
+            id=1,
+            greeting="Integration greeting",
+            managed_secret="integration-managed-secret",
+        )
         self.registration = PluginRegistration(
             plugin_id="example",
             import_path="app.plugins.example.plugin:plugin",
             enabled=True,
             configured=False,
         )
-        db.session.add_all([self.env, self.registration])
+        db.session.add_all([self.env, self.example_settings, self.registration])
         db.session.commit()
 
     def tearDown(self):
@@ -106,6 +112,40 @@ class ExamplePluginIntegrationSurfaceTests(unittest.TestCase):
             output,
         )
         self.assertNotIn("opaque-secret-value", output)
+
+
+    def test_plugin_cli_configure_refreshes_host_configuration_without_logging_secret(self):
+        self.example_settings.managed_secret = None
+        self.registration.configured = False
+        db.session.commit()
+
+        runner = self.app.test_cli_runner()
+        with self.assertLogs("app.plugins.cli", level="INFO") as logs:
+            result = runner.invoke(
+                args=[
+                    "plugin",
+                    "run",
+                    "example",
+                    "configure",
+                    "--greeting",
+                    "Configured from CLI",
+                ],
+                input="new-managed-secret\nnew-managed-secret\n",
+            )
+
+        self.assertEqual(result.exit_code, 0, result.output)
+        db.session.refresh(self.registration)
+        db.session.refresh(self.example_settings)
+        self.assertTrue(self.registration.configured)
+        self.assertEqual(self.example_settings.greeting, "Configured from CLI")
+        self.assertEqual(self.example_settings.managed_secret, "new-managed-secret")
+        self.assertIn("configured=yes", result.output)
+        log_output = "\n".join(logs.output)
+        self.assertIn(
+            "Dispatching plugin CLI plugin=example command=configure",
+            log_output,
+        )
+        self.assertNotIn("new-managed-secret", log_output)
 
     def test_plugin_cli_help_is_passed_through(self):
         result = self.app.test_cli_runner().invoke(

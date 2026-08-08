@@ -7,7 +7,10 @@ from flask import Flask
 from app.core.extensions import db
 from app.core.seeder import seed_bundled_plugins
 from app.models.plugin import PluginRegistration
-from app.plugins.bundled import bundled_plugin_registrations
+from app.plugins.bundled import (
+    bundled_plugin_model_modules,
+    bundled_plugin_registrations,
+)
 
 
 class BundledPluginSeedTests(unittest.TestCase):
@@ -51,6 +54,17 @@ class BundledPluginSeedTests(unittest.TestCase):
         self.assertEqual(
             bundled["example"].import_path,
             "app.plugins.example.plugin:plugin",
+        )
+        self.assertEqual(
+            bundled["example"].model_modules,
+            ("app.plugins.example.models",),
+        )
+
+
+    def test_bundled_model_declarations_do_not_require_importing_them(self):
+        self.assertEqual(
+            bundled_plugin_model_modules(),
+            ("app.plugins.example.models",),
         )
 
     def test_seed_registers_bundled_plugins_disabled_by_default(self):

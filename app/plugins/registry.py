@@ -108,6 +108,12 @@ def enable_plugin(
 
     validate_plugin_contract(plugin)
     _require_matching_plugin(registration, plugin)
+
+    # Enabling is the explicit trust/activation boundary. Disabled plugins are
+    # not imported during normal startup merely to expose model metadata. Give
+    # the plugin one chance to prepare its own persistence before config
+    # validation queries it.
+    plugin.prepare_enable()
     configuration = refresh_configuration(registration, plugin)
     registration.enabled = True
     return configuration

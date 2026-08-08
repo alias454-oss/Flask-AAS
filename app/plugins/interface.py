@@ -51,6 +51,17 @@ class ApplicationPlugin(ABC):
         data here.
         """
 
+    def prepare_enable(self) -> None:
+        """Prepare plugin-owned persistence before configuration validation.
+
+        Flask-AAS calls this only during an explicit enable operation. Normal
+        startup does not call it for disabled plugins. Implementations may use
+        this hook to install or verify plugin-owned schema needed by
+        ``validate_config()``. The default implementation does nothing.
+        """
+
+        return None
+
     def get_cli(self) -> Any | None:
         """Return the plugin-owned Click command group, if one is provided.
 

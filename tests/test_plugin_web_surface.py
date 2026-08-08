@@ -9,6 +9,7 @@ from flask import Blueprint, Flask
 from app.core.extensions import db
 from app.models import EnvSettings, PluginRegistration, User
 from app.plugins.example import plugin as example_plugin
+from app.plugins.example.models import ExampleItem, ExampleSettings
 from app.plugins.interface import PluginConfiguration
 from app.plugins.loader import (
     STATUS_ACTIVE,
@@ -92,13 +93,21 @@ class ExamplePluginWebSurfaceTests(unittest.TestCase):
             users_stored_path="/tmp/users",
             enable_plugins=True,
         )
+        self.example_settings = ExampleSettings(
+            id=1,
+            greeting="Hello from persisted Example config",
+            managed_secret="reference-managed-secret",
+        )
+        self.example_item = ExampleItem(value="persisted business data")
         self.registration = PluginRegistration(
             plugin_id="example",
             import_path="app.plugins.example.plugin:plugin",
             enabled=True,
             configured=False,
         )
-        db.session.add_all([env, self.registration])
+        db.session.add_all(
+            [env, self.example_settings, self.example_item, self.registration]
+        )
         db.session.commit()
 
     def tearDown(self):
@@ -137,6 +146,9 @@ class ExamplePluginWebSurfaceTests(unittest.TestCase):
         self.assertIn("example", body)
         self.assertIn("Plugin API", body)
         self.assertIn("v1", body)
+        self.assertIn("Hello from persisted Example config", body)
+        self.assertIn("Stored Items", body)
+        self.assertIn(">1<", body)
         host_css = "/static/themes/default/style.css"
         plugin_css = "/example/static/example.css"
         self.assertIn(host_css, body)

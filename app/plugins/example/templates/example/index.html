@@ -6,11 +6,13 @@
 
 {% block content %}
   <h1>Example Application</h1>
-  <p>This page is served by the Flask-AAS reference plugin.</p>
+  <p>{{ greeting }}</p>
   <dl class="example-plugin-meta">
     <dt>Plugin ID</dt>
     <dd>{{ plugin_id }}</dd>
     <dt>Plugin API</dt>
     <dd>v{{ plugin_api_version }}</dd>
+    <dt>Stored Items</dt>
+    <dd>{{ item_count }}</dd>
   </dl>
 {% endblock %}
