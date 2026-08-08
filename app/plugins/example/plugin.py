@@ -3,7 +3,9 @@
 from typing import Any
 
 from app.plugins import ApplicationPlugin, PluginConfiguration
+from app.plugins.example.cli import cli as example_cli
 from app.plugins.example.routes import example_bp
+from app.plugins.navigation import register_plugin_navigation
 
 
 class ExamplePlugin(ApplicationPlugin):
@@ -20,8 +22,17 @@ class ExamplePlugin(ApplicationPlugin):
         # The reference plugin currently stores no managed secrets.
         return None
 
+    def get_cli(self):
+        return example_cli
+
     def register(self, app: Any) -> None:
         app.register_blueprint(example_bp)
+        register_plugin_navigation(
+            app,
+            plugin_id=self.plugin_id,
+            label="Example",
+            endpoint="example.index",
+        )
 
 
 plugin = ExamplePlugin()

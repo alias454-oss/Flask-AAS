@@ -51,6 +51,17 @@ class ApplicationPlugin(ABC):
         data here.
         """
 
+    def get_cli(self) -> Any | None:
+        """Return the plugin-owned Click command group, if one is provided.
+
+        Plugin commands remain owned by the plugin package. Flask-AAS may
+        explicitly dispatch to this surface through its generic plugin
+        management CLI without registering application-specific commands on
+        the host CLI itself.
+        """
+
+        return None
+
     @abstractmethod
     def register(self, app: Any) -> None:
         """Register structural Flask surfaces during application startup.
