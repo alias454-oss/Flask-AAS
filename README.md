@@ -83,7 +83,7 @@ Additional implementations extend `PasswordCheckProvider` and register through `
 
 ### Application Plugin Host
 - Global **Enable Application Plugins** switch; Flask-AAS operates normally with the plugin host disabled
-- Database-backed registration for explicitly trusted bundled applications
+- Database-backed registration automatically hydrated from `app/plugins/*/plugin.toml` manifests
 - Canonical package metadata in `plugin.toml`, inspectable without importing plugin implementation Python
 - Explicit per-application enable/disable plus derived configuration and runtime state
 - Metadata-only registration: a registered but disabled application does not import its implementation/models, deploy plugin schema, register routes, or contribute navigation during ordinary startup
@@ -99,7 +99,7 @@ Additional implementations extend `PasswordCheckProvider` and register through `
 - Versioned `PLUGIN_API_VERSION = 1` compatibility boundary
 - Route-level authorization remains plugin-owned: plugin routes may be public, require the normal Flask-AAS login context, use existing host roles for coarse admission, or apply plugin-owned domain authorization
 
-Bundled applications are trusted native Python code shipped with the deployment. Enabling a plugin means trusting that code to run with the permissions of the Flask-AAS process; Flask-AAS does not claim to sandbox in-process Python plugins. Filesystem presence alone does not imply trust or activation.
+Application plugin directories are deployment-supplied native Python code. Filesystem presence automatically registers validated static `plugin.toml` metadata with the application disabled; enabling a plugin is the explicit decision to trust that code to run with the permissions of the Flask-AAS process. Flask-AAS does not claim to sandbox in-process Python plugins.
 
 The current `example` application is a deliberately small compatibility/reference plugin. It proves public, authenticated, and coarse host-role-gated routes without adding a separate application-entitlement subsystem. OpenAuto is intended to be the first substantial consumer of the completed host contract.
 

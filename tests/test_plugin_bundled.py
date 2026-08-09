@@ -1,6 +1,7 @@
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from flask import Flask
 
@@ -60,11 +61,10 @@ class BundledPluginSeedTests(unittest.TestCase):
             ("app.plugins.example.models",),
         )
 
-
     def test_bundled_model_declarations_do_not_require_importing_them(self):
-        self.assertEqual(
+        self.assertIn(
+            "app.plugins.example.models",
             bundled_plugin_model_modules(),
-            ("app.plugins.example.models",),
         )
 
     def test_seed_registers_bundled_plugins_disabled_by_default(self):
@@ -72,6 +72,33 @@ class BundledPluginSeedTests(unittest.TestCase):
 
         record = PluginRegistration.query.filter_by(plugin_id="example").one()
         self.assertEqual(record.import_path, "app.plugins.example.plugin:plugin")
+        self.assertFalse(record.enabled)
+        self.assertFalse(record.configured)
+
+    def test_seed_automatically_discovers_plugin_manifest_without_runtime_import(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            plugins_root = Path(temp_dir)
+            plugin_dir = plugins_root / "downstream"
+            plugin_dir.mkdir()
+            (plugin_dir / "plugin.toml").write_text(
+                "\n".join(
+                    (
+                        "[plugin]",
+                        'id = "downstream"',
+                        'name = "Downstream Application"',
+                        'version = "1.0.0"',
+                        "api_version = 1",
+                        'entrypoint = "does.not.exist.plugin:plugin"',
+                        "",
+                    )
+                )
+            )
+
+            with patch("app.plugins.bundled.__file__", str(plugins_root / "bundled.py")):
+                seed_bundled_plugins()
+
+        record = PluginRegistration.query.filter_by(plugin_id="downstream").one()
+        self.assertEqual(record.import_path, "does.not.exist.plugin:plugin")
         self.assertFalse(record.enabled)
         self.assertFalse(record.configured)
 
@@ -85,6 +112,9 @@ class BundledPluginSeedTests(unittest.TestCase):
         seed_bundled_plugins()
 
         db.session.refresh(record)
-        self.assertEqual(PluginRegistration.query.count(), 1)
+        self.assertEqual(
+            PluginRegistration.query.count(),
+            len(bundled_plugin_registrations()),
+        )
         self.assertTrue(record.enabled)
         self.assertTrue(record.configured)

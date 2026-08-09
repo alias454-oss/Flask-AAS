@@ -36,25 +36,16 @@ class BundledPluginRegistration:
         return (f"{package_name}.models",)
 
 
-def _bundled_manifest(relative_path: str) -> PluginManifest:
-    """Read trusted bundled metadata without importing the plugin package."""
-
-    return load_plugin_manifest(
-        Path(__file__).resolve().parent / relative_path
-    )
-
-
-BUNDLED_PLUGIN_REGISTRATIONS = (
-    BundledPluginRegistration(
-        manifest=_bundled_manifest("example/plugin.toml"),
-    ),
-)
-
-
 def bundled_plugin_registrations() -> tuple[BundledPluginRegistration, ...]:
-    """Return bundled registrations without importing plugin runtime code."""
+    """Discover in-tree plugin manifests without importing plugin code."""
 
-    return BUNDLED_PLUGIN_REGISTRATIONS
+    return tuple(
+        BundledPluginRegistration(manifest=load_plugin_manifest(manifest_path))
+        for manifest_path in sorted(
+            Path(__file__).resolve().parent.glob("*/plugin.toml")
+        )
+        if manifest_path.is_file()
+    )
 
 
 def bundled_plugin_model_modules() -> tuple[str, ...]:
