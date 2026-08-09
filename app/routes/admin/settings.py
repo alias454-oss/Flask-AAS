@@ -35,7 +35,9 @@ from app.core.mailer import (
     validate_mail_override_fields,
 )
 from app.core.meta import page_metadata
+from app.core.pwcheck import password_check_provider_choices
 from app.core.security import get_client_ip
+from app.core.spam import spam_check_provider_choices
 from app.core.trackers import get_admin_quick_stats, log_action
 from app.models import Role
 
@@ -98,6 +100,12 @@ class AdminSettingsForm(FlaskForm):
     use_user_location = BooleanField("Use User Location")
     use_captcha = BooleanField("Enable CAPTCHA")
     contact_enabled = BooleanField("Enable Contact Form")
+    spam_check_enabled = BooleanField("Enable Spam Check")
+    spam_check_provider = SelectField(
+        "Spam Check Provider",
+        choices=[],
+        validators=[InputRequired()],
+    )
     maint_mode = BooleanField("Maintenance Mode")
     visitor_tracking = BooleanField("Track Online Users")
     use_fancy_urls = BooleanField("Enable Fancy URLs")
@@ -113,6 +121,12 @@ class AdminSettingsForm(FlaskForm):
     password_require_lowercase = BooleanField("Require Lowercase Letter")
     password_require_number = BooleanField("Require Number")
     password_require_special = BooleanField("Require Special Character")
+    password_check_enabled = BooleanField("Enable Password Check")
+    password_check_provider = SelectField(
+        "Password Check Provider",
+        choices=[],
+        validators=[InputRequired()],
+    )
 
     # Maintenance
     enable_delete_old_users = BooleanField("Auto-delete Old Users")
@@ -424,6 +438,8 @@ def settings():
     form.site_lang.choices = get_supported_languages()
     form.site_timezone.choices = get_timezones()
     form.default_role_id.choices = role_choices
+    form.password_check_provider.choices = password_check_provider_choices()
+    form.spam_check_provider.choices = spam_check_provider_choices()
 
     if not form.default_role_id.data:
         form.default_role_id.data = env.default_role_id

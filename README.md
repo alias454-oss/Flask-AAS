@@ -38,6 +38,7 @@ The base is intentionally designed to remain easy to run locally. Direct HTTP, g
 - Secure login with **Flask-Login**
 - Password hashing via **bcrypt**, with full long-password handling enabled
 - Admin-managed password policy enabled by default with a 20-character minimum, passphrase-friendly composition defaults, and deployment values used only to seed a fresh database
+- Optional provider-backed new-password checking, disabled by default, with a built-in local common-password blocklist and a registration seam for additional providers
 - Active session tracking
 - Sliding authenticated-session inactivity timeout with remember-cookie deletion on expiry
 - Remember-cookie-restored sessions begin a new non-fresh inactivity window
@@ -49,6 +50,11 @@ The base is intentionally designed to remain easy to run locally. Direct HTTP, g
 - Admin panel with settings management
 - Single-user lockdown mode
 - Global CSRF protection
+
+### Password Check Providers
+Password checking is disabled by default. When enabled in **Admin → Site Settings**, every new-password workflow sends the candidate through the selected provider after the normal local policy checks. The built-in `local` provider uses the packaged common-password blocklist and performs no network requests.
+
+Additional implementations extend `PasswordCheckProvider` and register through `register_password_check_provider()`. The password-setting routes do not need provider-specific code; registered providers become available to the Site Settings provider selector.
 
 ### Multi-Factor Authentication
 - TOTP enrollment and authenticator replacement
@@ -300,6 +306,15 @@ only when Admin Email is configured and outbound email has an effective
 transport. If any dependency later becomes unavailable, `/contact` returns 404,
 the Contact navigation link is hidden, and the route is omitted from the sitemap.
 
+Contact submissions also pass through the selected spam-check provider when spam
+checking is enabled. Fresh installs preserve the existing local protection by
+enabling the built-in `local` provider, which reads a packaged phrase list and
+performs no network requests. Provider selection is managed in **Admin → Site
+Settings** so a later Akismet, ML, or downstream-specific worker can implement the
+same pass/fail contract without modifying the contact route. Provider runtime
+failures are logged and fail open so an optional spam service cannot take the
+contact form offline.
+
 Deployment SMTP settings are supplied through `.env` or another external configuration source:
 
 ```dotenv
@@ -368,6 +383,18 @@ Run the audit transaction, metadata-redaction, tracking, login-outcome, and MFA 
 python -m pytest \
   tests/test_audit_tracking.py \
   tests/test_login_audit.py
+```
+
+### Focused Password and Spam Provider Validation
+
+Run the password-policy, password-provider, contact-route, and spam-provider regression suites with:
+
+```bash
+python -m pytest \
+  tests/test_password_policy.py \
+  tests/test_password_check.py \
+  tests/test_contact.py \
+  tests/test_spam_check.py
 ```
 
 ### Focused Plugin Validation

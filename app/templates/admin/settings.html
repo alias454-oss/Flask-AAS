@@ -66,6 +66,28 @@
     </fieldset>
 
     <fieldset>
+      <legend>Spam Check</legend>
+      <p>
+        The built-in provider uses a packaged local phrase list and performs no
+        external requests. Additional providers can implement the same provider
+        contract without changing the contact workflow.
+      </p>
+      <div class="checkbox-inline">
+        <label for="{{ form.spam_check_enabled.id }}">
+          {{ form.spam_check_enabled() }}
+          {{ form.spam_check_enabled.label.text }}
+        </label>
+      </div>
+      <div class="form-group">
+        {{ form.spam_check_provider.label }}
+        {{ form.spam_check_provider(class_="form-control") }}
+        {% for error in form.spam_check_provider.errors %}
+          <div class="form-error">{{ error }}</div>
+        {% endfor %}
+      </div>
+    </fieldset>
+
+    <fieldset>
       <legend>User System Environment</legend>
       <div class="form-group">
         {{ form.site_mode.label }} {{ form.site_mode(class_="form-control") }}
@@ -177,6 +199,26 @@
           {{ form.password_require_special() }}
           {{ form.password_require_special.label.text }}
         </label>
+      </div>
+
+      <h3>Password Check</h3>
+      <p>
+        Optionally check each newly selected password through a provider. The
+        built-in provider uses a small local blocklist and makes no external
+        requests. Additional providers can implement the same provider contract.
+      </p>
+      <div class="checkbox-inline">
+        <label for="{{ form.password_check_enabled.id }}">
+          {{ form.password_check_enabled() }}
+          {{ form.password_check_enabled.label.text }}
+        </label>
+      </div>
+      <div class="form-group">
+        {{ form.password_check_provider.label }}
+        {{ form.password_check_provider(class_="form-control") }}
+        {% for error in form.password_check_provider.errors %}
+          <div class="form-error">{{ error }}</div>
+        {% endfor %}
       </div>
     </fieldset>
 

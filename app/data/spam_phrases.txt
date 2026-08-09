@@ -1,0 +1,33 @@
+# Built-in local spam phrases. Matching is case-insensitive substring matching.
+buy now
+free bitcoin
+click here
+viagra
+cheap viagra
+buy viagra
+free crypto
+free cryptocurrency
+bitcoin investment
+crypto investment
+guaranteed profit
+guaranteed income
+make money fast
+make money online
+work from home opportunity
+earn money fast
+double your money
+risk free investment
+claim your prize
+you have won
+you've won
+winner selected
+limited time offer
+act now
+order now
+click this link
+visit this link
+instant loan
+payday loan
+casino bonus
+online casino
+sports betting

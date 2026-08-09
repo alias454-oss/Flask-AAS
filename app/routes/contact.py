@@ -13,6 +13,7 @@ from app.core.extensions import limiter
 from app.core.mailer import contact_form_available, send_contact_email
 from app.core.meta import page_metadata
 from app.core.security import get_client_ip, normalize_email, redact_email
+from app.core.spam import check_spam
 from app.core.trackers import (
     audit_activity_enabled,
     current_route,
@@ -23,12 +24,6 @@ from .captcha import CaptchaRequired
 
 logger = logging.getLogger(__name__)
 contact_bp = Blueprint("contact", __name__)
-
-
-def is_spam(message: str) -> bool:
-    # Simple now but maybe integrate Akismet or an ML-based spam service later
-    blacklist = ["buy now", "free bitcoin", "click here", "viagra"]
-    return any(word in message.lower() for word in blacklist)
 
 
 class ContactForm(FlaskForm):
@@ -92,21 +87,32 @@ def contact():
                 )
             return redirect(url_for("contact.contact"))
 
-        if is_spam(form.message.data):
-            logger.warning("Spam message blocked from IP %s", ip)
-            if audit_activity_enabled():
-                log_action_isolated(
-                    user_id=getattr(current_user, "id", None),
-                    action="spam_blocked",
-                    target=current_route(),
-                    extra_data={
-                        "ip": ip,
-                        "email": redacted_email,
-                        "ua": user_agent,
-                    },
+        if getattr(env, "spam_check_enabled", True):
+            spam_provider = str(getattr(env, "spam_check_provider", "local"))
+            spam_result = check_spam(form.message.data, spam_provider)
+            if not spam_result.passed:
+                logger.warning(
+                    "Spam message blocked by provider=%s from IP %s",
+                    spam_provider,
+                    ip,
                 )
-            flash("Your message appears to be spam.", "danger")
-            return redirect(url_for("contact.contact"))
+                if audit_activity_enabled():
+                    log_action_isolated(
+                        user_id=getattr(current_user, "id", None),
+                        action="spam_blocked",
+                        target=current_route(),
+                        extra_data={
+                            "ip": ip,
+                            "email": redacted_email,
+                            "ua": user_agent,
+                            "provider": spam_provider,
+                        },
+                    )
+                flash(
+                    spam_result.message or "Your message appears to be spam.",
+                    "danger",
+                )
+                return redirect(url_for("contact.contact"))
 
         try:
             mail_status = send_contact_email(

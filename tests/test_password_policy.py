@@ -5,7 +5,11 @@ from pathlib import Path
 from flask import Flask
 
 from app.core.extensions import bcrypt, db
-from app.core.passwords import generate_random_password, password_policy_errors
+from app.core.passwords import (
+    generate_random_password,
+    password_policy_errors,
+    password_validation_errors,
+)
 from app.models import EnvSettings, User
 
 
@@ -141,6 +145,8 @@ class PersistedPasswordPolicyTests(unittest.TestCase):
                 password_policy_enabled=True,
                 password_min_length=28,
                 password_require_uppercase=True,
+                password_check_enabled=True,
+                password_check_provider="local",
             )
         )
         db.session.commit()
@@ -163,6 +169,12 @@ class PersistedPasswordPolicyTests(unittest.TestCase):
         password = generate_random_password(length=20)
         self.assertGreaterEqual(len(password), 28)
         self.assertEqual(password_policy_errors(password), [])
+
+    def test_persisted_password_check_uses_selected_provider(self):
+        self.assertIn(
+            "This password is too common. Please choose a different password.",
+            password_validation_errors("password"),
+        )
 
 
 if __name__ == "__main__":

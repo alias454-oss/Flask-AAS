@@ -39,6 +39,8 @@ class EnvSettings(db.Model):
     password_require_lowercase = db.Column(db.Boolean, nullable=False, default=False, server_default=db.false())
     password_require_number = db.Column(db.Boolean, nullable=False, default=False, server_default=db.false())
     password_require_special = db.Column(db.Boolean, nullable=False, default=False, server_default=db.false())
+    password_check_enabled = db.Column(db.Boolean, nullable=False, default=False, server_default=db.false())
+    password_check_provider = db.Column(db.String(50), nullable=False, default="local", server_default="local")
 
     # Behavior Toggles (Booleans for clarity)
     use_mfa = db.Column(db.Boolean, nullable=False, server_default=db.false())
@@ -47,6 +49,8 @@ class EnvSettings(db.Model):
     use_user_location = db.Column(db.Boolean, nullable=False, server_default=db.true())
     use_captcha = db.Column(db.Boolean, nullable=False, server_default=db.true())
     contact_enabled = db.Column(db.Boolean, nullable=False, default=False, server_default=db.false())
+    spam_check_enabled = db.Column(db.Boolean, nullable=False, default=True, server_default=db.true())
+    spam_check_provider = db.Column(db.String(50), nullable=False, default="local", server_default="local")
     maint_mode = db.Column(db.Boolean, nullable=False, server_default=db.false())
     visitor_tracking = db.Column(db.Boolean, nullable=False, server_default=db.false())
     use_fancy_urls = db.Column(db.Boolean, nullable=False, server_default=db.false())
