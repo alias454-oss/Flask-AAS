@@ -385,6 +385,18 @@ python -m pytest \
   tests/test_login_audit.py
 ```
 
+### Focused Password and Spam Provider Validation
+
+Run the password-policy, password-provider, contact-route, and spam-provider regression suites with:
+
+```bash
+python -m pytest \
+  tests/test_password_policy.py \
+  tests/test_password_check.py \
+  tests/test_contact.py \
+  tests/test_spam_check.py
+```
+
 ### Focused Plugin Validation
 
 Run the Plugin API/lifecycle/reference-application suites with:
