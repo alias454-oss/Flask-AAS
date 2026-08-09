@@ -233,11 +233,6 @@ def validate_captcha(user_input):
         _clear_captcha_session()
         return False, "CAPTCHA validation error. Please reload the page."
 
-def validate_captcha_field(field):
-    valid, message = validate_captcha(field.data)
-    if not valid:
-        raise ValidationError(message)
-
 class CaptchaRequired:
     def __call__(self, form, field):
         if not is_captcha_enabled():

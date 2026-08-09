@@ -88,10 +88,6 @@ def get_all_public_urls():
 @log_view_action()
 def sitemap():
     urls = get_all_public_urls()
-    # urls += [
-    #     url_for('index.index', _external=True),
-    # ]
-
     logger.info(f"Sitemap generated with {len(urls)} URLs")
 
     xml = ['<?xml version="1.0" encoding="UTF-8"?>']

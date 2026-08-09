@@ -31,7 +31,6 @@ from email_validator import EmailNotValidError, validate_email
 from flask.cli import FlaskGroup
 from flask_migrate import Migrate
 from datetime import datetime, timedelta, timezone
-from sqlalchemy import delete
 
 from app import create_app, db
 from app.core.mailer import get_mail_env_settings, send_email
