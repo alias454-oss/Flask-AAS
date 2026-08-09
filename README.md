@@ -36,7 +36,8 @@ The base is intentionally designed to remain easy to run locally. Direct HTTP, g
 
 ### Authentication & User Management
 - Secure login with **Flask-Login**
-- Password hashing via **bcrypt**
+- Password hashing via **bcrypt**, with full long-password handling enabled
+- Admin-managed password policy enabled by default with a 20-character minimum, passphrase-friendly composition defaults, and deployment values used only to seed a fresh database
 - Active session tracking
 - Sliding authenticated-session inactivity timeout with remember-cookie deletion on expiry
 - Remember-cookie-restored sessions begin a new non-fresh inactivity window

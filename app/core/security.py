@@ -1,9 +1,7 @@
 # app/core/security.py
 import re
 import logging
-import secrets
 import hashlib
-import string
 import ipaddress
 from datetime import datetime, timedelta, timezone
 from typing import Optional
@@ -17,8 +15,6 @@ from app.core.config import settings
 from app.core.extensions import bcrypt, cache
 
 logger = logging.getLogger(__name__)
-
-
 
 # # === Lockout Tracking ===
 
@@ -78,10 +74,6 @@ def normalize_username(username: str) -> str:
     username = username.strip()                                     # Trim whitespace
     username = username.lower()                                     # Lowercase for normalization
     return username[:60]                                            # Limit length to DB column max (e.g., 60)
-
-def generate_random_password(length=12):
-    alphabet = string.ascii_letters + string.digits
-    return ''.join(secrets.choice(alphabet) for _ in range(length))
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     """Verify a password with the application's bcrypt backend."""

@@ -222,6 +222,30 @@ class LoginAuditRouteTests(unittest.TestCase):
                 follow_redirects=False,
             )
 
+    def test_change_password_rejects_password_below_policy_minimum(self):
+        user = self._save_user(username='short-password-change-user')
+        self._post_login(
+            'short-password-change-user',
+            'correct-password',
+        )
+
+        with self._request_patches():
+            response = self.client.post(
+                '/change-password',
+                data={
+                    'old_password': 'correct-password',
+                    'password': 'too-short',
+                    'confirm': 'too-short',
+                },
+                follow_redirects=False,
+            )
+
+        self.assertEqual(response.status_code, 200)
+        db.session.expire_all()
+        stored_user = db.session.get(User, user.id)
+        self.assertTrue(stored_user.check_password('correct-password'))
+        self.assertFalse(stored_user.check_password('too-short'))
+
     def test_change_password_revokes_sessions_tokens_and_forces_login(self):
         user = self._save_user(username='password-change-user')
         old_session_id = user.get_id()
@@ -248,8 +272,8 @@ class LoginAuditRouteTests(unittest.TestCase):
                 '/change-password',
                 data={
                     'old_password': 'correct-password',
-                    'password': 'new-secure-password',
-                    'confirm': 'new-secure-password',
+                    'password': 'new-secure-password-ok',
+                    'confirm': 'new-secure-password-ok',
                 },
                 follow_redirects=False,
             )
@@ -259,7 +283,7 @@ class LoginAuditRouteTests(unittest.TestCase):
         db.session.expire_all()
         stored_user = db.session.get(User, user.id)
         stored_token = db.session.get(PasswordResetToken, reset_token.id)
-        self.assertTrue(stored_user.check_password('new-secure-password'))
+        self.assertTrue(stored_user.check_password('new-secure-password-ok'))
         self.assertNotEqual(stored_user.get_id(), old_session_id)
         self.assertIsNone(User.load_from_session_id(old_session_id))
         self.assertIsNotNone(stored_token.revoked_at)
@@ -301,8 +325,8 @@ class LoginAuditRouteTests(unittest.TestCase):
                 '/change-password',
                 data={
                     'old_password': 'correct-password',
-                    'password': 'new-secure-password',
-                    'confirm': 'new-secure-password',
+                    'password': 'new-secure-password-ok',
+                    'confirm': 'new-secure-password-ok',
                 },
                 follow_redirects=False,
             )

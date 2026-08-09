@@ -197,6 +197,29 @@ class EmailLifecycleRouteTests(unittest.TestCase):
         db.session.commit()
         return user
 
+    def test_registration_rejects_password_below_policy_minimum(self):
+        with self._request_patches(), patch(
+            "app.routes.register.send_verification_email"
+        ) as send_verification:
+            response = self.client.post(
+                "/register",
+                data={
+                    "username": "short-password-user",
+                    "email": "short-password-user@example.com",
+                    "password": "too-short",
+                    "agree": "y",
+                    "nobot_check": "",
+                },
+                follow_redirects=False,
+            )
+
+        self.assertEqual(response.status_code, 200)
+        send_verification.assert_not_called()
+        self.assertIsNone(
+            User.query.filter_by(email="short-password-user@example.com").first()
+        )
+        self.assertIn("at least 20 characters", self._flash_text())
+
     def test_registration_queues_verification_using_registered_endpoint(self):
         response, send_verification = self._register("queued")
 
@@ -310,6 +333,29 @@ class EmailLifecycleRouteTests(unittest.TestCase):
         self.assertIsNone(second.revoked_at)
         self.assertIsNone(second.consumed_at)
 
+    def test_reset_rejects_password_below_policy_minimum_without_consuming_token(self):
+        user = self._save_user("short-reset@example.com")
+        token_record, plaintext_token = PasswordResetToken.issue_for_user(user)
+        db.session.commit()
+
+        with self._request_patches():
+            response = self.client.post(
+                f"/reset-password/{plaintext_token}",
+                data={
+                    "password": "too-short",
+                    "confirm": "too-short",
+                },
+                follow_redirects=False,
+            )
+
+        self.assertEqual(response.status_code, 200)
+        db.session.expire_all()
+        stored_user = db.session.get(User, user.id)
+        stored_token = db.session.get(PasswordResetToken, token_record.id)
+        self.assertTrue(stored_user.check_password("test-password"))
+        self.assertIsNone(stored_token.consumed_at)
+        self.assertIsNone(stored_token.revoked_at)
+
     def test_reset_token_is_single_use_and_rotates_session_identity(self):
         user = self._save_user("single-use-reset@example.com")
         old_session_id = user.get_id()
@@ -330,8 +376,8 @@ class EmailLifecycleRouteTests(unittest.TestCase):
             response = self.client.post(
                 f"/reset-password/{plaintext_token}",
                 data={
-                    "password": "new-secure-password",
-                    "confirm": "new-secure-password",
+                    "password": "new-secure-password-ok",
+                    "confirm": "new-secure-password-ok",
                 },
                 follow_redirects=False,
             )
@@ -342,7 +388,7 @@ class EmailLifecycleRouteTests(unittest.TestCase):
         stored_user = db.session.get(User, user.id)
         stored_token = db.session.get(PasswordResetToken, token_record.id)
         stored_other_token = db.session.get(PasswordResetToken, other_token.id)
-        self.assertTrue(stored_user.check_password("new-secure-password"))
+        self.assertTrue(stored_user.check_password("new-secure-password-ok"))
         self.assertNotEqual(stored_user.get_id(), old_session_id)
         self.assertIsNone(User.load_from_session_id(old_session_id))
         self.assertIsNotNone(stored_token.consumed_at)
@@ -410,8 +456,8 @@ class EmailLifecycleRouteTests(unittest.TestCase):
             response = self.client.post(
                 f"/reset-password/{plaintext_token}",
                 data={
-                    "password": "new-secure-password",
-                    "confirm": "new-secure-password",
+                    "password": "new-secure-password-ok",
+                    "confirm": "new-secure-password-ok",
                 },
                 follow_redirects=False,
             )

@@ -24,7 +24,7 @@
 
         {% if form.password %}
         <div class="form-group">
-          {{ form.password.label(class_='required') }} {{ form.password(id='password', size=30, maxlength=30, class_='form-control') }}
+          {{ form.password.label(class_='required') }} {{ form.password(id='password', size=30, class_='form-control') }}
           <meter id="strengthMeter" min="0" max="4" value="0" class="mt-1 mb-1 w-100"></meter>
           <small id="strengthText">Enter a password</small><br>
           {% if form.password.errors %}
