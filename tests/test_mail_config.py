@@ -265,6 +265,33 @@ class MailConfigurationRouteTests(unittest.TestCase):
     def test_contact_form_defaults_disabled(self):
         self.assertFalse(self.settings.contact_enabled)
 
+    def test_site_url_is_normalized_when_saved(self):
+        response, _, log_action = self._post(
+            self._form_data(site_url="HTTPS://Example.NET:8443/")
+        )
+
+        self.assertEqual(response.status_code, 302)
+        db.session.refresh(self.settings)
+        self.assertEqual(self.settings.site_url, "https://example.net:8443")
+
+        fields_updated = log_action.call_args.kwargs["extra_data"]["fields_updated"]
+        self.assertIn("site_url", fields_updated)
+
+    def test_site_url_rejects_request_paths(self):
+        response, render, log_action = self._post(
+            self._form_data(site_url="https://example.net/application")
+        )
+
+        self.assertEqual(response.status_code, 200)
+        form = render.call_args.kwargs["form"]
+        self.assertIn(
+            "must not include an application path",
+            " ".join(form.site_url.errors),
+        )
+        log_action.assert_not_called()
+        db.session.refresh(self.settings)
+        self.assertEqual(self.settings.site_url, "https://example.com")
+
     def test_password_policy_can_be_managed_from_site_settings(self):
         response, _, log_action = self._post(
             self._form_data(

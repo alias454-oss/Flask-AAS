@@ -135,7 +135,7 @@ def seed_env_settings():
     settings_data = {
         "user_id": admin_user.id,
         "site_name": "Login Site",
-        "site_url": "https://yoursite.com",
+        "site_url": current_app.config.get("SITE_URL", "http://127.0.0.1:5000"),
         "site_lang": "en",
         "site_timezone": "America/Chicago",
         "description": "Short description of site",

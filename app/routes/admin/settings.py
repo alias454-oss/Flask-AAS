@@ -16,7 +16,15 @@ from wtforms import (
     SubmitField,
     TextAreaField,
 )
-from wtforms.validators import DataRequired, Email, InputRequired, Length, NumberRange, Optional
+from wtforms.validators import (
+    DataRequired,
+    Email,
+    InputRequired,
+    Length,
+    NumberRange,
+    Optional,
+    ValidationError,
+)
 
 from app.core.auth import admin_required, login_required
 from app.core.cache import get_cached_env_settings
@@ -37,6 +45,7 @@ from app.core.mailer import (
 from app.core.meta import page_metadata
 from app.core.pwcheck import password_check_provider_choices
 from app.core.security import get_client_ip
+from app.core.site import normalize_site_url
 from app.core.spam import spam_check_provider_choices
 from app.core.trackers import get_admin_quick_stats, log_action
 from app.models import Role
@@ -60,7 +69,10 @@ NON_MODEL_FIELD_NAMES = {"csrf_token", "submit", "clear_smtp_override"}
 class AdminSettingsForm(FlaskForm):
     # Basic Site Identity
     site_name = StringField("Site Name", validators=[DataRequired()])
-    site_url = StringField("Site URL", validators=[DataRequired()])
+    site_url = StringField(
+        "Site URL",
+        validators=[DataRequired(), Length(max=100)],
+    )
     site_lang = SelectField("Language", choices=[], validators=[Optional()])
     site_timezone = SelectField("Timezone", choices=[], validators=[Optional()])
     description = TextAreaField("Site Description", validators=[Optional()])
@@ -208,6 +220,15 @@ class AdminSettingsForm(FlaskForm):
     )
 
     submit = SubmitField("Update Settings")
+
+    def validate_site_url(self, field):
+        try:
+            normalized = normalize_site_url(field.data)
+        except ValueError as exc:
+            raise ValidationError(str(exc)) from exc
+        if len(normalized) > 100:
+            raise ValidationError("Site URL must be 100 characters or fewer.")
+        field.data = normalized
 
 
 def _strip_or_none(value):
@@ -468,6 +489,16 @@ def settings():
                 f"Site settings updated by {current_user.username}",
                 "success",
             )
+            if "site_url" in changed_fields:
+                logger.info(
+                    "Site URL changed by user=%s; app restart/reload required",
+                    current_user.username,
+                )
+                flash(
+                    "Site URL changed. Restart or reload the application to apply "
+                    "the new external URL and trusted Host settings.",
+                    "warning",
+                )
             if "enable_plugins" in changed_fields:
                 logger.info(
                     "Application plugin loader changed %s -> %s by user=%s; "

@@ -611,7 +611,11 @@ def send_welcome_email(
     """Queue the account welcome message."""
     site_name = current_app.config.get("SITE_NAME", "Flask-AAS")
     subject = f"Welcome to {site_name}"
-    invite_link = url_for("login.login", _external=True)
+    invite_link = url_for(
+        "login.login",
+        _external=True,
+        _scheme=current_app.config["PREFERRED_URL_SCHEME"],
+    )
 
     text, html = render_email(
         "welcome",
@@ -645,6 +649,7 @@ def send_password_reset_email(to_email: str, token: str) -> MailStatus:
         "reset.reset_password",
         token=token,
         _external=True,
+        _scheme=current_app.config["PREFERRED_URL_SCHEME"],
     )
     subject = "Password Reset Request"
 

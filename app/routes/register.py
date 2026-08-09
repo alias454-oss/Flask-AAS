@@ -1,7 +1,7 @@
 # routes/register.py
 import logging
 from datetime import datetime, timezone
-from flask import Blueprint, render_template, redirect, url_for, flash, abort
+from flask import Blueprint, current_app, render_template, redirect, url_for, flash, abort
 from flask_login import current_user
 from flask_wtf import FlaskForm
 from wtforms import StringField, PasswordField, SubmitField, BooleanField
@@ -252,6 +252,7 @@ def register():
                     "verify.verify_email_token",
                     token=token,
                     _external=True,
+                    _scheme=current_app.config["PREFERRED_URL_SCHEME"],
                 )
                 mail_status = send_verification_email(
                     user.email,

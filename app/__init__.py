@@ -16,6 +16,11 @@ from app.routes import register_error_handlers, register_all_routes
 from app.core.config import settings
 from app.core.inactivity import enforce_inactivity_timeout
 from app.core.sessions import touch_current_session
+from app.core.site import (
+    LEGACY_SITE_URL_PLACEHOLDERS,
+    normalize_site_url,
+    site_url_flask_config,
+)
 from app.core.trackers import track_online_user, expire_stale_online_users, visitor_tracking_enabled
 from app.models.user import EnvSettings, User
 from app.models.plugin import PluginRegistration  # noqa: F401 - register model metadata
@@ -57,6 +62,9 @@ def create_app():
 
     # Load config before applying topology-dependent middleware.
     app.config.from_object(settings)
+    app.config.update(
+        site_url_flask_config(app.config["SITE_URL"])
+    )
 
     proxy_hops = app.config.get('PROXY_HOPS', 0)
     if proxy_hops:
@@ -86,6 +94,25 @@ def create_app():
     # Initialize DB layer
     db.init_app(app)
     migrate.init_app(app, db)
+
+    # Existing Site Settings is authoritative after the clean-install bootstrap.
+    # Derive Flask's native SERVER_NAME, PREFERRED_URL_SCHEME, and TRUSTED_HOSTS
+    # before the application begins accepting requests.
+    with app.app_context():
+        env = safe_get_cached_env_settings()
+        persisted_site_url = getattr(env, "site_url", None) if env else None
+        if persisted_site_url and persisted_site_url not in LEGACY_SITE_URL_PLACEHOLDERS:
+            try:
+                normalized_site_url = normalize_site_url(persisted_site_url)
+                app.config.update(
+                    site_url_flask_config(normalized_site_url)
+                )
+            except ValueError as exc:
+                logger.error(
+                    "Ignoring invalid persisted Site URL %r: %s",
+                    persisted_site_url,
+                    exc,
+                )
 
     # Register all blueprints
     register_all_routes(app)

@@ -18,6 +18,14 @@
       </div>
       <div class="form-group">
         {{ form.site_url.label }} {{ form.site_url(class_="form-control") }}
+        {% for error in form.site_url.errors %}
+          <div class="form-error">{{ error }}</div>
+        {% endfor %}
+        <p>
+          Canonical public URL for generated external links and Flask Host
+          validation. Changing it requires an application restart/reload and does
+          not change the Flask/Gunicorn listen address.
+        </p>
       </div>
       <div class="form-group">
         {{ form.site_lang.label }} {{ form.site_lang(class_="form-control") }}
