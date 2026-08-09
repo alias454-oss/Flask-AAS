@@ -12,7 +12,7 @@ Use this checklist when adding or reviewing a route. It is a review aid, not a s
 - Does the route require a fresh login for a sensitive operation?
 - Does a privileged operation require stronger reauthentication?
 - For a plugin-owned route, is access gated by the host's effective plugin state rather than merely by route registration?
-- Are platform roles kept distinct from application entitlement and plugin-owned authorization semantics?
+- For a plugin-owned route, is route authorization explicit: intentionally public, authenticated, coarse host-role-gated, or protected by plugin-owned domain authorization?
 
 High-risk examples:
 

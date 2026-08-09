@@ -90,10 +90,11 @@ The base is intentionally designed to remain easy to run locally. Direct HTTP, g
 - Host-owned navigation integration and host theme/template inheritance for plugin pages
 - Plugin-owned ordinary configuration and persistence; disabling preserves business data/schema while clearing plugin-managed persisted secrets
 - Versioned `PLUGIN_API_VERSION = 1` compatibility boundary
+- Route-level authorization remains plugin-owned: plugin routes may be public, require the normal Flask-AAS login context, use existing host roles for coarse admission, or apply plugin-owned domain authorization
 
 Bundled applications are trusted native Python code shipped with the deployment. Enabling a plugin means trusting that code to run with the permissions of the Flask-AAS process; Flask-AAS does not claim to sandbox in-process Python plugins. Filesystem presence alone does not imply trust or activation.
 
-The current `example` application is a deliberately small compatibility/reference plugin. OpenAuto is intended to be the first substantial consumer after the remaining Plugin API v1 migration and application-entitlement work is complete.
+The current `example` application is a deliberately small compatibility/reference plugin. It proves public, authenticated, and coarse host-role-gated routes without adding a separate application-entitlement subsystem. OpenAuto is intended to be the first substantial consumer of the completed host contract.
 
 ---
 

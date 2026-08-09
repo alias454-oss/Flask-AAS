@@ -4,10 +4,11 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from flask import Blueprint, Flask
+from flask import Blueprint, Flask, g
+from flask_login import LoginManager
 
 from app.core.extensions import db
-from app.models import EnvSettings, PluginRegistration, User
+from app.models import EnvSettings, PluginRegistration, Role, User
 from app.plugins.example import plugin as example_plugin
 from app.plugins.example.models import ExampleItem, ExampleSettings
 from app.plugins.interface import PluginConfiguration
@@ -35,6 +36,18 @@ class ExamplePluginWebSurfaceTests(unittest.TestCase):
             SQLALCHEMY_TRACK_MODIFICATIONS=False,
         )
         db.init_app(self.app)
+
+        self.login_manager = LoginManager()
+        self.login_manager.login_view = "login.login"
+        self.login_manager.init_app(self.app)
+
+        @self.login_manager.user_loader
+        def load_user(session_id):
+            return User.load_from_session_id(
+                session_id,
+                require_session_record=False,
+            )
+
         self.app.before_request(enforce_plugin_access)
 
         for blueprint_name, route_path in (
@@ -79,18 +92,22 @@ class ExamplePluginWebSurfaceTests(unittest.TestCase):
         PluginMigrationManager(example_plugin.manifest).upgrade()
         EnvSettings._cached_instance = None
 
-        owner = User(
+        self.owner = User(
             username="example-plugin-owner",
             email="example-plugin-owner@example.test",
             hashed_password="not-used",
             activated=True,
             approved=True,
         )
-        db.session.add(owner)
+        self.app_user_role = Role(
+            name="app_user",
+            description="Example coarse application-access role",
+        )
+        db.session.add_all([self.owner, self.app_user_role])
         db.session.flush()
 
         env = EnvSettings(
-            user_id=owner.id,
+            user_id=self.owner.id,
             site_name="Plugin Test",
             site_lang="en",
             site_timezone="UTC",
@@ -116,6 +133,16 @@ class ExamplePluginWebSurfaceTests(unittest.TestCase):
             [env, self.example_settings, self.example_item, self.registration]
         )
         db.session.commit()
+
+    def _login_owner(self, client):
+        with client.session_transaction() as flask_session:
+            flask_session["_user_id"] = self.owner.get_id()
+            flask_session["_fresh"] = True
+
+        # This test keeps one application context open across requests. Clear
+        # Flask-Login's cached anonymous user so the next request reloads the
+        # authenticated identity from the session.
+        g.pop("_login_user", None)
 
     def tearDown(self):
         db.session.rollback()
@@ -168,6 +195,43 @@ class ExamplePluginWebSurfaceTests(unittest.TestCase):
         response = client.get("/example/static/example.css")
         self.assertEqual(response.status_code, 200)
         self.assertIn(".example-plugin", response.get_data(as_text=True))
+
+    def test_reference_plugin_owns_route_authorization_policy(self):
+        runtime = initialize_plugins(self.app)
+
+        self.assertEqual(runtime.plugins["example"].status, STATUS_ACTIVE)
+
+        client = self.app.test_client()
+
+        # Plugin lifecycle allows the application to run, but the plugin owns
+        # authorization for each of its routes. The index remains public.
+        self.assertEqual(client.get("/example/").status_code, 200)
+
+        response = client.get("/example/authenticated")
+        self.assertEqual(response.status_code, 302)
+        self.assertIn("/host-login", response.headers["Location"])
+
+        self._login_owner(client)
+        response = client.get("/example/authenticated")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.get_data(as_text=True),
+            "Authenticated Example user",
+        )
+
+        # A plugin may use a host role for coarse admission without teaching
+        # Flask-AAS any application-specific role or permission semantics.
+        self.assertEqual(client.get("/example/restricted").status_code, 403)
+
+        self.owner.roles.append(self.app_user_role)
+        db.session.commit()
+
+        response = client.get("/example/restricted")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.get_data(as_text=True),
+            "Restricted Example user",
+        )
 
     def test_reference_plugin_surface_tracks_configuration_and_disable_state(self):
         pending = PluginConfiguration(
