@@ -52,6 +52,7 @@ exclude = ["app.api*"]
 app = [
     "templates/**/*.html",
     "templates/**/*.txt",
+    "data/*.txt",
     "static/**/*.css",
     "static/**/*.js",
     "static/**/*.svg",

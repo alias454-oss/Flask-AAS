@@ -72,7 +72,7 @@ def password_policy(form, field):
     if field.data is None or field.data == "":
         return
 
-    errors = password_policy_errors(field.data)
+    errors = password_validation_errors(field.data)
     if errors:
         raise ValidationError(" ".join(errors))
 
@@ -110,8 +110,30 @@ def generate_random_password(length: int | None = None) -> str:
     secrets.SystemRandom().shuffle(characters)
     password = "".join(characters)
 
-    errors = password_policy_errors(password)
+    errors = password_validation_errors(password)
     if errors:
         raise RuntimeError("Generated password did not satisfy the active policy")
 
     return password
+
+
+def password_validation_errors(password: str) -> list[str]:
+    """Return all active new-password validation failures."""
+    errors = password_policy_errors(password)
+    if not isinstance(password, str):
+        return errors
+
+    if _password_setting("PASSWORD_CHECK_ENABLED", False):
+        from app.core.pwcheck import check_password
+
+        result = check_password(
+            password,
+            str(_password_setting("PASSWORD_CHECK_PROVIDER", "local")),
+        )
+        if not result.passed:
+            errors.append(
+                result.message
+                or "This password cannot be used. Please choose a different password."
+            )
+
+    return errors

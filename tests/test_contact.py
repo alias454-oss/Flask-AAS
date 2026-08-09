@@ -59,6 +59,8 @@ class ContactRouteTests(unittest.TestCase):
             contact_enabled=True,
             admin_email="admin@example.com",
             use_smtp=True,
+            spam_check_enabled=True,
+            spam_check_provider="local",
         )
 
     @staticmethod
@@ -197,6 +199,58 @@ class ContactRouteTests(unittest.TestCase):
             message="Please help with my account.",
             subject="Account question",
         )
+
+    def test_spam_provider_blocks_message_before_delivery(self):
+        with patch(
+            "app.routes.contact.get_cached_env_settings",
+            return_value=self.env,
+        ), patch(
+            "app.core.decorators.audit_activity_enabled",
+            return_value=False,
+        ), patch(
+            "app.routes.contact.audit_activity_enabled",
+            return_value=False,
+        ), patch(
+            "app.routes.contact.send_contact_email",
+        ) as send_contact:
+            response = self.client.post(
+                "/contact",
+                data=self._form_data(message="BUY NOW while supplies last"),
+            )
+
+        self.assertEqual(response.status_code, 302)
+        self.assertIn(
+            ("danger", "Your message appears to be spam."),
+            self._flashes(),
+        )
+        send_contact.assert_not_called()
+
+    def test_disabled_spam_check_bypasses_provider(self):
+        self.env.spam_check_enabled = False
+
+        with patch(
+            "app.routes.contact.get_cached_env_settings",
+            return_value=self.env,
+        ), patch(
+            "app.core.decorators.audit_activity_enabled",
+            return_value=False,
+        ), patch(
+            "app.routes.contact.audit_activity_enabled",
+            return_value=False,
+        ), patch(
+            "app.routes.contact.check_spam",
+        ) as check_spam, patch(
+            "app.routes.contact.send_contact_email",
+            return_value="queued",
+        ) as send_contact:
+            response = self.client.post(
+                "/contact",
+                data=self._form_data(message="BUY NOW while supplies last"),
+            )
+
+        self.assertEqual(response.status_code, 302)
+        check_spam.assert_not_called()
+        send_contact.assert_called_once()
 
     def test_unavailable_contact_delivery_does_not_report_success(self):
         for mail_status in ("disabled", "failed"):

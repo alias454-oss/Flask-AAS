@@ -193,6 +193,8 @@ class MailConfigurationRouteTests(unittest.TestCase):
             "users_stored_path": self.settings.users_stored_path,
             "template": "default",
             "password_min_length": str(self.settings.password_min_length),
+            "password_check_provider": self.settings.password_check_provider,
+            "spam_check_provider": self.settings.spam_check_provider,
             "users_delete_after_days": str(self.settings.users_delete_after_days),
             "email_after_days": str(self.settings.email_after_days),
             "smtp_host": self.settings.smtp_host or "",
@@ -223,6 +225,10 @@ class MailConfigurationRouteTests(unittest.TestCase):
             data["password_require_number"] = "y"
         if self.settings.password_require_special:
             data["password_require_special"] = "y"
+        if self.settings.password_check_enabled:
+            data["password_check_enabled"] = "y"
+        if self.settings.spam_check_enabled:
+            data["spam_check_enabled"] = "y"
         data.update(overrides)
         return data
 
@@ -285,6 +291,72 @@ class MailConfigurationRouteTests(unittest.TestCase):
         self.assertIn("password_min_length", fields_updated)
         self.assertIn("password_require_uppercase", fields_updated)
         self.assertIn("password_require_number", fields_updated)
+
+    def test_password_check_can_be_managed_from_site_settings(self):
+        response, _, log_action = self._post(
+            self._form_data(
+                password_check_enabled="y",
+                password_check_provider="local",
+            )
+        )
+
+        self.assertEqual(response.status_code, 302)
+        db.session.refresh(self.settings)
+        self.assertTrue(self.settings.password_check_enabled)
+        self.assertEqual(self.settings.password_check_provider, "local")
+
+        fields_updated = log_action.call_args.kwargs["extra_data"]["fields_updated"]
+        self.assertIn("password_check_enabled", fields_updated)
+
+    def test_password_check_provider_dropdown_lists_registered_providers(self):
+        with patch(
+            "app.core.decorators.audit_activity_enabled",
+            return_value=False,
+        ), patch(
+            "app.routes.admin.settings.render_template",
+            return_value="settings",
+        ) as render:
+            response = self.client.get("/admin/settings/")
+
+        self.assertEqual(response.status_code, 200)
+        form = render.call_args.kwargs["form"]
+        self.assertIn(
+            ("local", "Built-in Local Blocklist"),
+            form.password_check_provider.choices,
+        )
+
+    def test_spam_check_can_be_managed_from_site_settings(self):
+        response, _, log_action = self._post(
+            self._form_data(
+                spam_check_enabled="",
+                spam_check_provider="local",
+            )
+        )
+
+        self.assertEqual(response.status_code, 302)
+        db.session.refresh(self.settings)
+        self.assertFalse(self.settings.spam_check_enabled)
+        self.assertEqual(self.settings.spam_check_provider, "local")
+
+        fields_updated = log_action.call_args.kwargs["extra_data"]["fields_updated"]
+        self.assertIn("spam_check_enabled", fields_updated)
+
+    def test_spam_check_provider_dropdown_lists_registered_providers(self):
+        with patch(
+            "app.core.decorators.audit_activity_enabled",
+            return_value=False,
+        ), patch(
+            "app.routes.admin.settings.render_template",
+            return_value="settings",
+        ) as render:
+            response = self.client.get("/admin/settings/")
+
+        self.assertEqual(response.status_code, 200)
+        form = render.call_args.kwargs["form"]
+        self.assertIn(
+            ("local", "Built-in Local Phrase List"),
+            form.spam_check_provider.choices,
+        )
 
     def test_contact_form_can_be_enabled_with_admin_email_and_mail_transport(self):
         response, _, _ = self._post(

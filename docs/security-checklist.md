@@ -30,6 +30,10 @@ High-risk examples:
 - Does every password-setting path use the canonical password policy rather than route-local rules?
 - Are passwords treated as exact secret values without stripping or truncation, while spaces and long passphrases remain valid?
 - If the application generates a password, does the generator satisfy the same active policy as user-selected passwords?
+- If password checking is enabled, does every password-setting path use the selected provider through the central password workflow rather than calling a provider directly?
+- Does a password-check provider return only the decision/message needed by the core without logging or persisting the submitted password?
+- If spam checking is enabled, does the contact workflow call only the selected spam-check provider rather than embed provider-specific detection logic in the route?
+- Does a spam-check provider avoid logging or persisting submitted message bodies unless its explicit documented contract requires that data?
 - Are identifier lookups resistant to ownership bypass?
 - Are duplicate submissions and retries safe?
 - Are file names, media types, and file contents treated as untrusted?
