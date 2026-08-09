@@ -136,6 +136,51 @@
     </fieldset>
 
     <fieldset>
+      <legend>Password Policy</legend>
+      <p>
+        Applies when a new password is selected or generated. Existing passwords
+        are not re-evaluated. Passphrases and spaces are allowed, and Flask-AAS
+        does not impose a password-policy maximum length.
+      </p>
+      <div class="checkbox-inline">
+        <label for="{{ form.password_policy_enabled.id }}">
+          {{ form.password_policy_enabled() }}
+          {{ form.password_policy_enabled.label.text }}
+        </label>
+      </div>
+      <div class="form-group">
+        {{ form.password_min_length.label }} {{ form.password_min_length(class_="form-control") }}
+        {% for error in form.password_min_length.errors %}
+          <div class="form-error">{{ error }}</div>
+        {% endfor %}
+      </div>
+      <div class="checkbox-inline">
+        <label for="{{ form.password_require_uppercase.id }}">
+          {{ form.password_require_uppercase() }}
+          {{ form.password_require_uppercase.label.text }}
+        </label>
+      </div>
+      <div class="checkbox-inline">
+        <label for="{{ form.password_require_lowercase.id }}">
+          {{ form.password_require_lowercase() }}
+          {{ form.password_require_lowercase.label.text }}
+        </label>
+      </div>
+      <div class="checkbox-inline">
+        <label for="{{ form.password_require_number.id }}">
+          {{ form.password_require_number() }}
+          {{ form.password_require_number.label.text }}
+        </label>
+      </div>
+      <div class="checkbox-inline">
+        <label for="{{ form.password_require_special.id }}">
+          {{ form.password_require_special() }}
+          {{ form.password_require_special.label.text }}
+        </label>
+      </div>
+    </fieldset>
+
+    <fieldset>
       <legend>Maintenance</legend>
       <div class="checkbox-inline">
         <label for="{{ form.enable_delete_old_users.id }}">

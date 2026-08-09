@@ -9,8 +9,9 @@ from wtforms.validators import DataRequired, Email, Optional, Length
 from sqlalchemy.exc import IntegrityError
 
 from app.core.cache import get_cached_env_settings
-from app.core.extensions import db, bcrypt, limiter
-from app.core.security import generate_random_password, generate_token, normalize_username, normalize_email, get_client_ip, is_locked_out, track_lockout_attempts, reset_lockout_attempts
+from app.core.extensions import db, limiter
+from app.core.passwords import generate_random_password, password_policy
+from app.core.security import generate_token, normalize_username, normalize_email, get_client_ip, is_locked_out, track_lockout_attempts, reset_lockout_attempts
 from app.core.meta import page_metadata
 from app.core.decorators import log_view_action
 from app.core.trackers import current_route, log_action, log_action_isolated, audit_activity_enabled
@@ -33,7 +34,7 @@ EMAIL_VERIFY_SALT = "app.tokens.email.verify"
 class RegisterForm(FlaskForm):
     username = StringField('Username', validators=[DataRequired(), Length(min=3, max=50)])
     email = StringField('Email', validators=[DataRequired(), Email()])
-    password = PasswordField('Password', validators=[Optional(), Length(min=6)])  # Optional to allow auto-generated
+    password = PasswordField('Password', validators=[password_policy])  # Blank permits admin-generated passwords.
     company_name = StringField('Company Name', validators=[Optional(), Length(max=100)])
     first_name = StringField('First Name', validators=[Optional(), Length(max=50)])
     last_name = StringField('Last Name', validators=[Optional(), Length(max=50)])
@@ -168,9 +169,6 @@ def register():
                     **meta,
                 )
 
-        # 2. Hash the CORRECT password (raw_password)
-        hashed_pw = bcrypt.generate_password_hash(raw_password).decode('utf-8')
-
         # Safely get optional fields — check if attribute exists first
         def get_field_data(field_name):
             field = getattr(form, field_name, None)
@@ -180,7 +178,6 @@ def register():
             username=username,
             ip_address=ip,
             email=email,
-            hashed_password=hashed_pw,
             company_name=get_field_data('company_name'),
             first_name=get_field_data('first_name'),
             last_name=get_field_data('last_name'),
@@ -195,6 +192,7 @@ def register():
             activated=False,
             approved=False
         )
+        user.set_password(raw_password)
 
         default_role = None
         if env and env.default_role_id:

@@ -7,13 +7,14 @@ from flask_login import current_user, login_required, logout_user
 from flask_wtf import FlaskForm
 from sqlalchemy.exc import SQLAlchemyError
 from wtforms import PasswordField, StringField, SubmitField
-from wtforms.validators import DataRequired, Email, EqualTo, Length
+from wtforms.validators import DataRequired, Email, EqualTo
 
 from app.core.decorators import log_view_action, nocache
 from app.core.extensions import db, limiter
 from app.core.logger import redact_route_values
 from app.core.mailer import send_password_changed_email, send_password_reset_email
 from app.core.meta import page_metadata
+from app.core.passwords import password_policy
 from app.core.security import (
     get_client_ip,
     is_locked_out,
@@ -39,7 +40,7 @@ class ForgotPasswordForm(FlaskForm):
 
 
 class ResetPasswordForm(FlaskForm):
-    password = PasswordField("New Password", validators=[DataRequired(), Length(min=8)])
+    password = PasswordField("New Password", validators=[DataRequired(), password_policy])
     confirm = PasswordField(
         "Confirm New Password",
         validators=[DataRequired(), EqualTo("password")],
@@ -49,7 +50,7 @@ class ResetPasswordForm(FlaskForm):
 
 class ChangePasswordForm(FlaskForm):
     old_password = PasswordField("Current Password", validators=[DataRequired()])
-    password = PasswordField("New Password", validators=[DataRequired(), Length(min=8)])
+    password = PasswordField("New Password", validators=[DataRequired(), password_policy])
     confirm = PasswordField(
         "Confirm New Password",
         validators=[DataRequired(), EqualTo("password")],

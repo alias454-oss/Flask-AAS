@@ -103,6 +103,17 @@ class AdminSettingsForm(FlaskForm):
     use_fancy_urls = BooleanField("Enable Fancy URLs")
     enable_plugins = BooleanField("Enable Application Plugins")
 
+    # Password Policy
+    password_policy_enabled = BooleanField("Enable Password Policy")
+    password_min_length = IntegerField(
+        "Minimum Password Length",
+        validators=[InputRequired(), NumberRange(min=1)],
+    )
+    password_require_uppercase = BooleanField("Require Uppercase Letter")
+    password_require_lowercase = BooleanField("Require Lowercase Letter")
+    password_require_number = BooleanField("Require Number")
+    password_require_special = BooleanField("Require Special Character")
+
     # Maintenance
     enable_delete_old_users = BooleanField("Auto-delete Old Users")
     users_delete_after_days = IntegerField(

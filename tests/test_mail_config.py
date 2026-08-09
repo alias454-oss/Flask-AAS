@@ -9,6 +9,7 @@ from flask_login import LoginManager
 
 from app.core.extensions import bcrypt, cache, db, limiter
 from app.core.mailer import decrypt_smtp_password, encrypt_smtp_password
+from app.core.passwords import password_policy_errors
 from app.core.seeder import initial_outbound_email_enabled
 from app.models import EnvSettings, Role, User
 from app.routes.admin.settings import settings_bp
@@ -191,6 +192,7 @@ class MailConfigurationRouteTests(unittest.TestCase):
             "users_per_page": str(self.settings.users_per_page),
             "users_stored_path": self.settings.users_stored_path,
             "template": "default",
+            "password_min_length": str(self.settings.password_min_length),
             "users_delete_after_days": str(self.settings.users_delete_after_days),
             "email_after_days": str(self.settings.email_after_days),
             "smtp_host": self.settings.smtp_host or "",
@@ -211,6 +213,16 @@ class MailConfigurationRouteTests(unittest.TestCase):
             data["use_verify_email"] = "y"
         if self.settings.contact_enabled:
             data["contact_enabled"] = "y"
+        if self.settings.password_policy_enabled:
+            data["password_policy_enabled"] = "y"
+        if self.settings.password_require_uppercase:
+            data["password_require_uppercase"] = "y"
+        if self.settings.password_require_lowercase:
+            data["password_require_lowercase"] = "y"
+        if self.settings.password_require_number:
+            data["password_require_number"] = "y"
+        if self.settings.password_require_special:
+            data["password_require_special"] = "y"
         data.update(overrides)
         return data
 
@@ -246,6 +258,33 @@ class MailConfigurationRouteTests(unittest.TestCase):
 
     def test_contact_form_defaults_disabled(self):
         self.assertFalse(self.settings.contact_enabled)
+
+    def test_password_policy_can_be_managed_from_site_settings(self):
+        response, _, log_action = self._post(
+            self._form_data(
+                password_min_length="28",
+                password_require_uppercase="y",
+                password_require_number="y",
+            )
+        )
+
+        self.assertEqual(response.status_code, 302)
+        db.session.refresh(self.settings)
+        self.assertTrue(self.settings.password_policy_enabled)
+        self.assertEqual(self.settings.password_min_length, 28)
+        self.assertTrue(self.settings.password_require_uppercase)
+        self.assertFalse(self.settings.password_require_lowercase)
+        self.assertTrue(self.settings.password_require_number)
+        self.assertFalse(self.settings.password_require_special)
+        self.assertIn(
+            "Password must be at least 28 characters long.",
+            password_policy_errors("short password"),
+        )
+
+        fields_updated = log_action.call_args.kwargs["extra_data"]["fields_updated"]
+        self.assertIn("password_min_length", fields_updated)
+        self.assertIn("password_require_uppercase", fields_updated)
+        self.assertIn("password_require_number", fields_updated)
 
     def test_contact_form_can_be_enabled_with_admin_email_and_mail_transport(self):
         response, _, _ = self._post(

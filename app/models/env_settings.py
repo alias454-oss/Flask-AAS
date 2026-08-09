@@ -31,6 +31,15 @@ class EnvSettings(db.Model):
     max_failed_attempts = db.Column(db.Integer, nullable=False, default=5, server_default=db.text('5'))
     lockout_duration_seconds = db.Column(db.Integer, nullable=False, default=900, server_default=db.text('900')) # 15 minutes
 
+    # Password policy. Deployment values seed these defaults on a fresh database;
+    # the persisted Site Settings row is authoritative at runtime.
+    password_policy_enabled = db.Column(db.Boolean, nullable=False, default=True, server_default=db.true())
+    password_min_length = db.Column(db.Integer, nullable=False, default=20, server_default=db.text('20'))
+    password_require_uppercase = db.Column(db.Boolean, nullable=False, default=False, server_default=db.false())
+    password_require_lowercase = db.Column(db.Boolean, nullable=False, default=False, server_default=db.false())
+    password_require_number = db.Column(db.Boolean, nullable=False, default=False, server_default=db.false())
+    password_require_special = db.Column(db.Boolean, nullable=False, default=False, server_default=db.false())
+
     # Behavior Toggles (Booleans for clarity)
     use_mfa = db.Column(db.Boolean, nullable=False, server_default=db.false())
     use_verify_email = db.Column(db.Boolean, nullable=False, server_default=db.false())

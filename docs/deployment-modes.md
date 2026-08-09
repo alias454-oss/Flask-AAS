@@ -90,6 +90,18 @@ A session restored from a valid remember cookie has no prior browser-session act
 
 This control applies to the current browser session. Enforcing inactivity across a browser that has discarded its session cookie but still holds an otherwise valid remember cookie requires the future persisted session-management work tracked separately.
 
+## Password policy
+
+The deployment `PASSWORD_*` values are clean-install seed defaults. Once the
+`EnvSettings` row exists, **Admin -> Site Settings -> Password Policy** is the
+authoritative runtime source. Administrators can change the minimum length and
+optional composition requirements without restarting Flask-AAS.
+
+The default minimum is 20 characters. Spaces and long passphrases are valid,
+there is no password-policy maximum length, and existing stored passwords are
+not retroactively evaluated when the policy changes. Generated passwords use
+the same active persisted policy.
+
 ## Shared state
 
 In-memory rate limits, lockout counters, and cache entries are acceptable for a single development process.

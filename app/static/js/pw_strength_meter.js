@@ -27,11 +27,11 @@ document.addEventListener('DOMContentLoaded', function () {
     let score = 0;
     if (!password) return score;
 
-    // Basic scoring logic
+    // Length-first feedback only. Server-side policy remains authoritative.
     if (password.length >= 8) score++;
-    if (/[A-Z]/.test(password)) score++;
-    if (/[0-9]/.test(password)) score++;
-    if (/[^A-Za-z0-9]/.test(password)) score++;
+    if (password.length >= 12) score++;
+    if (password.length >= 20) score++;
+    if (password.length >= 32) score++;
     return Math.min(score, 4);
   }
 });

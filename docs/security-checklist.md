@@ -27,6 +27,9 @@ High-risk examples:
 
 - Are all inputs parsed through one defined schema or form?
 - Are length, type, range, and normalization rules explicit?
+- Does every password-setting path use the canonical password policy rather than route-local rules?
+- Are passwords treated as exact secret values without stripping or truncation, while spaces and long passphrases remain valid?
+- If the application generates a password, does the generator satisfy the same active policy as user-selected passwords?
 - Are identifier lookups resistant to ownership bypass?
 - Are duplicate submissions and retries safe?
 - Are file names, media types, and file contents treated as untrusted?

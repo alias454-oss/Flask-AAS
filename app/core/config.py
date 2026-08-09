@@ -21,6 +21,19 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     ALGORITHM: str = "HS256"
 
+    # Password policy. Length-first defaults support passphrases; composition
+    # requirements remain optional for deployments that explicitly need them.
+    PASSWORD_POLICY_ENABLED: bool = True
+    PASSWORD_MIN_LENGTH: int = 20
+    PASSWORD_REQUIRE_UPPERCASE: bool = False
+    PASSWORD_REQUIRE_LOWERCASE: bool = False
+    PASSWORD_REQUIRE_NUMBER: bool = False
+    PASSWORD_REQUIRE_SPECIAL: bool = False
+
+    # Flask-Bcrypt otherwise ignores password bytes after 72 bytes. Flask-AAS
+    # requires the complete submitted password to participate in verification.
+    BCRYPT_HANDLE_LONG_PASSWORDS: Literal[True] = True
+
     # Single database URI — can be PostgreSQL, SQLite, etc.
     SQLALCHEMY_DATABASE_URI: str
     SQLALCHEMY_TRACK_MODIFICATIONS: bool = False
@@ -66,6 +79,12 @@ class Settings(BaseSettings):
                 )
 
         return values
+
+    @field_validator("PASSWORD_MIN_LENGTH")
+    def validate_password_min_length(cls, value):
+        if value < 1:
+            raise ValueError("PASSWORD_MIN_LENGTH must be at least 1")
+        return value
 
     @field_validator("PROXY_HOPS")
     def validate_proxy_hops(cls, value):
