@@ -4,16 +4,19 @@ Work In Progress — usable for development, testing, and controlled internal ev
 
 > **Pre-release status:** Flask-AAS is under active development. Review the documented configuration and deployment guidance before use.
 
-Flask-AAS is a **modular Flask-based authentication, auditing, and application-host foundation** with built-in user management, session security, log tracking, optional abuse prevention, and an opt-in first-class application-plugin system. It is designed to stay understandable for small projects while providing a reusable security foundation for larger applications.
+Flask-AAS is a **modular Flask-based authentication, auditing, and application-host foundation** 
+with built-in user management, session security, log tracking, optional abuse prevention, 
+and an opt-in first-class application-plugin system. It is designed to stay understandable for 
+small projects while providing a reusable security foundation for larger applications.
 
 ---
 
 ## Background & Philosophy
-The Flask Auth & Audit System began life as a simple PHP login script written a long time ago as a foundational part of
-Open Auto Classifieds. Over time, it evolved into a full-featured authentication, user management, and audit logging platform.
 
-While the original worked well, until it didn't. The need for a more modern, secure, and flexible solution led to a
-complete rebuild in Flask. The result is a modular foundation that can be used as a starting point on my other projects.
+Flask Auth & Audit System began as authentication code written for Open Auto Classifieds more than a decade ago. 
+As that code aged and my requirements changed, I decided to rebuild it in Flask rather than continue extending the original implementation.
+
+Flask-AAS is built primarily to provide a consistent foundation for my own projects, but is published openly for anyone who finds it useful.
 
 This project focuses on:
 - Keeping external dependencies minimal
