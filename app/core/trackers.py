@@ -49,10 +49,6 @@ def audit_login_enabled():
     return bool(get_cached_env_settings().enable_logging)
 
 
-def user_location_enabled():
-    return bool(get_cached_env_settings().use_user_location)
-
-
 def current_route():
     return request.endpoint or request.path
 

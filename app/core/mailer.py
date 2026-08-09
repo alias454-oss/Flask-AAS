@@ -403,13 +403,6 @@ def _resolve_mail_configuration(
     )
 
 
-def resolve_mail_configuration(env: Any = None) -> MailConfiguration | None:
-    if env is None:
-        env = get_mail_env_settings()
-    configuration, _ = _resolve_mail_configuration(env)
-    return configuration
-
-
 def get_mail_configuration_state(env: Any = None) -> MailConfigurationState:
     if env is None:
         env = get_mail_env_settings()
