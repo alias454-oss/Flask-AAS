@@ -1,5 +1,4 @@
 # models/role.py
-from datetime import datetime, timezone
 from app.core.extensions import db
 
 class Role(db.Model):

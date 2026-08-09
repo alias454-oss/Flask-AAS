@@ -288,7 +288,6 @@ def forgot_password():
                 extra_data={"ip": ip},
             )
 
-        token_record = None
         try:
             token_record, plaintext_token = PasswordResetToken.issue_for_user(
                 user,

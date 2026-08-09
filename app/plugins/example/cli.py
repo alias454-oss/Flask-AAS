@@ -11,7 +11,6 @@ from app.plugins.registry import refresh_configuration
 from app.plugins.example.models import (
     DEFAULT_GREETING,
     ExampleItem,
-    ExampleSettings,
     get_example_settings,
 )
 

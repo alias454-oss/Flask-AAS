@@ -6,7 +6,6 @@ from flask_login import current_user
 from app.core.auth import login_required
 
 from app.core.extensions import limiter
-from app.core.security import get_client_ip
 from app.core.meta import page_metadata
 from app.core.decorators import log_view_action
 

@@ -6,7 +6,7 @@ from unittest.mock import patch
 from flask import Flask
 
 from app.core.extensions import bcrypt, db
-from app.core.passwords import password_policy_errors, password_validation_errors
+from app.core.passwords import password_validation_errors
 from app.core.pwcheck import (
     LocalPasswordCheckProvider,
     PasswordCheckProvider,

@@ -259,7 +259,7 @@ def initialize_plugins(app: Any) -> PluginRuntime:
                 exc,
             )
             continue
-        except Exception as exc:
+        except Exception:
             runtime.plugins[registration.plugin_id] = _runtime_state(
                 registration,
                 STATUS_ERROR,
@@ -315,7 +315,7 @@ def initialize_plugins(app: Any) -> PluginRuntime:
         try:
             configuration = refresh_configuration(registration, plugin)
             configuration_changed = True
-        except Exception as exc:
+        except Exception:
             registration.configured = False
             configuration_changed = True
             runtime.plugins[registration.plugin_id] = _runtime_state(
@@ -337,7 +337,7 @@ def initialize_plugins(app: Any) -> PluginRuntime:
             # unavailable until the persisted plugin state is both enabled and
             # configured, without attempting to mutate Flask's route map live.
             plugin.register(app)
-        except Exception as exc:
+        except Exception:
             _record_plugin_endpoints(
                 app, runtime, registration.plugin_id, endpoints_before
             )
