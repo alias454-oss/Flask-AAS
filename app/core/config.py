@@ -8,6 +8,8 @@ from typing import List, Optional, ClassVar, Literal
 from pydantic_settings import BaseSettings
 from pydantic import field_validator, model_validator
 
+from app.core.site import DEFAULT_SITE_URL, normalize_site_url
+
 logger = logging.getLogger(__name__)
 
 
@@ -40,6 +42,10 @@ class Settings(BaseSettings):
 
     # Registration control
     REGISTRATION_ENABLED: bool = True
+
+    # Public application origin. This seeds EnvSettings.site_url on a fresh
+    # database; persisted Site Settings becomes authoritative on later starts.
+    SITE_URL: str = DEFAULT_SITE_URL
 
     # --- CORS ---
     # Control which frontend domains can access the API.
@@ -79,6 +85,10 @@ class Settings(BaseSettings):
                 )
 
         return values
+
+    @field_validator("SITE_URL")
+    def validate_site_url(cls, value):
+        return normalize_site_url(value)
 
     @field_validator("PASSWORD_MIN_LENGTH")
     def validate_password_min_length(cls, value):

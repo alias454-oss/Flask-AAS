@@ -1,8 +1,7 @@
 # routes/robots.py
 import logging
-from flask import Blueprint, Response, url_for
+from flask import Blueprint, current_app, Response, url_for
 
-from app.core.cache import get_cached_env_settings
 from app.core.extensions import cache
 from app.core.decorators import log_view_action
 
@@ -14,15 +13,15 @@ robots_bp = Blueprint('robots', __name__)
 @log_view_action()
 @cache.cached(timeout=0)
 def robots():
-    env = get_cached_env_settings()
-    if not env.site_url:
-        return Response("User-agent: *\nDisallow:", mimetype="text/plain")
-
-    site_url = env.site_url.rstrip("/")
+    sitemap_url = url_for(
+        "sitemap.sitemap",
+        _external=True,
+        _scheme=current_app.config["PREFERRED_URL_SCHEME"],
+    )
     lines = [
         "User-agent: *",
         "Disallow:",
-        f"Sitemap: {site_url}{url_for('sitemap.sitemap')}"
+        f"Sitemap: {sitemap_url}",
     ]
     return Response("\n".join(lines), mimetype="text/plain")
 

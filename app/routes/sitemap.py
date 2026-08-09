@@ -15,7 +15,11 @@ sitemap_bp = Blueprint('sitemap', __name__)
 
 def ping_search_engines():
     with current_app.app_context():
-        sitemap_url = url_for('sitemap.sitemap', _external=True)
+        sitemap_url = url_for(
+            'sitemap.sitemap',
+            _external=True,
+            _scheme=current_app.config['PREFERRED_URL_SCHEME'],
+        )
 
         targets = [
             f"https://www.google.com/ping?sitemap={urllib.parse.quote(sitemap_url)}",
@@ -70,7 +74,11 @@ def get_all_public_urls():
                 view_func = current_app.view_functions.get(rule.endpoint)
                 if view_func and not getattr(view_func, "login_required", False):
                     try:
-                        url = url_for(rule.endpoint, _external=True)
+                        url = url_for(
+                            rule.endpoint,
+                            _external=True,
+                            _scheme=current_app.config["PREFERRED_URL_SCHEME"],
+                        )
                         output.append(url)
                     except Exception as e:
                         logger.warning(f"Skipping rule {rule} ({rule.endpoint}): {e}")

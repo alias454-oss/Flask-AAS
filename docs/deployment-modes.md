@@ -70,7 +70,29 @@ Enable only the forwarded fields and hop counts that the topology actually suppl
 
 `PROXY_HOPS` defaults to `0`, so direct development does not install `ProxyFix` and ignores spoofed forwarding headers for audit, tracking, and rate-limit identity.
 
-When `PROXY_HOPS` is greater than zero, the configured hop count enables `ProxyFix`, while `TRUSTED_PROXIES` controls whether the immediate peer is allowed to supply forwarded client addresses. Host allowlisting and canonical external URL generation remain separate deployment-hardening work.
+When `PROXY_HOPS` is greater than zero, the configured hop count enables `ProxyFix`, while `TRUSTED_PROXIES` controls whether the immediate peer is allowed to supply forwarded client addresses. Host validation remains independent from client-IP trust: Flask validates the effective request host after any explicitly trusted proxy rewriting.
+
+## Site URL and Host validation
+
+`SITE_URL` is the clean-install bootstrap value for the externally visible application origin. It defaults to `http://127.0.0.1:5000` for ordinary local development and may be set to a DNS name, IPv4 address, IPv6 address, and optional port. It does not control the Flask or Gunicorn listen address.
+
+On a fresh database, the seeder copies `SITE_URL` into `EnvSettings.site_url`. After that row exists, **Admin -> Site Settings -> Site URL** is the persisted source used on later application starts. Changing Site URL is therefore a startup-bound trust change and requires an application restart/reload.
+
+At application startup Flask-AAS validates and normalizes the selected origin, then derives Flask's native URL and Host controls:
+
+```text
+site_url / SITE_URL
+        |
+        +--> SERVER_NAME
+        +--> PREFERRED_URL_SCHEME
+        +--> TRUSTED_HOSTS
+```
+
+`TRUSTED_HOSTS` contains the canonical hostname. A loopback Site URL also permits the common `127.0.0.1`, `::1`, and `localhost` aliases so normal local development remains convenient. Werkzeug ignores the request port when checking the trusted hostname, so nonstandard application ports do not require separate Host entries.
+
+Inside an active request, Flask's `url_for(..., _external=True)` uses the effective request host. Flask-AAS relies on `TRUSTED_HOSTS` to reject an unexpected Host before route handling and pins security-sensitive generated links to `PREFERRED_URL_SCHEME`. Outside a request, Flask uses `SERVER_NAME` and `PREFERRED_URL_SCHEME` to build the external URL.
+
+For a reverse-proxy deployment such as Caddy, `ProxyFix` may reconstruct the effective public host and scheme only when the configured proxy hop count is correct. Direct access to a proxy-trusting Gunicorn port must remain restricted by deployment topology.
 
 ## Cookies and HSTS
 

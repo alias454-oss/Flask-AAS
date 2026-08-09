@@ -45,6 +45,7 @@ class EmailLifecycleRouteTests(unittest.TestCase):
             RATELIMIT_ENABLED=False,
             CACHE_TYPE="SimpleCache",
             SERVER_NAME="example.test",
+            TRUSTED_HOSTS=["example.test"],
         )
 
         db.init_app(cls.app)
@@ -304,6 +305,23 @@ class EmailLifecycleRouteTests(unittest.TestCase):
                     self.assertIsNotNone(stored_token.revoked_at)
                     route_logger.error.assert_called_once()
                 cache.clear()
+
+    def test_untrusted_host_is_rejected_before_reset_email_generation(self):
+        user = self._save_user("host-check@example.com")
+
+        with self._request_patches(), patch(
+            "app.routes.reset.send_password_reset_email",
+            return_value="queued",
+        ) as send_reset:
+            response = self.client.post(
+                "/forgot-password",
+                base_url="https://attacker.example",
+                data={"email": user.email},
+                follow_redirects=False,
+            )
+
+        self.assertEqual(response.status_code, 400)
+        send_reset.assert_not_called()
 
     def test_new_reset_request_does_not_revoke_older_active_token(self):
         user = self._save_user("new-reset@example.com")

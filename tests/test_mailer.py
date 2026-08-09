@@ -368,6 +368,7 @@ class MailerTests(unittest.TestCase):
 
     def test_password_reset_wrapper_returns_dispatch_status(self):
         with (
+            self.app.app_context(),
             patch(
                 "app.core.mailer.url_for",
                 return_value="https://example.test/reset-password/test-token",
@@ -391,6 +392,7 @@ class MailerTests(unittest.TestCase):
             "reset.reset_password",
             token="test-token",
             _external=True,
+            _scheme=self.app.config["PREFERRED_URL_SCHEME"],
         )
         mock_render.assert_called_once_with(
             "reset_password",
