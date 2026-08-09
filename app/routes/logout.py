@@ -2,7 +2,9 @@
 import logging
 
 from flask import Blueprint, redirect, session, url_for
-from flask_login import current_user, login_required, logout_user
+from flask_login import current_user, logout_user
+
+from app.core.auth import login_required
 
 from app.core.sessions import close_current_session
 from app.core.trackers import audit_activity_enabled, current_route, log_action_isolated

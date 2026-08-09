@@ -1,12 +1,12 @@
 # routes/register.py
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from flask import Blueprint, current_app, render_template, redirect, url_for, flash, abort
 from flask_login import current_user
 from flask_wtf import FlaskForm
 from wtforms import StringField, PasswordField, SubmitField, BooleanField
 from wtforms.validators import DataRequired, Email, Optional, Length
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
 from app.core.cache import get_cached_env_settings
 from app.core.extensions import db, limiter
@@ -17,10 +17,12 @@ from app.core.decorators import log_view_action
 from app.core.trackers import current_route, log_action, log_action_isolated, audit_activity_enabled
 from app.core.mailer import (
     get_mail_configuration_state,
+    send_password_setup_email,
     send_verification_email,
     send_welcome_email,
 )
-from app.models import User, Role
+from app.models import PasswordResetToken, User, Role
+from app.models.password_reset_token import TOKEN_PURPOSE_SETUP
 from .captcha import CaptchaRequired
 
 logger = logging.getLogger(__name__)
@@ -29,12 +31,13 @@ register_bp = Blueprint('register', __name__)
 
 # === Token Management ===
 EMAIL_VERIFY_SALT = "app.tokens.email.verify"
+PASSWORD_SETUP_TOKEN_LIFETIME = timedelta(hours=48)
 
 # Form class for registration
 class RegisterForm(FlaskForm):
     username = StringField('Username', validators=[DataRequired(), Length(min=3, max=50)])
     email = StringField('Email', validators=[DataRequired(), Email()])
-    password = PasswordField('Password', validators=[password_policy])  # Blank permits admin-generated passwords.
+    password = PasswordField('Password', validators=[password_policy])  # Blank permits admin-issued password setup.
     company_name = StringField('Company Name', validators=[Optional(), Length(max=100)])
     first_name = StringField('First Name', validators=[Optional(), Length(max=50)])
     last_name = StringField('Last Name', validators=[Optional(), Length(max=50)])
@@ -139,13 +142,28 @@ def register():
             return render_template('register.html', form=form, error_flags=error_flags, **meta)
 
         raw_password = form.password.data
-        password_was_generated = False
+        password_setup_required = False
 
-        # Admin Bypass Logic
+        # Admin may leave the password blank and issue a bounded setup capability.
         if not raw_password:
             if is_admin:
+                mail_state = get_mail_configuration_state(env)
+                if not mail_state.enabled or not mail_state.available:
+                    flash(
+                        "A password is required when outbound email is unavailable.",
+                        "error",
+                    )
+                    return render_template(
+                        "register.html",
+                        form=form,
+                        error_flags=error_flags,
+                        **meta,
+                    )
+
+                # hashed_password is non-nullable. This random placeholder is never
+                # disclosed and is replaced when the setup capability is consumed.
                 raw_password = generate_random_password()
-                password_was_generated = True
+                password_setup_required = True
             else:
                 form.password.errors.append("Password is required.")
                 return render_template("register.html", form=form)
@@ -209,15 +227,25 @@ def register():
 
             # FLUSH: Send the INSERT to Postgres, which generates and returns the user.id
             db.session.flush()
+
+            setup_token_record = None
+            setup_plaintext_token = None
+            if password_setup_required:
+                setup_token_record, setup_plaintext_token = PasswordResetToken.issue_for_user(
+                    user,
+                    purpose=TOKEN_PURPOSE_SETUP,
+                    lifetime=PASSWORD_SETUP_TOKEN_LIFETIME,
+                )
+
             if audit_activity_enabled():
                 log_action(
                     user_id=current_user.id if is_admin else user.id,
                     action="admin_create_user" if is_admin else "register",
                     target=current_route(),
                     extra_data={
-                        "subject_user_id": user.id, # The SUBJECT of the action
+                        "subject_user_id": user.id,
                         "ip": ip,
-                        "password_generated": password_was_generated # From your other fix
+                        "password_setup_required": password_setup_required,
                     }
                 )
 
@@ -229,12 +257,42 @@ def register():
 
             # PATH A: Admin is creating the user
             if is_admin:
-                temp_pass = raw_password if password_was_generated else None
-                mail_status = send_welcome_email(
-                    user.email,
-                    user.username,
-                    temp_password=temp_pass,
-                )
+                if password_setup_required:
+                    mail_status = send_password_setup_email(
+                        user.email,
+                        user.username,
+                        setup_plaintext_token,
+                    )
+                    if mail_status != "queued":
+                        if setup_token_record is not None:
+                            setup_token_record.revoke()
+                            try:
+                                db.session.commit()
+                            except SQLAlchemyError:
+                                db.session.rollback()
+                                logger.exception(
+                                    "Failed to revoke undelivered password setup token id=%s",
+                                    setup_token_record.id,
+                                )
+                        logger.warning(
+                            "Password setup email dispatch status=%s for user_id=%s",
+                            mail_status,
+                            user.id,
+                        )
+                        flash(
+                            f"User {user.username} was created, but the password setup "
+                            "email could not be queued.",
+                            "warning",
+                        )
+                    else:
+                        flash(
+                            f"User {user.username} created successfully. "
+                            "A password setup link was emailed to the user.",
+                            "success",
+                        )
+                    return redirect(url_for("register.register"))
+
+                mail_status = send_welcome_email(user.email, user.username)
                 if mail_status != "queued":
                     logger.warning(
                         "Welcome email dispatch status=%s for user_id=%s",

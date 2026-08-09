@@ -606,7 +606,6 @@ def send_contact_email(
 def send_welcome_email(
     to_email: str,
     username: str,
-    temp_password: str | None = None,
 ) -> MailStatus:
     """Queue the account welcome message."""
     site_name = current_app.config.get("SITE_NAME", "Flask-AAS")
@@ -621,7 +620,6 @@ def send_welcome_email(
         "welcome",
         username=username,
         invite_link=invite_link,
-        temp_password=temp_password,
     )
     return send_email(subject, to_email, text, html)
 
@@ -630,7 +628,6 @@ def send_verification_email(
     to_email: str,
     username: str,
     verify_url: str,
-    temp_password: str | None = None,
 ) -> MailStatus:
     site_name = current_app.config.get("SITE_NAME", "Flask-AAS")
     subject = f"Verify your email for {site_name}"
@@ -639,7 +636,28 @@ def send_verification_email(
         "verify_email",
         username=username,
         verify_url=verify_url,
-        temp_password=temp_password,
+    )
+    return send_email(subject, to_email, text, html)
+
+
+def send_password_setup_email(
+    to_email: str,
+    username: str,
+    token: str,
+) -> MailStatus:
+    site_name = current_app.config.get("SITE_NAME", "Flask-AAS")
+    setup_url = url_for(
+        "reset.set_password",
+        token=token,
+        _external=True,
+        _scheme=current_app.config["PREFERRED_URL_SCHEME"],
+    )
+    subject = f"Set your password for {site_name}"
+
+    text, html = render_email(
+        "set_password",
+        username=username,
+        setup_url=setup_url,
     )
     return send_email(subject, to_email, text, html)
 

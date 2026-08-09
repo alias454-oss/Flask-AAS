@@ -3,7 +3,9 @@ import logging
 from datetime import datetime, timezone
 
 from flask import Blueprint, flash, redirect, render_template, request, url_for
-from flask_login import current_user, login_required
+from flask_login import current_user
+
+from app.core.auth import login_required
 from flask_wtf import FlaskForm
 from sqlalchemy.exc import SQLAlchemyError
 from wtforms import StringField, SubmitField

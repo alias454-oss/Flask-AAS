@@ -34,12 +34,12 @@ def ping_search_engines():
                 logger.warning(f"Ping failed: {url} - {e}")
 
 def is_protected_view(view_func):
-    # Unwrap decorated functions
-    while hasattr(view_func, "__wrapped__"):
-        view_func = view_func.__wrapped__
-
-    # Flask-Login wraps views and adds _login_disabled = False
-    return getattr(view_func, "_login_disabled", True) is False
+    """Return whether a view is marked by the canonical auth decorator."""
+    while view_func is not None:
+        if getattr(view_func, "login_required", False):
+            return True
+        view_func = getattr(view_func, "__wrapped__", None)
+    return False
 
 def get_all_public_urls():
     ignored_prefixes = [
@@ -72,7 +72,7 @@ def get_all_public_urls():
                 and (rule.endpoint != "contact.contact" or contact_available)
             ):
                 view_func = current_app.view_functions.get(rule.endpoint)
-                if view_func and not getattr(view_func, "login_required", False):
+                if view_func and not is_protected_view(view_func):
                     try:
                         url = url_for(
                             rule.endpoint,

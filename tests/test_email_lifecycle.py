@@ -17,11 +17,13 @@ from app.models import (
     AuditActivity,
     EnvSettings,
     PasswordResetToken,
+    Role,
     User,
     UserSession,
 )
-from app.routes.register import EMAIL_VERIFY_SALT, register_bp
+from app.routes.register import EMAIL_VERIFY_SALT, PASSWORD_SETUP_TOKEN_LIFETIME, register_bp
 from app.routes.reset import reset_bp
+from app.models.password_reset_token import TOKEN_PURPOSE_RESET, TOKEN_PURPOSE_SETUP
 from app.routes.verify import verify_bp
 
 
@@ -102,8 +104,11 @@ class EmailLifecycleRouteTests(unittest.TestCase):
             approved=True,
         )
         owner.set_password("owner-password")
-        db.session.add(owner)
+        admin_role = Role(name="admin", description="Administrator")
+        owner.roles.append(admin_role)
+        db.session.add_all([owner, admin_role])
         db.session.flush()
+        self.owner_id = owner.id
 
         self.settings = EnvSettings(
             user_id=owner.id,
@@ -133,6 +138,18 @@ class EmailLifecycleRouteTests(unittest.TestCase):
         db.session.remove()
         EnvSettings._cached_instance = None
         self.app_context.pop()
+
+    def _login_owner(self):
+        owner = db.session.get(User, self.owner_id)
+        UserSession.issue_for_user(
+            owner,
+            ip_address="192.0.2.10",
+            user_agent="email-lifecycle-admin",
+        )
+        db.session.commit()
+        with self.client.session_transaction() as session:
+            session["_user_id"] = owner.get_id()
+            session["_fresh"] = True
 
     def _request_patches(self, *, route_audit=False):
         stack = ExitStack()
@@ -264,6 +281,238 @@ class EmailLifecycleRouteTests(unittest.TestCase):
                     ).first()
                 )
                 self.assertIn(message, self._flash_text())
+
+    def test_admin_blank_password_issues_password_setup_link(self):
+        self._login_owner()
+
+        with self._request_patches(), patch(
+            "app.routes.register.send_password_setup_email",
+            return_value="queued",
+        ) as send_setup, patch(
+            "app.routes.register.send_welcome_email"
+        ) as send_welcome:
+            response = self.client.post(
+                "/register",
+                data={
+                    "username": "admin-created-user",
+                    "email": "admin-created-user@example.com",
+                    "password": "",
+                    "agree": "y",
+                    "nobot_check": "",
+                },
+                follow_redirects=False,
+            )
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(urlparse(response.location).path, "/register")
+        user = User.query.filter_by(email="admin-created-user@example.com").one()
+        self.assertTrue(user.approved)
+        self.assertFalse(user.activated)
+        send_welcome.assert_not_called()
+        send_setup.assert_called_once()
+        plaintext_token = send_setup.call_args.args[2]
+        token_record = PasswordResetToken.query.filter_by(
+            token_hash=PasswordResetToken.hash_token(
+                plaintext_token,
+                purpose=TOKEN_PURPOSE_SETUP,
+            )
+        ).one()
+        self.assertIsNone(token_record.consumed_at)
+        self.assertIsNone(token_record.revoked_at)
+        self.assertIsNone(
+            PasswordResetToken.find_active(
+                plaintext_token,
+                purpose=TOKEN_PURPOSE_RESET,
+            )
+        )
+
+    def test_admin_explicit_password_keeps_normal_welcome_flow(self):
+        self._login_owner()
+
+        with self._request_patches(), patch(
+            "app.routes.register.send_welcome_email",
+            return_value="queued",
+        ) as send_welcome, patch(
+            "app.routes.register.send_password_setup_email"
+        ) as send_setup:
+            response = self.client.post(
+                "/register",
+                data={
+                    "username": "admin-password-user",
+                    "email": "admin-password-user@example.com",
+                    "password": "admin-selected-secure-password",
+                    "agree": "y",
+                    "nobot_check": "",
+                },
+                follow_redirects=False,
+            )
+
+        self.assertEqual(response.status_code, 302)
+        user = User.query.filter_by(email="admin-password-user@example.com").one()
+        self.assertTrue(user.check_password("admin-selected-secure-password"))
+        self.assertEqual(
+            PasswordResetToken.query.filter_by(user_id=user.id).count(),
+            0,
+        )
+        send_welcome.assert_called_once_with(user.email, user.username)
+        send_setup.assert_not_called()
+
+    def test_admin_setup_dispatch_failure_revokes_setup_token(self):
+        self._login_owner()
+
+        with self._request_patches(), patch(
+            "app.routes.register.send_password_setup_email",
+            return_value="failed",
+        ):
+            response = self.client.post(
+                "/register",
+                data={
+                    "username": "setup-dispatch-failed",
+                    "email": "setup-dispatch-failed@example.com",
+                    "password": "",
+                    "agree": "y",
+                    "nobot_check": "",
+                },
+                follow_redirects=False,
+            )
+
+        self.assertEqual(response.status_code, 302)
+        user = User.query.filter_by(email="setup-dispatch-failed@example.com").one()
+        token_record = PasswordResetToken.query.filter_by(user_id=user.id).one()
+        self.assertIsNotNone(token_record.revoked_at)
+        self.assertIn("could not be queued", self._flash_text())
+
+    def test_admin_blank_password_requires_outbound_email(self):
+        self.settings.use_smtp = False
+        db.session.commit()
+        EnvSettings._cached_instance = None
+        self._login_owner()
+
+        with self._request_patches(), patch(
+            "app.routes.register.send_password_setup_email"
+        ) as send_setup:
+            response = self.client.post(
+                "/register",
+                data={
+                    "username": "no-mail-setup-user",
+                    "email": "no-mail-setup-user@example.com",
+                    "password": "",
+                    "agree": "y",
+                    "nobot_check": "",
+                },
+                follow_redirects=False,
+            )
+
+        self.assertEqual(response.status_code, 200)
+        send_setup.assert_not_called()
+        self.assertIsNone(
+            User.query.filter_by(email="no-mail-setup-user@example.com").first()
+        )
+        self.assertIn("password is required", self._flash_text().lower())
+
+    def test_setup_token_is_purpose_bound_and_uses_48_hour_lifetime(self):
+        user = self._save_user("setup-purpose@example.com")
+        issued_at = datetime(2026, 8, 9, 12, 0, tzinfo=timezone.utc)
+        token_record, plaintext_token = PasswordResetToken.issue_for_user(
+            user,
+            purpose=TOKEN_PURPOSE_SETUP,
+            lifetime=PASSWORD_SETUP_TOKEN_LIFETIME,
+            now=issued_at,
+        )
+        self.assertEqual(
+            token_record.expires_at,
+            issued_at + timedelta(hours=48),
+        )
+        db.session.commit()
+
+        self.assertIsNotNone(
+            PasswordResetToken.find_active(
+                plaintext_token,
+                purpose=TOKEN_PURPOSE_SETUP,
+                now=issued_at,
+            )
+        )
+        self.assertIsNone(
+            PasswordResetToken.find_active(
+                plaintext_token,
+                purpose=TOKEN_PURPOSE_RESET,
+                now=issued_at,
+            )
+        )
+
+    def test_set_password_consumes_setup_token(self):
+        user = self._save_user("setup-user@example.com")
+        old_auth_version = user.auth_version
+        token_record, plaintext_token = PasswordResetToken.issue_for_user(
+            user,
+            purpose=TOKEN_PURPOSE_SETUP,
+            lifetime=PASSWORD_SETUP_TOKEN_LIFETIME,
+        )
+        db.session.commit()
+
+        with self._request_patches():
+            response = self.client.post(
+                f"/set-password/{plaintext_token}",
+                data={
+                    "password": "new-secure-setup-password",
+                    "confirm": "new-secure-setup-password",
+                },
+                follow_redirects=False,
+            )
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(urlparse(response.location).path, "/login")
+        db.session.expire_all()
+        stored_user = db.session.get(User, user.id)
+        stored_token = db.session.get(PasswordResetToken, token_record.id)
+        self.assertTrue(stored_user.check_password("new-secure-setup-password"))
+        self.assertEqual(stored_user.auth_version, old_auth_version + 1)
+        self.assertIsNotNone(stored_token.consumed_at)
+
+    def test_password_reset_endpoint_rejects_setup_token(self):
+        user = self._save_user("setup-wrong-endpoint@example.com")
+        token_record, plaintext_token = PasswordResetToken.issue_for_user(
+            user,
+            purpose=TOKEN_PURPOSE_SETUP,
+            lifetime=PASSWORD_SETUP_TOKEN_LIFETIME,
+        )
+        db.session.commit()
+
+        with self._request_patches():
+            response = self.client.get(
+                f"/reset-password/{plaintext_token}",
+                follow_redirects=False,
+            )
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(urlparse(response.location).path, "/forgot-password")
+        db.session.refresh(token_record)
+        self.assertIsNone(token_record.consumed_at)
+
+    def test_setup_endpoint_rejects_reset_token(self):
+        user = self._save_user("reset-wrong-endpoint@example.com")
+        token_record, plaintext_token = PasswordResetToken.issue_for_user(
+            user,
+            purpose=TOKEN_PURPOSE_RESET,
+        )
+        db.session.commit()
+
+        with self._request_patches():
+            response = self.client.get(
+                f"/set-password/{plaintext_token}",
+                follow_redirects=False,
+            )
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(urlparse(response.location).path, "/login")
+        db.session.refresh(token_record)
+        self.assertIsNone(token_record.consumed_at)
+
+    def test_legacy_stateless_reset_route_is_removed(self):
+        with self._request_patches():
+            response = self.client.get("/reset/obsolete-token")
+
+        self.assertEqual(response.status_code, 404)
 
     def test_forgot_password_preserves_generic_response_for_all_dispatch_results(self):
         user = self._save_user("reset-user@example.com")
