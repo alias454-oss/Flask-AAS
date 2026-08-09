@@ -1,7 +1,9 @@
 # routes/account/dashboard.py
 import logging
 from flask import Blueprint, render_template
-from flask_login import login_required, current_user
+from flask_login import current_user
+
+from app.core.auth import login_required
 
 from app.core.extensions import limiter
 from app.core.security import get_client_ip

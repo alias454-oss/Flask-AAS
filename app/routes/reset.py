@@ -3,7 +3,9 @@ import logging
 from datetime import datetime, timedelta, timezone
 
 from flask import Blueprint, flash, redirect, render_template, request, session, url_for
-from flask_login import current_user, login_required, logout_user
+from flask_login import current_user, logout_user
+
+from app.core.auth import login_required
 from flask_wtf import FlaskForm
 from sqlalchemy.exc import SQLAlchemyError
 from wtforms import PasswordField, StringField, SubmitField
@@ -26,6 +28,7 @@ from app.core.security import (
 )
 from app.core.trackers import audit_activity_enabled, log_action, log_action_isolated
 from app.models import PasswordResetToken, User, UserSession
+from app.models.password_reset_token import TOKEN_PURPOSE_RESET, TOKEN_PURPOSE_SETUP
 
 logger = logging.getLogger(__name__)
 
@@ -104,31 +107,64 @@ def _notify_password_changed(user, *, ip, source):
 @limiter.limit("10 per hour", key_func=get_client_ip)
 @log_view_action(redact_params={"token"})
 def reset_password(token):
+    return _password_token_form(token, purpose=TOKEN_PURPOSE_RESET)
+
+
+@reset_bp.route("/set-password/<token>", methods=["GET", "POST"])
+@nocache
+@limiter.limit("10 per hour", key_func=get_client_ip)
+@log_view_action(redact_params={"token"})
+def set_password(token):
+    return _password_token_form(token, purpose=TOKEN_PURPOSE_SETUP)
+
+
+def _password_token_form(token, *, purpose):
     if current_user.is_authenticated:
         return redirect(url_for("dashboard.dashboard"))
 
+    is_setup = purpose == TOKEN_PURPOSE_SETUP
     meta = page_metadata.get("reset", {})
     ip = get_client_ip()
     form = ResetPasswordForm()
+    if is_setup:
+        form.submit.label.text = "Set Password"
     plaintext_token = token or request.form.get("token")
 
-    token_record = PasswordResetToken.find_active(plaintext_token)
+    token_record = PasswordResetToken.find_active(
+        plaintext_token,
+        purpose=purpose,
+    )
     user = token_record.user if token_record is not None else None
     if token_record is None or user is None:
-        logger.warning("Invalid, expired, consumed, or revoked reset token from IP %s", ip)
-        flash("The password reset link is invalid or has expired.", "danger")
-        return redirect(url_for("reset.forgot_password"))
+        logger.warning(
+            "Invalid, expired, consumed, or revoked %s token from IP %s",
+            "password setup" if is_setup else "password reset",
+            ip,
+        )
+        flash(
+            "The password setup link is invalid or has expired."
+            if is_setup
+            else "The password reset link is invalid or has expired.",
+            "danger",
+        )
+        return redirect(
+            url_for("login.login" if is_setup else "reset.forgot_password")
+        )
 
     email = user.email
     if is_locked_out(email, ip):
         flash("Too many attempts. Try again later.", "danger")
-        return redirect(url_for("reset.forgot_password"))
+        return redirect(
+            url_for("login.login" if is_setup else "reset.forgot_password")
+        )
 
     if not form.validate_on_submit():
         return render_template(
             "reset.html",
             form=form,
             reset=True,
+            password_heading="Set Your Password" if is_setup else None,
+            password_legend="Set Password" if is_setup else None,
             token=plaintext_token,
             **meta,
         )
@@ -141,6 +177,8 @@ def reset_password(token):
             "reset.html",
             form=form,
             reset=True,
+            password_heading="Set Your Password" if is_setup else None,
+            password_legend="Set Password" if is_setup else None,
             token=plaintext_token,
             **meta,
         )
@@ -148,13 +186,25 @@ def reset_password(token):
     changed_at = datetime.now(timezone.utc)
     consumed_token = PasswordResetToken.consume(
         plaintext_token,
+        purpose=purpose,
         now=changed_at,
     )
     if consumed_token is None:
         db.session.rollback()
-        logger.warning("Reset token was consumed concurrently from IP %s", ip)
-        flash("The password reset link is invalid or has expired.", "danger")
-        return redirect(url_for("reset.forgot_password"))
+        logger.warning(
+            "%s token was consumed concurrently from IP %s",
+            "Password setup" if is_setup else "Password reset",
+            ip,
+        )
+        flash(
+            "The password setup link is invalid or has expired."
+            if is_setup
+            else "The password reset link is invalid or has expired.",
+            "danger",
+        )
+        return redirect(
+            url_for("login.login" if is_setup else "reset.forgot_password")
+        )
 
     user.set_password(password)
     user.rotate_authentication_version()
@@ -169,7 +219,7 @@ def reset_password(token):
     if audit_activity_enabled():
         log_action(
             user_id=user.id,
-            action="password_reset_success",
+            action="password_setup_success" if is_setup else "password_reset_success",
             target=redact_route_values(request.path, {"token"}),
             extra_data={"ip": ip},
         )
@@ -179,17 +229,34 @@ def reset_password(token):
     except SQLAlchemyError:
         db.session.rollback()
         logger.exception(
-            "Password reset commit failed for user_id=%s from IP %s",
+            "%s commit failed for user_id=%s from IP %s",
+            "Password setup" if is_setup else "Password reset",
             user.id,
             ip,
         )
-        flash("Your password could not be reset. Please try again.", "danger")
-        return redirect(url_for("reset.forgot_password"))
+        flash(
+            "Your password could not be set. Please try again."
+            if is_setup
+            else "Your password could not be reset. Please try again.",
+            "danger",
+        )
+        return redirect(
+            url_for("login.login" if is_setup else "reset.forgot_password")
+        )
 
     reset_lockout_attempts(email, ip)
-    _notify_password_changed(user, ip=ip, source="password reset")
+    _notify_password_changed(
+        user,
+        ip=ip,
+        source="initial password setup" if is_setup else "password reset",
+    )
     _force_full_login()
-    flash("Password reset successfully. Please log in.", "success")
+    flash(
+        "Password set successfully. Please log in."
+        if is_setup
+        else "Password reset successfully. Please log in.",
+        "success",
+    )
     return redirect(url_for("login.login"))
 
 
@@ -225,6 +292,7 @@ def forgot_password():
         try:
             token_record, plaintext_token = PasswordResetToken.issue_for_user(
                 user,
+                purpose=TOKEN_PURPOSE_RESET,
                 lifetime=RESET_TOKEN_LIFETIME,
             )
             db.session.commit()

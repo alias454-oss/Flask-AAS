@@ -15,7 +15,7 @@ from app.core.migrations import (
 
 limiter = Limiter(
     key_func=get_remote_address,
-    default_limits=[]  # Disable global default, define per-route
+    default_limits=["500 per minute"]  # Global default, define stricter limits per-route if needed
 )
 
 db = SQLAlchemy()

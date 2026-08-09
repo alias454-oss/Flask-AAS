@@ -10,6 +10,11 @@ def login_required(f):
             flash("Please log in to access this page.", "warning")
             return redirect(url_for("login.login", next=request.url))
         return f(*args, **kwargs)
+
+    # Preserve the route's authentication requirement as explicit metadata.
+    # Consumers such as the sitemap can classify protected views without
+    # maintaining a separate route allow/deny list.
+    decorated_function.login_required = True
     return decorated_function
 
 def admin_required(f):

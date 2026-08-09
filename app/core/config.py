@@ -114,6 +114,10 @@ class Settings(BaseSettings):
     PERMANENT_SESSION_LIFETIME: timedelta = timedelta(minutes=30)
     SESSION_INACTIVITY_TIMEOUT_SECONDS: int = 900
 
+    REMEMBER_COOKIE_SECURE: Optional[bool] = False
+    REMEMBER_COOKIE_HTTPONLY: Optional[bool] = True
+    REMEMBER_COOKIE_SAMESITE: Optional[str] = "Lax"
+
     @field_validator("SESSION_INACTIVITY_TIMEOUT_SECONDS")
     def validate_session_inactivity_timeout(cls, value):
         if value is not None and value < 0:
@@ -161,6 +165,7 @@ class Settings(BaseSettings):
     def configure_environment(self):
         if self.FLASK_ENV == "production":
             self.SESSION_COOKIE_SECURE = True
+            self.REMEMBER_COOKIE_SECURE = True
             self.DEBUG = False
             self.TESTING = False
 

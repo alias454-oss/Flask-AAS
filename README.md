@@ -189,6 +189,7 @@ The current `example` application is a deliberately small compatibility/referenc
 | reset.change_password         | GET, POST | `/change-password`                                    |
 | reset.forgot_password         | GET, POST | `/forgot-password`                                    |
 | reset.reset_password          | GET, POST | `/reset-password/<token>`                             |
+| reset.set_password            | GET, POST | `/set-password/<token>`                               |
 | robots.robots                 | GET       | `/robots.txt`                                         |
 | settings.settings             | GET, POST | `/admin/settings/`                                    |
 | sitemap.sitemap               | GET       | `/sitemap.xml`                                        |
@@ -198,7 +199,6 @@ The current `example` application is a deliberately small compatibility/referenc
 | users.edit_user               | GET, POST | `/admin/users/<int:user_id>/edit`                     |
 | users.list_users              | GET       | `/admin/users/`                                       |
 | verify.verify_email_token     | GET       | `/email/<token>`                                      |
-| verify.verify_reset_token     | GET       | `/reset/<token>`                                      |
 
 Application-plugin routes are intentionally omitted from this static core-route table because their structural registration depends on the persisted plugin state at worker startup. The host request guard independently denies plugin endpoints that are not effectively usable.
 

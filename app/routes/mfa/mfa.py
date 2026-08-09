@@ -9,7 +9,9 @@ import logging
 from datetime import datetime, timezone
 
 from flask import Blueprint, render_template, current_app, request, flash, redirect, url_for, session
-from flask_login import confirm_login, login_fresh, login_required, login_user, logout_user, current_user
+from flask_login import confirm_login, login_fresh, login_user, logout_user, current_user
+
+from app.core.auth import login_required
 from flask_wtf import FlaskForm
 from wtforms import StringField, SubmitField
 from wtforms.validators import DataRequired, Length

@@ -6,13 +6,13 @@
 {% endblock %}
 
 {% block content %}
-  <h2>{% if reset %}Reset Your Password{% else %}Change Your Password{% endif %}</h2>
+  <h2>{{ password_heading or ("Reset Your Password" if reset else "Change Your Password") }}</h2>
 
   <form method="post" novalidate>
     {{ form.hidden_tag() }}
 
     <fieldset>
-      <legend>{% if reset %}Reset Password{% else %}Update Password{% endif %}</legend>
+      <legend>{{ password_legend or ("Reset Password" if reset else "Update Password") }}</legend>
         {% if form.old_password %}
         <div class="form-group">
           {{ form.old_password.label(class_='required') }} {{ form.old_password(id='old_password', class_='form-control') }}

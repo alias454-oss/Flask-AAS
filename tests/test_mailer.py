@@ -15,6 +15,7 @@ from app.core.mailer import (
     send_email,
     send_password_changed_email,
     send_password_reset_email,
+    send_password_setup_email,
 )
 
 
@@ -361,6 +362,48 @@ class MailerTests(unittest.TestCase):
         )
         mock_send.assert_called_once_with(
             "Password changed for Example Site",
+            "user@example.test",
+            "Text body",
+            "<p>HTML body</p>",
+        )
+
+    def test_password_setup_wrapper_returns_dispatch_status(self):
+        self.app.config["SITE_NAME"] = "Example Site"
+        with (
+            self.app.app_context(),
+            patch(
+                "app.core.mailer.url_for",
+                return_value="https://example.test/set-password/test-token",
+            ) as mock_url_for,
+            patch(
+                "app.core.mailer.render_email",
+                return_value=("Text body", "<p>HTML body</p>"),
+            ) as mock_render,
+            patch(
+                "app.core.mailer.send_email",
+                return_value="queued",
+            ) as mock_send,
+        ):
+            status = send_password_setup_email(
+                "user@example.test",
+                "example-user",
+                "test-token",
+            )
+
+        self.assertEqual(status, "queued")
+        mock_url_for.assert_called_once_with(
+            "reset.set_password",
+            token="test-token",
+            _external=True,
+            _scheme=self.app.config["PREFERRED_URL_SCHEME"],
+        )
+        mock_render.assert_called_once_with(
+            "set_password",
+            username="example-user",
+            setup_url="https://example.test/set-password/test-token",
+        )
+        mock_send.assert_called_once_with(
+            "Set your password for Example Site",
             "user@example.test",
             "Text body",
             "<p>HTML body</p>",
