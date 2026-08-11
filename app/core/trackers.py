@@ -3,7 +3,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 from ipaddress import ip_address
 
-from flask import request
+from flask import has_request_context, request
 from flask_login import current_user
 from sqlalchemy import delete, or_, select, update
 from sqlalchemy.exc import SQLAlchemyError
@@ -93,14 +93,20 @@ def _prepare_activity_values(user_id, action, target, extra_data):
     if target is not None and len(str(target)) > 255:
         raise ValueError("target must not exceed 255 characters.")
 
-    if user_id is None and current_user.is_authenticated:
+    if (
+        user_id is None
+        and has_request_context()
+        and current_user.is_authenticated
+    ):
         user_id = current_user.id
+
+    source_ip = get_client_ip() if has_request_context() else 'unknown'
 
     return {
         'user_id': _normalize_user_id(user_id),
         'action': str(action),
         'target': str(target) if target is not None else None,
-        'ip_address': _normalize_ip(get_client_ip()),
+        'ip_address': _normalize_ip(source_ip),
         'timestamp': datetime.now(timezone.utc),
         'extra_data': _prepare_extra_data(extra_data),
     }

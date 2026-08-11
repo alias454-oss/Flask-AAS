@@ -508,9 +508,7 @@ def settings():
                     current_user.username,
                 )
                 flash(
-                    "Application plugin loader setting changed. Open Applications, "
-                    "select the apps you want enabled, then use Reload App Config once "
-                    "to apply the requested runtime state.",
+                    "Application plugins updated. Continue in Applications.",
                     "warning",
                 )
             return redirect(url_for("settings.settings"))

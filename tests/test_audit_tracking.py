@@ -144,6 +144,21 @@ class AuditTrackingTests(unittest.TestCase):
         self.assertEqual(User.query.count(), 1)
         self.assertEqual(AuditActivity.query.count(), 1)
 
+    def test_activity_can_be_queued_without_request_context(self):
+        log_action(
+            action='scheduled_maintenance',
+            target='plugin:openauto',
+            extra_data={'source': 'cli'},
+        )
+        db.session.commit()
+
+        event = AuditActivity.query.one()
+        self.assertIsNone(event.user_id)
+        self.assertEqual(event.action, 'scheduled_maintenance')
+        self.assertEqual(event.target, 'plugin:openauto')
+        self.assertEqual(event.ip_address, 'unknown')
+        self.assertEqual(event.extra_data, {'source': 'cli'})
+
     def test_activity_and_business_change_roll_back_together(self):
         with self.app.test_request_context('/account', environ_base={'REMOTE_ADDR': '192.0.2.10'}):
             user = self._new_user()

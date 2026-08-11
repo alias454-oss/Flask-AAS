@@ -4,8 +4,9 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from flask import Blueprint, Flask, g
+from flask import Blueprint, Flask, g, render_template
 from flask_login import LoginManager
+from jinja2 import ChoiceLoader, DictLoader
 
 from app.core.extensions import db
 from app.models import EnvSettings, PluginRegistration, Role, User
@@ -195,6 +196,50 @@ class ExamplePluginWebSurfaceTests(unittest.TestCase):
         response = client.get("/example/static/example.css")
         self.assertEqual(response.status_code, 200)
         self.assertIn(".example-plugin", response.get_data(as_text=True))
+
+    def test_plugin_base_preserves_selected_theme_extra_styles(self):
+        original_loader = self.app.jinja_loader
+        self.app.jinja_loader = ChoiceLoader(
+            [
+                DictLoader(
+                    {
+                        "themes/audit/base.html": """
+<!doctype html>
+<html>
+<head>
+{% block extra_styles %}<link rel=\"stylesheet\" href=\"/audit-theme.css\">{% endblock %}
+</head>
+<body>{% block header %}{% endblock %}{% block content %}{% endblock %}{% block footer %}{% endblock %}</body>
+</html>
+""",
+                        "themes/audit/header.html": "<header>Audit Header</header>",
+                        "themes/audit/footer.html": "<footer>Audit Footer</footer>",
+                        "audit-plugin-page.html": """
+{% extends "plugins/base.html" %}
+{% block plugin_styles %}<link rel=\"stylesheet\" href=\"/audit-plugin.css\">{% endblock %}
+{% block content %}<main>Audit Plugin</main>{% endblock %}
+""",
+                    }
+                ),
+                original_loader,
+            ]
+        )
+        try:
+            with self.app.test_request_context("/"):
+                body = render_template(
+                    "audit-plugin-page.html",
+                    tpl_path="themes/audit",
+                )
+        finally:
+            self.app.jinja_loader = original_loader
+            self.app.jinja_env.cache.clear()
+
+        self.assertIn('/audit-theme.css', body)
+        self.assertIn('/audit-plugin.css', body)
+        self.assertLess(body.index('/audit-theme.css'), body.index('/audit-plugin.css'))
+        self.assertIn('Audit Header', body)
+        self.assertIn('Audit Plugin', body)
+        self.assertIn('Audit Footer', body)
 
     def test_reference_plugin_owns_route_authorization_policy(self):
         runtime = initialize_plugins(self.app)

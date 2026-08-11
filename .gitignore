@@ -23,14 +23,21 @@ dist/
 build/
 .eggs/
 
+# Separately maintained application plugins
+/app/plugins/*/
+
+# Host-owned reference plugin
+!/app/plugins/example/
+!/app/plugins/example/**
+
 # Flask instance folder (if used)
 instance/
 
-# Flask migrations (optional, but usually committed)
+# Flask-AAS generated core migrations only
 migrations/
 
 # But ignore the compiled cache inside it
-migrations/__pycache__/
+**/__pycache__/
 
 # SQLite database file
 *.db
