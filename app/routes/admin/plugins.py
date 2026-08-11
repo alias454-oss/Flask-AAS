@@ -42,7 +42,31 @@ class PluginAdminRow:
     runtime_version: str | None
     access_status: str
     can_upgrade_schema: bool
+    reload_blocker: str | None
     restart_required: bool
+
+
+def _schema_upgrade_required(registration, state):
+    if (
+        not registration.enabled
+        or state is None
+        or state.status != STATUS_NEEDS_MIGRATION
+    ):
+        return False
+
+    try:
+        plugin = _registered_plugin(registration)
+        validate_plugin_contract(plugin)
+        manifest = getattr(plugin, "manifest", None)
+        if manifest is None or manifest.migrations is None:
+            return True
+        return not PluginMigrationManager(manifest).schema_current()
+    except Exception:
+        logger.exception(
+            "Failed to inspect plugin schema readiness for plugin=%s",
+            registration.plugin_id,
+        )
+        return True
 
 
 def _admin_rows(registrations, env, runtime):
@@ -86,6 +110,19 @@ def _admin_rows(registrations, env, runtime):
             )
         )
 
+        schema_upgrade_required = _schema_upgrade_required(registration, state)
+        if schema_upgrade_required:
+            reload_blocker = "Upgrade the database schema first."
+        elif (
+            registration.enabled
+            and state is not None
+            and state.status == STATUS_NEEDS_CONFIGURATION
+            and not registration.configured
+        ):
+            reload_blocker = "Complete required plugin configuration first."
+        else:
+            reload_blocker = None
+
         if not runtime.system_enabled:
             access_status = "Unavailable"
         elif state is not None and state.status == STATUS_NEEDS_MIGRATION:
@@ -109,11 +146,8 @@ def _admin_rows(registrations, env, runtime):
                 runtime_name=runtime_name,
                 runtime_version=runtime_version,
                 access_status=access_status,
-                can_upgrade_schema=(
-                    registration.enabled
-                    and state is not None
-                    and state.status == STATUS_NEEDS_MIGRATION
-                ),
+                can_upgrade_schema=schema_upgrade_required,
+                reload_blocker=reload_blocker,
                 restart_required=(
                     global_restart_required or registration_restart_required
                 ),
@@ -130,13 +164,20 @@ def _registered_plugin(registration):
 
 def _app_reload_required(env, runtime, rows):
     plugin_system_requested = bool(env and env.enable_plugins)
-    return (
-        plugin_system_requested != runtime.system_enabled
-        or (
-            plugin_system_requested
-            and any(row.restart_required for row in rows)
-        )
+
+    if plugin_system_requested != runtime.system_enabled:
+        if not plugin_system_requested:
+            return True
+        return any(row.registration.enabled for row in rows)
+
+    return plugin_system_requested and (
+        any(row.restart_required for row in rows)
+        or any(row.reload_blocker for row in rows)
     )
+
+
+def _app_reload_blockers(rows):
+    return tuple(row for row in rows if row.reload_blocker)
 
 
 @plugins_bp.route("/", methods=["GET"])
@@ -159,6 +200,7 @@ def list_plugins():
         plugin_runtime=runtime,
         plugin_system_requested=bool(env and env.enable_plugins),
         app_reload_required=_app_reload_required(env, runtime, rows),
+        app_reload_blocked=bool(_app_reload_blockers(rows)),
         quick_stats=get_admin_quick_stats(),
         **meta,
     )
@@ -419,6 +461,19 @@ def reload_config():
     if not _app_reload_required(env, runtime, rows):
         flash(
             "No application configuration changes are waiting to be applied.",
+            "warning",
+        )
+        return redirect(url_for("plugins.list_plugins"))
+
+    blockers = _app_reload_blockers(rows)
+    if blockers:
+        details = "; ".join(
+            f"{row.registration.plugin_id}: {row.reload_blocker}"
+            for row in blockers
+        )
+        flash(
+            "Reload App Config is unavailable until required plugin setup is complete. "
+            + details,
             "warning",
         )
         return redirect(url_for("plugins.list_plugins"))

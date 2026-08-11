@@ -154,6 +154,11 @@ button.button-link {
   font: inherit;
 }
 
+button.button-link:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
 .menu ul {
   display: flex;
   gap: 1rem;

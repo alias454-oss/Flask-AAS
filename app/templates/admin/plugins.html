@@ -15,9 +15,13 @@
 
   {% if plugin_system_requested != plugin_runtime.system_enabled %}
     <p class="form-error">
-      The saved plugin-loader setting differs from this process. Finish selecting
-      the applications you want enabled, then use Reload App Config once to apply
-      all requested runtime changes.
+      {% if plugin_system_requested and not rows | selectattr("registration.enabled") | list %}
+        Application plugins are enabled in settings. Enable an application to continue.
+      {% else %}
+        The saved plugin-loader setting differs from this process. Finish selecting
+        the applications you want enabled, then use Reload App Config once to apply
+        all requested runtime changes.
+      {% endif %}
     </p>
   {% endif %}
 
@@ -26,12 +30,25 @@
           action="{{ url_for('plugins.reload_config') }}"
           class="inline-action-form">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
-      <button type="submit" class="button-link">Reload App Config</button>
+      <button type="submit"
+              class="button-link"
+              {% if app_reload_blocked %}
+                disabled
+                aria-disabled="true"
+                title="Complete required plugin setup before reloading"
+              {% endif %}>Reload App Config</button>
     </form>
-    <p>
-      Apply all saved application enable/disable changes with one graceful
-      Gunicorn reload.
-    </p>
+    {% if app_reload_blocked %}
+      <p class="form-error">
+        Reload is waiting for required plugin setup. Complete the highlighted
+        application prerequisite first.
+      </p>
+    {% else %}
+      <p>
+        Apply all saved application enable/disable changes with one graceful
+        Gunicorn reload.
+      </p>
+    {% endif %}
   {% endif %}
 
   {% if not plugin_system_requested %}

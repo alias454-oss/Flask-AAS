@@ -368,6 +368,28 @@ class PluginAdminRouteTests(unittest.TestCase):
         self.assertEqual(row.access_status, "Disabled")
         self.assertTrue(row.restart_required)
 
+    def test_global_enablement_without_enabled_apps_does_not_require_reload(self):
+        self._login(self.admin_id)
+        self._registration(enabled=False, configured=False)
+        self.app.extensions[PLUGIN_RUNTIME_EXTENSION] = PluginRuntime(
+            system_enabled=False
+        )
+
+        with patch(
+            "app.core.decorators.audit_activity_enabled",
+            return_value=False,
+        ), patch(
+            "app.routes.admin.plugins.get_admin_quick_stats",
+            return_value={},
+        ), patch(
+            "app.routes.admin.plugins.render_template",
+            return_value="plugins",
+        ) as render:
+            response = self.client.get("/admin/plugins/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(render.call_args.kwargs["app_reload_required"])
+
     def test_requested_enablement_change_requires_restart(self):
         self._login(self.admin_id)
         self._registration(enabled=True, configured=True)
@@ -393,8 +415,9 @@ class PluginAdminRouteTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertTrue(render.call_args.kwargs["rows"][0].restart_required)
         self.assertTrue(render.call_args.kwargs["app_reload_required"])
+        self.assertFalse(render.call_args.kwargs["app_reload_blocked"])
 
-    def test_needs_migration_is_unavailable_and_keeps_reload_action_visible(self):
+    def test_needs_migration_disables_reload_until_schema_is_current(self):
         self._login(self.admin_id)
         self._registration(enabled=True, configured=False)
         self.app.extensions[PLUGIN_RUNTIME_EXTENSION].plugins["admin-plugin"] = (
@@ -406,6 +429,8 @@ class PluginAdminRouteTests(unittest.TestCase):
                 version="1.0.0",
             )
         )
+        manager = MagicMock()
+        manager.schema_current.return_value = False
 
         with patch(
             "app.core.decorators.audit_activity_enabled",
@@ -413,6 +438,12 @@ class PluginAdminRouteTests(unittest.TestCase):
         ), patch(
             "app.routes.admin.plugins.get_admin_quick_stats",
             return_value={},
+        ), patch(
+            "app.routes.admin.plugins.resolve_plugin",
+            return_value=MigratingAdminPlugin(configured=False),
+        ), patch(
+            "app.routes.admin.plugins.PluginMigrationManager",
+            return_value=manager,
         ), patch(
             "app.routes.admin.plugins.render_template",
             return_value="plugins",
@@ -423,8 +454,51 @@ class PluginAdminRouteTests(unittest.TestCase):
         row = render.call_args.kwargs["rows"][0]
         self.assertEqual(row.access_status, "Needs migration")
         self.assertTrue(row.can_upgrade_schema)
+        self.assertEqual(row.reload_blocker, "Upgrade the database schema first.")
         self.assertTrue(row.restart_required)
         self.assertTrue(render.call_args.kwargs["app_reload_required"])
+        self.assertTrue(render.call_args.kwargs["app_reload_blocked"])
+
+    def test_current_schema_enables_reload_from_stale_needs_migration_worker(self):
+        self._login(self.admin_id)
+        self._registration(enabled=True, configured=False)
+        self.app.extensions[PLUGIN_RUNTIME_EXTENSION].plugins["admin-plugin"] = (
+            PluginRuntimeState(
+                plugin_id="admin-plugin",
+                status=STATUS_NEEDS_MIGRATION,
+                reason="Schema migration required",
+                name="Admin Plugin",
+                version="1.0.0",
+            )
+        )
+        manager = MagicMock()
+        manager.schema_current.return_value = True
+
+        with patch(
+            "app.core.decorators.audit_activity_enabled",
+            return_value=False,
+        ), patch(
+            "app.routes.admin.plugins.get_admin_quick_stats",
+            return_value={},
+        ), patch(
+            "app.routes.admin.plugins.resolve_plugin",
+            return_value=MigratingAdminPlugin(configured=False),
+        ), patch(
+            "app.routes.admin.plugins.PluginMigrationManager",
+            return_value=manager,
+        ), patch(
+            "app.routes.admin.plugins.render_template",
+            return_value="plugins",
+        ) as render:
+            response = self.client.get("/admin/plugins/")
+
+        self.assertEqual(response.status_code, 200)
+        row = render.call_args.kwargs["rows"][0]
+        self.assertFalse(row.can_upgrade_schema)
+        self.assertIsNone(row.reload_blocker)
+        self.assertTrue(row.restart_required)
+        self.assertTrue(render.call_args.kwargs["app_reload_required"])
+        self.assertFalse(render.call_args.kwargs["app_reload_blocked"])
 
     def test_completed_configuration_requires_reload_from_needs_configuration(self):
         self._login(self.admin_id)
@@ -456,8 +530,44 @@ class PluginAdminRouteTests(unittest.TestCase):
         self.assertEqual(row.runtime_status, STATUS_NEEDS_CONFIGURATION)
         self.assertEqual(row.access_status, "Needs configuration")
         self.assertFalse(row.can_upgrade_schema)
+        self.assertIsNone(row.reload_blocker)
         self.assertTrue(row.restart_required)
         self.assertTrue(render.call_args.kwargs["app_reload_required"])
+        self.assertFalse(render.call_args.kwargs["app_reload_blocked"])
+
+    def test_incomplete_configuration_disables_reload(self):
+        self._login(self.admin_id)
+        self._registration(enabled=True, configured=False)
+        self.app.extensions[PLUGIN_RUNTIME_EXTENSION].plugins["admin-plugin"] = (
+            PluginRuntimeState(
+                plugin_id="admin-plugin",
+                status=STATUS_NEEDS_CONFIGURATION,
+                reason="API credential is required",
+                name="Admin Plugin",
+                version="1.0.0",
+            )
+        )
+
+        with patch(
+            "app.core.decorators.audit_activity_enabled",
+            return_value=False,
+        ), patch(
+            "app.routes.admin.plugins.get_admin_quick_stats",
+            return_value={},
+        ), patch(
+            "app.routes.admin.plugins.render_template",
+            return_value="plugins",
+        ) as render:
+            response = self.client.get("/admin/plugins/")
+
+        self.assertEqual(response.status_code, 200)
+        row = render.call_args.kwargs["rows"][0]
+        self.assertEqual(
+            row.reload_blocker,
+            "Complete required plugin configuration first.",
+        )
+        self.assertTrue(render.call_args.kwargs["app_reload_required"])
+        self.assertTrue(render.call_args.kwargs["app_reload_blocked"])
 
     def test_configuration_invalidated_under_active_worker_requires_reload(self):
         self._login(self.admin_id)
@@ -654,6 +764,96 @@ class PluginAdminRouteTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 302)
         manager_cls.assert_not_called()
+
+    def test_admin_reload_refuses_while_plugin_prerequisite_is_pending(self):
+        self._login(self.admin_id)
+        self._registration(enabled=True, configured=False)
+        self.app.extensions[PLUGIN_RUNTIME_EXTENSION].plugins["admin-plugin"] = (
+            PluginRuntimeState(
+                plugin_id="admin-plugin",
+                status=STATUS_NEEDS_MIGRATION,
+                reason="Schema migration required",
+            )
+        )
+
+        with patch(
+            "app.routes.admin.plugins._schema_upgrade_required",
+            return_value=True,
+        ), patch(
+            "app.routes.admin.plugins.log_action"
+        ) as log_action_mock, patch(
+            "app.routes.admin.plugins.reload_app_config"
+        ) as reload_mock:
+            response = self.client.post(
+                "/admin/plugins/reload",
+                follow_redirects=False,
+            )
+
+        self.assertEqual(response.status_code, 302)
+        reload_mock.assert_not_called()
+        log_action_mock.assert_not_called()
+        with self.client.session_transaction() as session_state:
+            flashes = session_state.get("_flashes", [])
+        self.assertTrue(
+            any(
+                "Upgrade the database schema first" in message
+                for _category, message in flashes
+            )
+        )
+
+    def test_admin_reload_runs_after_schema_reaches_head_under_stale_worker(self):
+        self._login(self.admin_id)
+        self._registration(enabled=True, configured=False)
+        self.app.extensions[PLUGIN_RUNTIME_EXTENSION].plugins["admin-plugin"] = (
+            PluginRuntimeState(
+                plugin_id="admin-plugin",
+                status=STATUS_NEEDS_MIGRATION,
+                reason="Schema migration required",
+            )
+        )
+        manager = MagicMock()
+        manager.schema_current.return_value = True
+
+        with patch(
+            "app.routes.admin.plugins.resolve_plugin",
+            return_value=MigratingAdminPlugin(configured=False),
+        ), patch(
+            "app.routes.admin.plugins.PluginMigrationManager",
+            return_value=manager,
+        ), patch(
+            "app.routes.admin.plugins.log_action"
+        ) as log_action_mock, patch(
+            "app.routes.admin.plugins.reload_app_config"
+        ) as reload_mock:
+            response = self.client.post(
+                "/admin/plugins/reload",
+                follow_redirects=False,
+            )
+
+        self.assertEqual(response.status_code, 200)
+        reload_mock.assert_called_once_with()
+        log_action_mock.assert_called_once()
+
+    def test_admin_reload_skips_global_enablement_when_all_apps_are_disabled(self):
+        self._login(self.admin_id)
+        self._registration(enabled=False, configured=False)
+        self.app.extensions[PLUGIN_RUNTIME_EXTENSION] = PluginRuntime(
+            system_enabled=False
+        )
+
+        with patch(
+            "app.routes.admin.plugins.log_action"
+        ) as log_action_mock, patch(
+            "app.routes.admin.plugins.reload_app_config"
+        ) as reload_mock:
+            response = self.client.post(
+                "/admin/plugins/reload",
+                follow_redirects=False,
+            )
+
+        self.assertEqual(response.status_code, 302)
+        reload_mock.assert_not_called()
+        log_action_mock.assert_not_called()
 
     def test_admin_reload_applies_pending_runtime_change(self):
         self._login(self.admin_id)
