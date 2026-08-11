@@ -11,8 +11,9 @@ from flask_login import LoginManager
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.extensions import bcrypt, csrf, db, limiter
-from app.models import AuditActivity, EnvSettings, User, UserSession
+from app.models import AuditActivity, Country, EnvSettings, User, UserSession, Zone
 from app.routes.account.account import account_bp
+from app.routes.locations import locations_bp
 
 
 class AccountProfileRouteTests(unittest.TestCase):
@@ -110,6 +111,7 @@ class AccountProfileRouteTests(unittest.TestCase):
             return 'mfa-disable'
 
         cls.app.register_blueprint(account_bp)
+        cls.app.register_blueprint(locations_bp)
         cls.app.register_blueprint(login_bp)
         cls.app.register_blueprint(index_bp)
         cls.app.register_blueprint(about_bp)
@@ -176,6 +178,15 @@ class AccountProfileRouteTests(unittest.TestCase):
         )
         db.session.add(self.settings)
 
+        us = Country(name='United States', iso_code_2='US', iso_code_3='USA')
+        ca = Country(name='Canada', iso_code_2='CA', iso_code_3='CAN')
+        db.session.add_all([us, ca])
+        db.session.flush()
+        db.session.add_all([
+            Zone(country_id=us.country_id, code='US-IL', name='Illinois', type='State'),
+            Zone(country_id=ca.country_id, code='CA-ON', name='Ontario', type='Province'),
+        ])
+
         user = User(
             username='profile-user',
             email='profile-user@example.test',
@@ -185,11 +196,11 @@ class AccountProfileRouteTests(unittest.TestCase):
             phone='555-0100',
             alt_phone='555-0101',
             fax='555-0102',
-            country='US',
+            country_code='US',
             address='100 Existing Street',
             city='Existing City',
-            state='IL',
-            zip='61032',
+            zone_code='US-IL',
+            postal_code='61032',
             activated=True,
             approved=True,
             admin_notes='Administrator-only note',
@@ -310,6 +321,9 @@ class AccountProfileRouteTests(unittest.TestCase):
         self.assertIn('<legend>Active Sessions</legend>', html)
         self.assertIn('<legend>Update Account Details</legend>', html)
         self.assertIn('<legend>Location</legend>', html)
+        self.assertIn('name="country_code"', html)
+        self.assertIn('name="zone_code"', html)
+        self.assertIn('name="postal_code"', html)
         self.assertNotIn('<legend>Account Security</legend>', html)
         self.assertIn('If you need to change your password,', html)
         self.assertIn('change it here</a>.', html)
@@ -368,11 +382,11 @@ class AccountProfileRouteTests(unittest.TestCase):
                 'phone': '   ',
                 'alt_phone': '555-0201',
                 'fax': '555-0202',
-                'country': ' US ',
+                'country_code': 'US',
                 'address': '200 Updated Street',
                 'city': 'Freeport',
-                'state': 'Illinois',
-                'zip': '61032',
+                'zone_code': 'US-IL',
+                'postal_code': '61032',
                 'username': 'attacker-selected-name',
                 'email': 'attacker@example.test',
                 'approved': '',
@@ -392,16 +406,33 @@ class AccountProfileRouteTests(unittest.TestCase):
         self.assertIsNone(user.phone)
         self.assertEqual(user.alt_phone, '555-0201')
         self.assertEqual(user.fax, '555-0202')
-        self.assertEqual(user.country, 'US')
+        self.assertEqual(user.country_code, 'US')
         self.assertEqual(user.address, '200 Updated Street')
         self.assertEqual(user.city, 'Freeport')
-        self.assertEqual(user.state, 'Illinois')
-        self.assertEqual(user.zip, '61032')
+        self.assertEqual(user.zone_code, 'US-IL')
+        self.assertEqual(user.postal_code, '61032')
         self.assertEqual(user.username, 'profile-user')
         self.assertEqual(user.email, 'profile-user@example.test')
         self.assertTrue(user.approved)
         self.assertEqual(user.admin_notes, 'Administrator-only note')
         self.assertEqual(user.auth_version, self.original_auth_version)
+
+    def test_zone_must_belong_to_selected_country(self):
+        response = self._post(
+            {
+                'country_code': 'CA',
+                'zone_code': 'US-IL',
+                'city': 'Toronto',
+                'postal_code': 'M5V',
+            }
+        )
+
+        self.assertEqual(response.status_code, 200)
+        db.session.expire_all()
+        user = db.session.get(User, self.user_id)
+        self.assertEqual(user.country_code, 'US')
+        self.assertEqual(user.zone_code, 'US-IL')
+        self.assertEqual(user.city, 'Existing City')
 
     def test_disabled_location_fields_cannot_be_changed_by_posting_them(self):
         self.settings.use_user_location = False
@@ -411,11 +442,11 @@ class AccountProfileRouteTests(unittest.TestCase):
         response = self._post(
             {
                 'first_name': 'Updated',
-                'country': 'CA',
+                'country_code': 'CA',
                 'address': 'Maliciously changed address',
                 'city': 'Toronto',
-                'state': 'Ontario',
-                'zip': 'M5V',
+                'zone_code': 'CA-ON',
+                'postal_code': 'M5V',
             }
         )
 
@@ -423,11 +454,11 @@ class AccountProfileRouteTests(unittest.TestCase):
         db.session.expire_all()
         user = db.session.get(User, self.user_id)
         self.assertEqual(user.first_name, 'Updated')
-        self.assertEqual(user.country, 'US')
+        self.assertEqual(user.country_code, 'US')
         self.assertEqual(user.address, '100 Existing Street')
         self.assertEqual(user.city, 'Existing City')
-        self.assertEqual(user.state, 'IL')
-        self.assertEqual(user.zip, '61032')
+        self.assertEqual(user.zone_code, 'US-IL')
+        self.assertEqual(user.postal_code, '61032')
 
     def test_invalid_field_length_does_not_modify_profile(self):
         response = self._post({'company_name': 'x' * 256})
@@ -456,11 +487,11 @@ class AccountProfileRouteTests(unittest.TestCase):
                     'phone': '555-0100',
                     'alt_phone': '555-0101',
                     'fax': '555-0102',
-                    'country': 'US',
+                    'country_code': 'US',
                     'address': '100 Existing Street',
                     'city': 'Existing City',
-                    'state': 'IL',
-                    'zip': '61032',
+                    'zone_code': 'US-IL',
+                    'postal_code': '61032',
                 },
                 follow_redirects=False,
             )
