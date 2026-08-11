@@ -12,7 +12,11 @@ from app.plugins import (
     PluginCompatibilityError,
     PluginConfiguration,
     PluginContractError,
+    PluginDataset,
+    PluginDatasetActionResult,
+    validate_dataset_action_result,
     validate_plugin_contract,
+    validate_plugin_datasets,
 )
 from app.plugins.example import plugin as example_plugin
 from app.plugins.registry import (
@@ -84,6 +88,37 @@ class BadConfigReturnPlugin(FakePlugin):
         return True
 
 
+
+
+class DatasetPlugin(FakePlugin):
+    plugin_id = "dataset-plugin"
+
+    def get_admin_datasets(self):
+        return (
+            PluginDataset(
+                key="reference",
+                label="Reference Data",
+                description="Optional packaged reference values.",
+                status="0 database rows.",
+                action_label="Load Data",
+            ),
+        )
+
+    def run_admin_dataset_action(self, dataset_key):
+        if dataset_key != "reference":
+            raise KeyError(dataset_key)
+        return PluginDatasetActionResult(message="Reference data loaded.")
+
+
+class InvalidDatasetPlugin(FakePlugin):
+    plugin_id = "invalid-dataset-plugin"
+
+    def get_admin_datasets(self):
+        return (
+            PluginDataset(key="Bad Key", label="Invalid"),
+        )
+
+
 class PluginContractTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -131,6 +166,28 @@ class PluginContractTests(unittest.TestCase):
     def test_invalid_metadata_is_rejected(self):
         with self.assertRaises(PluginContractError):
             validate_plugin_contract(InvalidMetadataPlugin())
+
+    def test_default_plugin_dataset_surface_is_empty_and_non_blocking(self):
+        plugin = FakePlugin()
+
+        self.assertEqual(validate_plugin_datasets(plugin), ())
+        self.assertTrue(plugin.validate_config().configured)
+
+    def test_plugin_dataset_descriptors_and_action_results_are_validated(self):
+        plugin = DatasetPlugin()
+
+        datasets = validate_plugin_datasets(plugin)
+        result = validate_dataset_action_result(
+            plugin.run_admin_dataset_action("reference")
+        )
+
+        self.assertEqual(datasets[0].key, "reference")
+        self.assertEqual(datasets[0].action_label, "Load Data")
+        self.assertEqual(result.message, "Reference data loaded.")
+
+    def test_invalid_plugin_dataset_key_is_rejected(self):
+        with self.assertRaises(PluginContractError):
+            validate_plugin_datasets(InvalidDatasetPlugin())
 
 
     def test_plugin_must_declare_api_version_explicitly(self):

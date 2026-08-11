@@ -8,7 +8,13 @@ from flask_login import LoginManager
 
 from app.core.extensions import csrf, db, limiter
 from app.models import EnvSettings, PluginRegistration, Role, User
-from app.plugins import PLUGIN_API_VERSION, ApplicationPlugin, PluginConfiguration
+from app.plugins import (
+    PLUGIN_API_VERSION,
+    ApplicationPlugin,
+    PluginConfiguration,
+    PluginDataset,
+    PluginDatasetActionResult,
+)
 from app.plugins.manifest import PluginManifest
 from app.plugins.loader import (
     PLUGIN_RUNTIME_EXTENSION,
@@ -48,6 +54,30 @@ class AdminPlugin(ApplicationPlugin):
 
     def register(self, app):
         return None
+
+
+class DatasetAdminPlugin(AdminPlugin):
+    def __init__(self, *, fail_action=False):
+        super().__init__(configured=True)
+        self.fail_action = fail_action
+        self.dataset_calls = []
+
+    def get_admin_datasets(self):
+        return (
+            PluginDataset(
+                key="reference",
+                label="Reference Data",
+                description="Optional packaged data.",
+                status="0 database rows.",
+                action_label="Load Data",
+            ),
+        )
+
+    def run_admin_dataset_action(self, dataset_key):
+        self.dataset_calls.append(dataset_key)
+        if self.fail_action:
+            raise RuntimeError("sensitive provider detail")
+        return PluginDatasetActionResult(message="Reference data loaded.")
 
 
 class MigratingAdminPlugin(AdminPlugin):
@@ -123,7 +153,14 @@ class PluginAdminRouteTests(unittest.TestCase):
         def index():
             return "index"
 
+        config_bp = Blueprint("fake_plugin", __name__)
+
+        @config_bp.route("/fake-plugin-config")
+        def config():
+            return "config"
+
         cls.app.register_blueprint(login_bp)
+        cls.app.register_blueprint(config_bp)
         cls.app.register_blueprint(index_bp)
         cls.app.register_blueprint(plugins_bp)
 
@@ -600,6 +637,170 @@ class PluginAdminRouteTests(unittest.TestCase):
         self.assertFalse(row.can_upgrade_schema)
         self.assertTrue(row.restart_required)
         self.assertTrue(render.call_args.kwargs["app_reload_required"])
+
+    def test_active_plugin_datasets_render_on_application_card_without_affecting_access(self):
+        self._login(self.admin_id)
+        self._registration(enabled=True, configured=True)
+        plugin = DatasetAdminPlugin()
+        runtime = self.app.extensions[PLUGIN_RUNTIME_EXTENSION]
+        runtime.plugins["admin-plugin"] = PluginRuntimeState(
+            plugin_id="admin-plugin",
+            status=STATUS_ACTIVE,
+            name="Admin Plugin",
+            version="1.0.0",
+        )
+        runtime.instances["admin-plugin"] = plugin
+
+        with patch(
+            "app.core.decorators.audit_activity_enabled",
+            return_value=False,
+        ), patch(
+            "app.routes.admin.plugins.get_admin_quick_stats",
+            return_value={},
+        ), patch(
+            "app.routes.admin.plugins.render_template",
+            return_value="plugins",
+        ) as render:
+            response = self.client.get("/admin/plugins/")
+
+        self.assertEqual(response.status_code, 200)
+        row = render.call_args.kwargs["rows"][0]
+        self.assertEqual(row.runtime_status, STATUS_ACTIVE)
+        self.assertEqual(row.access_status, "Available")
+        self.assertEqual(len(row.datasets), 1)
+        dataset = row.datasets[0]
+        self.assertEqual(dataset.key, "reference")
+        self.assertEqual(dataset.label, "Reference Data")
+        self.assertEqual(dataset.status, "0 database rows.")
+        self.assertEqual(dataset.action_label, "Load Data")
+
+    def test_configuration_link_is_shown_only_when_plugin_declares_one(self):
+        self._login(self.admin_id)
+        self._registration(enabled=True, configured=False)
+        runtime = self.app.extensions[PLUGIN_RUNTIME_EXTENSION]
+        runtime.plugins["admin-plugin"] = PluginRuntimeState(
+            plugin_id="admin-plugin",
+            status=STATUS_NEEDS_CONFIGURATION,
+            reason="Configuration required",
+            name="Admin Plugin",
+            version="1.0.0",
+            configuration_endpoint="fake_plugin.config",
+        )
+
+        with patch(
+            "app.core.decorators.audit_activity_enabled",
+            return_value=False,
+        ), patch(
+            "app.routes.admin.plugins.get_admin_quick_stats",
+            return_value={},
+        ), patch(
+            "app.routes.admin.plugins.render_template",
+            return_value="plugins",
+        ) as render:
+            response = self.client.get("/admin/plugins/")
+
+        self.assertEqual(response.status_code, 200)
+        row = render.call_args.kwargs["rows"][0]
+        self.assertEqual(row.configuration_endpoint, "fake_plugin.config")
+
+    def test_admin_can_run_plugin_dataset_action_through_host_dispatch(self):
+        self._login(self.admin_id)
+        record = self._registration(enabled=True, configured=True)
+        plugin = DatasetAdminPlugin()
+        runtime = self.app.extensions[PLUGIN_RUNTIME_EXTENSION]
+        runtime.plugins["admin-plugin"] = PluginRuntimeState(
+            plugin_id="admin-plugin",
+            status=STATUS_ACTIVE,
+            name="Admin Plugin",
+            version="1.0.0",
+        )
+        runtime.instances["admin-plugin"] = plugin
+
+        with patch("app.routes.admin.plugins.log_action") as audit:
+            response = self.client.post(
+                f"/admin/plugins/{record.id}/datasets/reference/run",
+                follow_redirects=False,
+            )
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(plugin.dataset_calls, ["reference"])
+        audit.assert_called_once()
+        self.assertEqual(audit.call_args.kwargs["action"], "run_plugin_dataset_action")
+        self.assertEqual(audit.call_args.kwargs["extra_data"]["outcome"], "success")
+
+    def test_non_admin_cannot_run_plugin_dataset_action(self):
+        self._login(self.regular_id)
+        record = self._registration(enabled=True, configured=True)
+        plugin = DatasetAdminPlugin()
+        runtime = self.app.extensions[PLUGIN_RUNTIME_EXTENSION]
+        runtime.plugins["admin-plugin"] = PluginRuntimeState(
+            plugin_id="admin-plugin",
+            status=STATUS_ACTIVE,
+            name="Admin Plugin",
+            version="1.0.0",
+        )
+        runtime.instances["admin-plugin"] = plugin
+
+        response = self.client.post(
+            f"/admin/plugins/{record.id}/datasets/reference/run",
+            follow_redirects=False,
+        )
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(plugin.dataset_calls, [])
+
+    def test_unknown_plugin_dataset_action_fails_closed(self):
+        self._login(self.admin_id)
+        record = self._registration(enabled=True, configured=True)
+        plugin = DatasetAdminPlugin()
+        runtime = self.app.extensions[PLUGIN_RUNTIME_EXTENSION]
+        runtime.plugins["admin-plugin"] = PluginRuntimeState(
+            plugin_id="admin-plugin",
+            status=STATUS_ACTIVE,
+            name="Admin Plugin",
+            version="1.0.0",
+        )
+        runtime.instances["admin-plugin"] = plugin
+
+        response = self.client.post(
+            f"/admin/plugins/{record.id}/datasets/not-declared/run",
+            follow_redirects=False,
+        )
+
+        self.assertEqual(response.status_code, 404)
+        self.assertEqual(plugin.dataset_calls, [])
+
+    def test_dataset_action_failure_rolls_back_and_hides_plugin_exception(self):
+        self._login(self.admin_id)
+        record = self._registration(enabled=True, configured=True)
+        plugin = DatasetAdminPlugin(fail_action=True)
+        runtime = self.app.extensions[PLUGIN_RUNTIME_EXTENSION]
+        runtime.plugins["admin-plugin"] = PluginRuntimeState(
+            plugin_id="admin-plugin",
+            status=STATUS_ACTIVE,
+            name="Admin Plugin",
+            version="1.0.0",
+        )
+        runtime.instances["admin-plugin"] = plugin
+
+        with patch("app.routes.admin.plugins.log_action") as audit:
+            response = self.client.post(
+                f"/admin/plugins/{record.id}/datasets/reference/run",
+                follow_redirects=False,
+            )
+
+        self.assertEqual(response.status_code, 302)
+        with self.client.session_transaction() as session:
+            flashes = tuple(session.get("_flashes", ()))
+        messages = tuple(message for _category, message in flashes)
+        self.assertTrue(
+            any("application-data action failed" in message for message in messages)
+        )
+        self.assertFalse(
+            any("sensitive provider detail" in message for message in messages)
+        )
+        self.assertEqual(plugin.dataset_calls, ["reference"])
+        self.assertEqual(audit.call_args.kwargs["extra_data"]["outcome"], "failed")
 
     def test_admin_can_upgrade_enabled_plugin_schema_to_head(self):
         self._login(self.admin_id)

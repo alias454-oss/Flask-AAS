@@ -66,6 +66,17 @@ class EndpointLifecyclePlugin(LifecyclePlugin):
         app.view_functions["endpoint_plugin.surface"] = lambda: None
 
 
+class InvalidConfigEndpointPlugin(LifecyclePlugin):
+    plugin_id = "invalid-config-endpoint"
+
+    def validate_config(self):
+        return PluginConfiguration(
+            configured=False,
+            reason="Configuration required",
+            admin_endpoint="not_owned.settings",
+        )
+
+
 EXAMPLE_MANIFEST = load_plugin_manifest(
     Path(__file__).resolve().parents[1] / "app" / "plugins" / "example" / "plugin.toml"
 )
@@ -241,6 +252,7 @@ class PluginLifecycleTests(unittest.TestCase):
 
         db.session.refresh(registration)
         self.assertEqual(runtime.plugins["lifecycle"].status, STATUS_ACTIVE)
+        self.assertIs(runtime.instance_for("lifecycle"), plugin)
         self.assertEqual(plugin.register_calls, 1)
         self.assertTrue(registration.configured)
         output = "\n".join(logs.output)
@@ -288,6 +300,55 @@ class PluginLifecycleTests(unittest.TestCase):
         self.assertIn("Required configuration", state.reason)
         self.assertEqual(plugin.register_calls, 1)
         self.assertFalse(registration.configured)
+
+    def test_invalid_configuration_endpoint_fails_plugin_closed(self):
+        self._add_settings(enable_plugins=True)
+        registration = self._add_registration(
+            plugin_id="invalid-config-endpoint",
+            import_path="tests.fake_plugins:invalid_config_endpoint",
+            enabled=True,
+            configured=False,
+        )
+        plugin = InvalidConfigEndpointPlugin(configured=False)
+
+        with patch("app.plugins.loader.resolve_plugin", return_value=plugin):
+            runtime = initialize_plugins(self.app)
+
+        db.session.refresh(registration)
+        self.assertEqual(runtime.plugins["invalid-config-endpoint"].status, STATUS_ERROR)
+        self.assertFalse(registration.configured)
+        self.assertIsNone(runtime.instance_for("invalid-config-endpoint"))
+
+    def test_configuration_endpoint_bypass_is_site_admin_only(self):
+        self._add_settings(enable_plugins=True)
+        self._add_registration(enabled=True, configured=False)
+        runtime = PluginRuntime(system_enabled=True)
+        runtime.plugins["lifecycle"] = PluginRuntimeState(
+            plugin_id="lifecycle",
+            status=STATUS_NEEDS_CONFIGURATION,
+            configuration_endpoint="guarded_plugin_test",
+        )
+        runtime.endpoints["guarded_plugin_test"] = "lifecycle"
+        self.app.extensions["flask_aas_plugins"] = runtime
+        client = self.app.test_client()
+
+        denied_user = type(
+            "DeniedUser",
+            (),
+            {"is_authenticated": True, "has_role": lambda self, role: False},
+        )()
+        with patch("app.plugins.loader.current_user", denied_user):
+            response = client.get("/guarded-plugin-test")
+        self.assertEqual(response.status_code, 404)
+
+        admin_user = type(
+            "AdminUser",
+            (),
+            {"is_authenticated": True, "has_role": lambda self, role: role == "admin"},
+        )()
+        with patch("app.plugins.loader.current_user", admin_user):
+            response = client.get("/guarded-plugin-test")
+        self.assertEqual(response.status_code, 200)
 
     def test_loaded_plugin_access_tracks_current_enabled_and_configured_state(self):
         self._add_settings(enable_plugins=True)
