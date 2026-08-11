@@ -11,7 +11,11 @@ from .interface import (
     PluginCompatibilityError,
     PluginConfiguration,
     PluginContractError,
+    PluginDataset,
+    PluginDatasetActionResult,
+    validate_dataset_action_result,
     validate_plugin_contract,
+    validate_plugin_datasets,
 )
 
 __all__ = [
@@ -23,5 +27,9 @@ __all__ = [
     "PluginCompatibilityError",
     "PluginConfiguration",
     "PluginContractError",
+    "PluginDataset",
+    "PluginDatasetActionResult",
+    "validate_dataset_action_result",
     "validate_plugin_contract",
+    "validate_plugin_datasets",
 ]

@@ -86,7 +86,36 @@
                 <p><strong>App config reload required for the requested runtime state.</strong></p>
               {% endif %}
 
+              {% if row.datasets or row.dataset_error %}
+                <div class="plugin-application-data">
+                  <h4>Application Data</h4>
+                  {% if row.dataset_error %}
+                    <p class="form-error">{{ row.dataset_error }}</p>
+                  {% endif %}
+                  {% for dataset in row.datasets %}
+                    <div class="plugin-dataset">
+                      <p>
+                        <strong>{{ dataset.label }}</strong>
+                        {% if dataset.description %}<br />{{ dataset.description }}{% endif %}
+                        {% if dataset.status %}<br /><strong>Status:</strong> {{ dataset.status }}{% endif %}
+                      </p>
+                      {% if dataset.action_label %}
+                        <form method="POST"
+                              action="{{ url_for('plugins.run_dataset_action', registration_id=registration.id, dataset_key=dataset.key) }}"
+                              class="inline-action-form">
+                          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+                          <button type="submit" class="button-link">{{ dataset.action_label }}</button>
+                        </form>
+                      {% endif %}
+                    </div>
+                  {% endfor %}
+                </div>
+              {% endif %}
+
               <div class="user-actions">
+                {% if not registration.configured and row.configuration_endpoint %}
+                  <a href="{{ url_for(row.configuration_endpoint) }}" class="button-link">Configure Application</a>
+                {% endif %}
                 {% if row.can_upgrade_schema %}
                   <form method="POST"
                         action="{{ url_for('plugins.upgrade_schema', registration_id=registration.id) }}"

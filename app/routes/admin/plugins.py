@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import logging
 
-from flask import Blueprint, current_app, flash, redirect, render_template, request, url_for
+from flask import Blueprint, abort, current_app, flash, redirect, render_template, request, url_for
 from flask_login import current_user
 
 from app.core.auth import admin_required, login_required
@@ -15,7 +15,12 @@ from app.core.meta import page_metadata
 from app.core.security import get_client_ip
 from app.core.trackers import get_admin_quick_stats, log_action
 from app.models import EnvSettings, PluginRegistration
-from app.plugins.interface import validate_plugin_contract
+from app.plugins.interface import (
+    PluginDataset,
+    validate_dataset_action_result,
+    validate_plugin_contract,
+    validate_plugin_datasets,
+)
 from app.plugins.loader import (
     STATUS_ACTIVE,
     STATUS_DISABLED,
@@ -44,6 +49,9 @@ class PluginAdminRow:
     can_upgrade_schema: bool
     reload_blocker: str | None
     restart_required: bool
+    configuration_endpoint: str | None
+    datasets: tuple[PluginDataset, ...]
+    dataset_error: str | None
 
 
 def _schema_upgrade_required(registration, state):
@@ -67,6 +75,36 @@ def _schema_upgrade_required(registration, state):
             registration.plugin_id,
         )
         return True
+
+
+def _admin_datasets(registration, state, runtime):
+    """Return validated non-blocking dataset metadata for one loaded plugin."""
+
+    if (
+        not runtime.system_enabled
+        or not registration.enabled
+        or state is None
+        or state.status not in {STATUS_ACTIVE, STATUS_NEEDS_CONFIGURATION}
+    ):
+        return (), None
+
+    try:
+        plugin = runtime.instance_for(registration.plugin_id)
+        if plugin is None:
+            return (), None
+        validate_plugin_contract(plugin)
+        if plugin.plugin_id != registration.plugin_id:
+            raise ValueError(
+                f"Registered plugin ID {registration.plugin_id!r} does not match "
+                f"loaded plugin ID {plugin.plugin_id!r}"
+            )
+        return validate_plugin_datasets(plugin), None
+    except Exception:
+        logger.exception(
+            "Failed to inspect plugin datasets for plugin=%s",
+            registration.plugin_id,
+        )
+        return (), "Application data status is unavailable. Check application logs."
 
 
 def _admin_rows(registrations, env, runtime):
@@ -138,6 +176,7 @@ def _admin_rows(registrations, env, runtime):
         else:
             access_status = "Available"
 
+        datasets, dataset_error = _admin_datasets(registration, state, runtime)
         rows.append(
             PluginAdminRow(
                 registration=registration,
@@ -151,6 +190,11 @@ def _admin_rows(registrations, env, runtime):
                 restart_required=(
                     global_restart_required or registration_restart_required
                 ),
+                configuration_endpoint=(
+                    state.configuration_endpoint if state is not None else None
+                ),
+                datasets=datasets,
+                dataset_error=dataset_error,
             )
         )
 
@@ -262,6 +306,135 @@ def enable(registration_id):
             "warning",
         )
 
+    return redirect(url_for("plugins.list_plugins"))
+
+
+@plugins_bp.post("/<int:registration_id>/datasets/<string:dataset_key>/run")
+@limiter.limit("3 per minute", key_func=get_client_ip)
+@login_required
+@admin_required
+def run_dataset_action(registration_id, dataset_key):
+    """Dispatch one plugin-declared dataset action from the host admin surface."""
+
+    registration = db.session.get(PluginRegistration, registration_id)
+    if registration is None:
+        return "Plugin registration not found", 404
+
+    runtime = get_plugin_runtime(current_app)
+    state = runtime.state_for(registration.plugin_id)
+    if (
+        not runtime.system_enabled
+        or not registration.enabled
+        or state is None
+        or state.status not in {STATUS_ACTIVE, STATUS_NEEDS_CONFIGURATION}
+    ):
+        flash(
+            f"Plugin {registration.plugin_id} must be loaded before application data can be managed.",
+            "warning",
+        )
+        return redirect(url_for("plugins.list_plugins"))
+
+    plugin = runtime.instance_for(registration.plugin_id)
+    if plugin is None:
+        logger.error(
+            "Plugin runtime instance missing for dataset action plugin=%s",
+            registration.plugin_id,
+        )
+        flash(
+            f"Plugin {registration.plugin_id} application data is unavailable. "
+            "Reload App Config and try again.",
+            "danger",
+        )
+        return redirect(url_for("plugins.list_plugins"))
+
+    try:
+        validate_plugin_contract(plugin)
+        if plugin.plugin_id != registration.plugin_id:
+            raise ValueError(
+                f"Registered plugin ID {registration.plugin_id!r} does not match "
+                f"loaded plugin ID {plugin.plugin_id!r}"
+            )
+        datasets = validate_plugin_datasets(plugin)
+    except Exception:
+        logger.exception(
+            "Failed to validate plugin dataset surface plugin=%s",
+            registration.plugin_id,
+        )
+        flash(
+            f"Plugin {registration.plugin_id} application data is unavailable. "
+            "Check the application logs.",
+            "danger",
+        )
+        return redirect(url_for("plugins.list_plugins"))
+
+    dataset = next(
+        (candidate for candidate in datasets if candidate.key == dataset_key),
+        None,
+    )
+    if dataset is None or dataset.action_label is None:
+        abort(404)
+
+    try:
+        result = validate_dataset_action_result(
+            plugin.run_admin_dataset_action(dataset_key)
+        )
+        log_action(
+            action="run_plugin_dataset_action",
+            user_id=current_user.id,
+            target=f"/admin/plugins/{registration.id}/datasets/{dataset_key}",
+            extra_data={
+                "plugin_id": registration.plugin_id,
+                "dataset_key": dataset_key,
+                "outcome": "success",
+                "ip": get_client_ip(),
+                "user_agent": request.headers.get("User-Agent"),
+            },
+        )
+        db.session.commit()
+    except Exception as exc:
+        db.session.rollback()
+        logger.exception(
+            "Admin user=%s failed plugin dataset action plugin=%s dataset=%s",
+            current_user.username,
+            registration.plugin_id,
+            dataset_key,
+        )
+        try:
+            log_action(
+                action="run_plugin_dataset_action",
+                user_id=current_user.id,
+                target=f"/admin/plugins/{registration.id}/datasets/{dataset_key}",
+                extra_data={
+                    "plugin_id": registration.plugin_id,
+                    "dataset_key": dataset_key,
+                    "outcome": "failed",
+                    "error_type": type(exc).__name__,
+                    "ip": get_client_ip(),
+                    "user_agent": request.headers.get("User-Agent"),
+                },
+            )
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+            logger.exception(
+                "Failed to persist plugin dataset-action failure audit plugin=%s dataset=%s",
+                registration.plugin_id,
+                dataset_key,
+            )
+        flash(
+            f"Plugin {registration.plugin_id} application-data action failed. "
+            "Check the application logs.",
+            "danger",
+        )
+        return redirect(url_for("plugins.list_plugins"))
+
+    logger.info(
+        "Admin user=%s ran plugin dataset action plugin=%s dataset=%s",
+        current_user.username,
+        registration.plugin_id,
+        dataset_key,
+    )
+    flash(result.message, "success")
     return redirect(url_for("plugins.list_plugins"))
 
 
