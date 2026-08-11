@@ -3,7 +3,6 @@ from .user import User
 from .role import Role
 from .user_role import UserRole
 from .online_user import OnlineUser
-from .state import State
 from .country import Country
 from .zone import Zone
 from .env_settings import EnvSettings
@@ -14,4 +13,4 @@ from .password_reset_token import PasswordResetToken
 from .user_session import UserSession
 from .plugin import PluginRegistration
 
-__all__ = ["User", "Role", "UserRole", "OnlineUser", "State", "Country", "Zone", "EnvSettings", "AuditActivity", "AuditLogin", "MfaRecoveryCode", "PasswordResetToken", "UserSession", "PluginRegistration"]
+__all__ = ["User", "Role", "UserRole", "OnlineUser", "Country", "Zone", "EnvSettings", "AuditActivity", "AuditLogin", "MfaRecoveryCode", "PasswordResetToken", "UserSession", "PluginRegistration"]
