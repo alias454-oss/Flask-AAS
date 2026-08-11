@@ -7,6 +7,7 @@ import logging
 from typing import Any
 
 from flask import abort, current_app, request
+from flask_login import current_user
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.extensions import db
@@ -42,6 +43,7 @@ class PluginRuntimeState:
     name: str | None = None
     version: str | None = None
     api_version: int | None = None
+    configuration_endpoint: str | None = None
 
 
 @dataclass
@@ -51,9 +53,13 @@ class PluginRuntime:
     system_enabled: bool = False
     plugins: dict[str, PluginRuntimeState] = field(default_factory=dict)
     endpoints: dict[str, str] = field(default_factory=dict)
+    instances: dict[str, ApplicationPlugin] = field(default_factory=dict)
 
     def state_for(self, plugin_id: str) -> PluginRuntimeState | None:
         return self.plugins.get(plugin_id)
+
+    def instance_for(self, plugin_id: str) -> ApplicationPlugin | None:
+        return self.instances.get(plugin_id)
 
     def plugin_for_endpoint(self, endpoint: str | None) -> str | None:
         if endpoint is None:
@@ -106,6 +112,26 @@ def _record_plugin_endpoints(
         runtime.endpoints[endpoint] = plugin_id
 
 
+def _configuration_endpoint_is_valid(
+    app: Any,
+    runtime: PluginRuntime,
+    plugin_id: str,
+    endpoint: str | None,
+) -> bool:
+    """Return whether one optional config endpoint is a plugin-owned simple GET route."""
+
+    if endpoint is None:
+        return True
+    if runtime.plugin_for_endpoint(endpoint) != plugin_id:
+        return False
+    return any(
+        rule.endpoint == endpoint
+        and not rule.arguments
+        and "GET" in (rule.methods or set())
+        for rule in app.url_map.iter_rules()
+    )
+
+
 def enforce_plugin_access() -> None:
     """Fail closed for plugin routes that are not currently usable.
 
@@ -139,11 +165,18 @@ def enforce_plugin_access() -> None:
         logger.exception("Failed to read access state for plugin %s", plugin_id)
         abort(404)
 
-    if (
-        registration is None
-        or not registration.enabled
-        or not registration.configured
-    ):
+    if registration is None or not registration.enabled:
+        abort(404)
+
+    if state.configuration_endpoint and request.endpoint == state.configuration_endpoint:
+        if not (
+            current_user.is_authenticated
+            and current_user.has_role("admin")
+        ):
+            abort(404)
+        return
+
+    if not registration.configured:
         abort(404)
 
 
@@ -174,6 +207,7 @@ def _runtime_state(
     *,
     plugin: ApplicationPlugin | None = None,
     reason: str | None = None,
+    configuration_endpoint: str | None = None,
 ) -> PluginRuntimeState:
     return PluginRuntimeState(
         plugin_id=registration.plugin_id,
@@ -182,6 +216,7 @@ def _runtime_state(
         name=getattr(plugin, "name", None) if plugin is not None else None,
         version=getattr(plugin, "version", None) if plugin is not None else None,
         api_version=getattr(plugin, "api_version", None) if plugin is not None else None,
+        configuration_endpoint=configuration_endpoint,
     )
 
 
@@ -357,12 +392,38 @@ def initialize_plugins(app: Any) -> PluginRuntime:
             app, runtime, registration.plugin_id, endpoints_before
         )
 
+        if not _configuration_endpoint_is_valid(
+            app,
+            runtime,
+            registration.plugin_id,
+            configuration.admin_endpoint,
+        ):
+            registration.configured = False
+            configuration_changed = True
+            runtime.plugins[registration.plugin_id] = _runtime_state(
+                registration,
+                STATUS_ERROR,
+                plugin=plugin,
+                reason=(
+                    "Plugin configuration endpoint is invalid. Check application logs."
+                ),
+            )
+            logger.error(
+                "Plugin %s declared invalid configuration endpoint=%r",
+                registration.plugin_id,
+                configuration.admin_endpoint,
+            )
+            continue
+
+        runtime.instances[registration.plugin_id] = plugin
+
         if not configuration.configured:
             runtime.plugins[registration.plugin_id] = _runtime_state(
                 registration,
                 STATUS_NEEDS_CONFIGURATION,
                 plugin=plugin,
                 reason=configuration.reason,
+                configuration_endpoint=configuration.admin_endpoint,
             )
             logger.info(
                 "Loaded application plugin %s version=%s api=%s with access gated pending configuration",
@@ -376,6 +437,7 @@ def initialize_plugins(app: Any) -> PluginRuntime:
             registration,
             STATUS_ACTIVE,
             plugin=plugin,
+            configuration_endpoint=configuration.admin_endpoint,
         )
         logger.info(
             "Activated application plugin %s version=%s api=%s",

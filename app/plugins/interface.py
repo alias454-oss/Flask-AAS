@@ -1,12 +1,14 @@
 # plugins/interface.py
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+import re
 from typing import Any
 
 from app.plugins.manifest import PluginManifest
 
 
 PLUGIN_API_VERSION = 1
+_DATASET_KEY_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,79}$")
 
 
 class PluginContractError(ValueError):
@@ -24,10 +26,41 @@ class PluginConfiguration:
     ``configured`` is derived by the plugin from its current configuration. It
     is not an administrator-controlled lifecycle switch. ``reason`` must be a
     non-secret operator-safe explanation suitable for an administrative UI.
+
+    ``admin_endpoint`` is an optional plugin-owned GET endpoint for completing
+    required configuration. Flask-AAS may expose it from the Applications page
+    only after runtime registration proves that the endpoint belongs to the
+    declaring plugin. Dataset/setup state is deliberately separate from this
+    readiness contract.
     """
 
     configured: bool
     reason: str | None = None
+    admin_endpoint: str | None = None
+
+
+@dataclass(frozen=True)
+class PluginDataset:
+    """One optional plugin-owned server dataset exposed to host administrators.
+
+    Flask-AAS renders these values but does not interpret dataset meaning or use
+    dataset state to determine plugin readiness. ``action_label=None`` exposes
+    status only; otherwise the host may dispatch the dataset key back through
+    ``run_admin_dataset_action()`` from its own protected POST endpoint.
+    """
+
+    key: str
+    label: str
+    description: str | None = None
+    status: str | None = None
+    action_label: str | None = None
+
+
+@dataclass(frozen=True)
+class PluginDatasetActionResult:
+    """Operator-safe result returned by a plugin-owned dataset action."""
+
+    message: str
 
 
 class ApplicationPlugin(ABC):
@@ -75,6 +108,28 @@ class ApplicationPlugin(ABC):
 
         return None
 
+    def get_admin_datasets(self) -> tuple[PluginDataset, ...]:
+        """Return optional server datasets for the host Applications page.
+
+        The plugin owns dataset discovery, status, labels, and semantics. The
+        host treats the returned descriptors as non-blocking administration
+        metadata and must not infer application readiness from them.
+        """
+
+        return ()
+
+    def run_admin_dataset_action(self, dataset_key: str) -> PluginDatasetActionResult:
+        """Run one declared dataset action inside the caller-owned transaction.
+
+        Implementations must not commit or roll back the database transaction.
+        Flask-AAS owns authorization, CSRF/rate limiting, generic auditing, and
+        the final transaction boundary for web-dispatched dataset actions.
+        """
+
+        raise PluginContractError(
+            f"Plugin {self.plugin_id!r} does not implement dataset action {dataset_key!r}"
+        )
+
     @abstractmethod
     def register(self, app: Any) -> None:
         """Register structural Flask surfaces during application startup.
@@ -86,6 +141,87 @@ class ApplicationPlugin(ABC):
         that requires credentials or other completed configuration must not be
         started here.
         """
+
+
+def _bounded_text(
+    value: object,
+    *,
+    field_name: str,
+    maximum: int,
+    optional: bool = False,
+) -> str | None:
+    if value is None and optional:
+        return None
+    if not isinstance(value, str):
+        expected = "a string or None" if optional else "a string"
+        raise PluginContractError(f"{field_name} must be {expected}")
+    if not value.strip():
+        raise PluginContractError(f"{field_name} must not be empty")
+    if len(value) > maximum:
+        raise PluginContractError(f"{field_name} exceeds {maximum} characters")
+    return value
+
+
+def validate_plugin_datasets(plugin: ApplicationPlugin) -> tuple[PluginDataset, ...]:
+    """Validate one plugin's optional host-admin dataset descriptors."""
+
+    datasets = plugin.get_admin_datasets()
+    if not isinstance(datasets, tuple):
+        raise PluginContractError("get_admin_datasets() must return a tuple")
+
+    validated: list[PluginDataset] = []
+    seen_keys: set[str] = set()
+    for dataset in datasets:
+        if not isinstance(dataset, PluginDataset):
+            raise PluginContractError(
+                "get_admin_datasets() entries must be PluginDataset instances"
+            )
+        if not isinstance(dataset.key, str) or not _DATASET_KEY_RE.fullmatch(dataset.key):
+            raise PluginContractError(
+                "PluginDataset.key must contain only lowercase letters, digits, underscores, "
+                "and hyphens and be at most 80 characters"
+            )
+        if dataset.key in seen_keys:
+            raise PluginContractError(f"Duplicate plugin dataset key {dataset.key!r}")
+        seen_keys.add(dataset.key)
+
+        _bounded_text(dataset.label, field_name="PluginDataset.label", maximum=120)
+        _bounded_text(
+            dataset.description,
+            field_name="PluginDataset.description",
+            maximum=500,
+            optional=True,
+        )
+        _bounded_text(
+            dataset.status,
+            field_name="PluginDataset.status",
+            maximum=300,
+            optional=True,
+        )
+        _bounded_text(
+            dataset.action_label,
+            field_name="PluginDataset.action_label",
+            maximum=120,
+            optional=True,
+        )
+        validated.append(dataset)
+
+    return tuple(validated)
+
+
+def validate_dataset_action_result(result: object) -> PluginDatasetActionResult:
+    """Validate one operator-safe plugin dataset action result."""
+
+    if not isinstance(result, PluginDatasetActionResult):
+        raise PluginContractError(
+            "run_admin_dataset_action() must return PluginDatasetActionResult"
+        )
+    _bounded_text(
+        result.message,
+        field_name="PluginDatasetActionResult.message",
+        maximum=500,
+    )
+    return result
 
 
 def validate_plugin_contract(plugin: ApplicationPlugin) -> ApplicationPlugin:
@@ -139,6 +275,5 @@ def validate_plugin_contract(plugin: ApplicationPlugin) -> ApplicationPlugin:
             f"Plugin {plugin_id!r} requires Plugin API v{api_version}; "
             f"this host supports v{PLUGIN_API_VERSION}"
         )
-
 
     return plugin

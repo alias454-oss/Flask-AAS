@@ -41,6 +41,18 @@ def _configuration(plugin: ApplicationPlugin) -> PluginConfiguration:
         raise PluginContractError(
             "PluginConfiguration.reason must be a string or None"
         )
+    if (
+        configuration.admin_endpoint is not None
+        and (
+            not isinstance(configuration.admin_endpoint, str)
+            or not configuration.admin_endpoint.strip()
+            or len(configuration.admin_endpoint) > 200
+        )
+    ):
+        raise PluginContractError(
+            "PluginConfiguration.admin_endpoint must be a non-empty string of at most "
+            "200 characters or None"
+        )
     return configuration
 
 
