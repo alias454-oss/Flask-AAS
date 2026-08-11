@@ -18,8 +18,9 @@
     {% if env.use_user_location %}
       <strong>Address:</strong> {{ current_user.address if current_user.address else NO_INFO }}<br />
       <strong>City:</strong> {{ current_user.city if current_user.city else NO_INFO }}<br />
-      <strong>State:</strong> {{ current_user.state if current_user.state else NO_INFO }}<br />
-      <strong>ZIP:</strong> {{ current_user.zip if current_user.zip else NO_INFO }}<br />
+      <strong>Country:</strong> {{ country_name if country_name else NO_INFO }}<br />
+      <strong>Region / Subdivision:</strong> {{ zone_name if zone_name else NO_INFO }}<br />
+      <strong>Postal Code:</strong> {{ current_user.postal_code if current_user.postal_code else NO_INFO }}<br />
     {% endif %}
     <strong>Registered On:</strong> {{ current_user.created_at.strftime('%Y-%m-%d') }}<br />
     <strong>Roles:</strong> {{ current_user.roles | map(attribute='name') | join(', ') }}

@@ -8,12 +8,13 @@ from flask_login import current_user
 from app.core.auth import login_required
 from flask_wtf import FlaskForm
 from sqlalchemy.exc import SQLAlchemyError
-from wtforms import StringField, SubmitField
+from wtforms import SelectField, StringField, SubmitField
 from wtforms.validators import Length, Optional
 
 from app.core.cache import get_cached_env_settings
 from app.core.decorators import log_view_action
 from app.core.extensions import db, limiter
+from app.core.locations import configure_location_choices
 from app.core.meta import page_metadata
 from app.core.security import get_client_ip
 from app.core.trackers import (
@@ -34,19 +35,19 @@ PROFILE_FIELD_NAMES = (
     'phone',
     'alt_phone',
     'fax',
-    'country',
+    'country_code',
     'address',
     'city',
-    'state',
-    'zip',
+    'zone_code',
+    'postal_code',
 )
 
 LOCATION_FIELD_NAMES = (
-    'country',
+    'country_code',
     'address',
     'city',
-    'state',
-    'zip',
+    'zone_code',
+    'postal_code',
 )
 
 
@@ -95,10 +96,10 @@ class ProfileForm(FlaskForm):
         validators=[Optional(), Length(max=50)],
         filters=[normalize_optional_text],
     )
-    country = StringField(
+    country_code = SelectField(
         'Country',
-        validators=[Optional(), Length(max=100)],
-        filters=[normalize_optional_text],
+        choices=[],
+        validators=[Optional()],
     )
     address = StringField(
         'Address',
@@ -110,13 +111,13 @@ class ProfileForm(FlaskForm):
         validators=[Optional(), Length(max=100)],
         filters=[normalize_optional_text],
     )
-    state = StringField(
-        'State',
-        validators=[Optional(), Length(max=100)],
-        filters=[normalize_optional_text],
+    zone_code = SelectField(
+        'Region / Subdivision',
+        choices=[],
+        validators=[Optional()],
     )
-    zip = StringField(
-        'Zip Code',
+    postal_code = StringField(
+        'Postal Code',
         validators=[Optional(), Length(max=20)],
         filters=[normalize_optional_text],
     )
@@ -129,6 +130,8 @@ class ProfileForm(FlaskForm):
         if not env or not env.use_user_location:
             for field_name in LOCATION_FIELD_NAMES:
                 del self[field_name]
+        else:
+            configure_location_choices(self)
 
 
 @account_bp.route('/account', methods=['GET', 'POST'])

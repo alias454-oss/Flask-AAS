@@ -3,7 +3,7 @@ import logging
 from flask import Blueprint, render_template, redirect, request, url_for, flash
 from flask_login import current_user
 from flask_wtf import FlaskForm
-from wtforms import StringField, BooleanField, SelectMultipleField, TextAreaField, SubmitField
+from wtforms import BooleanField, SelectField, SelectMultipleField, StringField, SubmitField, TextAreaField
 from wtforms.widgets import ListWidget, CheckboxInput
 from wtforms.validators import DataRequired, Optional, Email
 
@@ -11,6 +11,7 @@ from app.core.cache import get_cached_env_settings, get_cached_roles
 from app.core.extensions import db, limiter
 from app.core.security import get_client_ip
 from app.core.auth import login_required, admin_required
+from app.core.locations import configure_location_choices
 from app.core.meta import page_metadata
 from app.core.decorators import log_view_action
 from app.core.trackers import (
@@ -40,11 +41,11 @@ class AdminUserForm(FlaskForm):
         option_widget=CheckboxInput(),
         widget=ListWidget(prefix_label=False),
     )
-    country = StringField('Country', validators=[Optional()])
+    country_code = SelectField('Country', choices=[], validators=[Optional()])
     address = StringField('Address', validators=[Optional()])
     city = StringField('City', validators=[Optional()])
-    state = StringField('State', validators=[Optional()])
-    zip = StringField('Zip', validators=[Optional()])
+    zone_code = SelectField('Region / Subdivision', choices=[], validators=[Optional()])
+    postal_code = StringField('Postal Code', validators=[Optional()])
     activated = BooleanField('Activated')
     approved = BooleanField('Approved')
     notes = TextAreaField('User Notes')
@@ -66,11 +67,13 @@ class AdminUserForm(FlaskForm):
 
         if not env.use_user_location:
             # Remove location fields if location is disabled
-            del self.country
+            del self.country_code
             del self.address
             del self.city
-            del self.state
-            del self.zip
+            del self.zone_code
+            del self.postal_code
+        else:
+            configure_location_choices(self)
 
 def delete_user_image(path):
     from pathlib import Path

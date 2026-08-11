@@ -1,0 +1,38 @@
+<fieldset data-location-fields>
+  <legend>Location</legend>
+  <div class="form-group">
+    {{ form.country_code.label }}
+    {{ form.country_code(class_='form-control', data_location_country='true') }}
+    {% if form.country_code.errors %}
+      <span class="text-danger">{{ form.country_code.errors[0] }}</span>
+    {% endif %}
+  </div>
+  <div class="form-group">
+    {{ form.zone_code.label }}
+    {{ form.zone_code(class_='form-control', data_location_zone='true', data_zones_url=url_for('locations.zones')) }}
+    {% if form.zone_code.errors %}
+      <span class="text-danger">{{ form.zone_code.errors[0] }}</span>
+    {% endif %}
+  </div>
+  <div class="form-group">
+    {{ form.city.label }}
+    {{ form.city(size=30, class_='form-control') }}
+    {% if form.city.errors %}
+      <span class="text-danger">{{ form.city.errors[0] }}</span>
+    {% endif %}
+  </div>
+  <div class="form-group">
+    {{ form.address.label }}
+    {{ form.address(size=60, class_='form-control') }}
+    {% if form.address.errors %}
+      <span class="text-danger">{{ form.address.errors[0] }}</span>
+    {% endif %}
+  </div>
+  <div class="form-group">
+    {{ form.postal_code.label }}
+    {{ form.postal_code(size=20, class_='form-control') }}
+    {% if form.postal_code.errors %}
+      <span class="text-danger">{{ form.postal_code.errors[0] }}</span>
+    {% endif %}
+  </div>
+</fieldset>
