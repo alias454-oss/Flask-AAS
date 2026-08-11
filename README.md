@@ -50,6 +50,7 @@ The base is intentionally designed to remain easy to run locally. Direct HTTP, g
   - `approved` → Optional admin review
 - Role-based access control (RBAC)
 - Flexible registration fields (company, phone, location, etc.)
+- Shared ISO 3166-1 country and ISO 3166-2 subdivision catalog for consistent host/plugin location fields
 - Admin panel with settings management
 - Single-user lockdown mode
 - Global CSRF protection
@@ -176,6 +177,7 @@ The current `example` application is a deliberately small compatibility/referenc
 | index.index                   | GET       | `/`                                                   |
 | login.login                   | GET, POST | `/login`                                              |
 | logout.logout                 | GET       | `/logout`                                             |
+| locations.zones               | GET       | `/reference/zones`                                    |
 | mfa.mfa_disable               | GET, POST | `/mfa/disable`                                        |
 | mfa.mfa_reauth                | GET, POST | `/mfa/reauth`                                         |
 | mfa.mfa_recovery_codes        | GET, POST | `/mfa/recovery-codes`                                 |
@@ -219,6 +221,14 @@ python manage.py db migrate -m "Initial migration"
 python manage.py db upgrade
 python manage.py seed-db
 ```
+
+Country and subdivision reference data is vendored under `app/data/` from the `iso-codes` project. `seed-db` synchronizes ISO 3166-1 countries and ISO 3166-2 zones, including subdivision type and parent hierarchy. To refresh the vendored snapshot from a locally installed `iso-codes` package:
+
+```bash
+python scripts/update_iso_reference.py
+```
+
+The default source directory is `/usr/share/iso-codes/json`; use `--source-dir` when your distribution installs the files elsewhere.
 
 **After local model changes**
 

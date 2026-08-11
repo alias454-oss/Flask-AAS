@@ -53,6 +53,8 @@ app = [
     "templates/**/*.html",
     "templates/**/*.txt",
     "data/*.txt",
+    "data/*.json",
+    "data/*.md",
     "static/**/*.css",
     "static/**/*.js",
     "static/**/*.svg",

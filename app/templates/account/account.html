@@ -164,50 +164,14 @@
     </fieldset>
 
     {% if env and env.use_user_location %}
-      <fieldset>
-        <legend>Location</legend>
-        <div class="form-group">
-          {{ form.country.label }}
-          {{ form.country(size=30, maxlength=100, class_='form-control') }}
-          {% if form.country.errors %}
-            <span class="text-danger">{{ form.country.errors[0] }}</span>
-          {% endif %}
-        </div>
-        <div class="form-group">
-          {{ form.state.label }}
-          {{ form.state(size=30, maxlength=100, class_='form-control') }}
-          {% if form.state.errors %}
-            <span class="text-danger">{{ form.state.errors[0] }}</span>
-          {% endif %}
-        </div>
-        <div class="form-group">
-          {{ form.city.label }}
-          {{ form.city(size=30, maxlength=100, class_='form-control') }}
-          {% if form.city.errors %}
-            <span class="text-danger">{{ form.city.errors[0] }}</span>
-          {% endif %}
-        </div>
-        <div class="form-group">
-          {{ form.address.label }}
-          {{ form.address(size=60, maxlength=255, class_='form-control') }}
-          {% if form.address.errors %}
-            <span class="text-danger">{{ form.address.errors[0] }}</span>
-          {% endif %}
-        </div>
-        <div class="form-group">
-          {{ form.zip.label }}
-          {{ form.zip(size=20, maxlength=20, class_='form-control') }}
-          {% if form.zip.errors %}
-            <span class="text-danger">{{ form.zip.errors[0] }}</span>
-          {% endif %}
-        </div>
-      </fieldset>
+      {% include "includes/location_fields.html" %}
     {% endif %}
 
     <div class="form-group">
       {{ form.submit(class_="btn btn-primary") }}
     </div>
   </form>
+<script src="{{ url_for('static', filename='js/location_fields.js') }}" defer></script>
 {% endblock %}
 
 {% block footer %}

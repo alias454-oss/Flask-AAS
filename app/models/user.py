@@ -25,11 +25,11 @@ class User(db.Model):
     fax = db.Column(db.String(50), nullable=True)
     alt_phone = db.Column(db.String(50), nullable=True)
 
-    country = db.Column(db.String(100), nullable=True)
+    country_code = db.Column(db.String(2), nullable=True)
     address = db.Column(db.String(255), nullable=True)
     city = db.Column(db.String(100), nullable=True)
-    state = db.Column(db.String(100), nullable=True)
-    zip = db.Column(db.String(20), nullable=True)
+    zone_code = db.Column(db.String(16), nullable=True)
+    postal_code = db.Column(db.String(20), nullable=True)
 
     reg_date = db.Column(db.DateTime, nullable=False, server_default=db.func.now())
     last_active = db.Column(db.DateTime, nullable=True)

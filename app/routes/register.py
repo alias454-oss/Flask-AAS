@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, timezone
 from flask import Blueprint, current_app, render_template, redirect, url_for, flash, abort
 from flask_login import current_user
 from flask_wtf import FlaskForm
-from wtforms import StringField, PasswordField, SubmitField, BooleanField
+from wtforms import BooleanField, PasswordField, SelectField, StringField, SubmitField
 from wtforms.validators import DataRequired, Email, Optional, Length
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
@@ -15,6 +15,7 @@ from app.core.security import generate_token, normalize_username, normalize_emai
 from app.core.meta import page_metadata
 from app.core.decorators import log_view_action
 from app.core.trackers import current_route, log_action, log_action_isolated, audit_activity_enabled
+from app.core.locations import configure_location_choices
 from app.core.mailer import (
     get_mail_configuration_state,
     send_password_setup_email,
@@ -42,11 +43,11 @@ class RegisterForm(FlaskForm):
     first_name = StringField('First Name', validators=[Optional(), Length(max=50)])
     last_name = StringField('Last Name', validators=[Optional(), Length(max=50)])
     phone = StringField('Phone', validators=[Optional(), Length(max=20)])
-    country = StringField('Country Code', validators=[Optional(), Length(max=10)])
+    country_code = SelectField('Country', choices=[], validators=[Optional()])
     address = StringField('Address', validators=[Optional(), Length(max=150)])
     city = StringField('City', validators=[Optional(), Length(max=50)])
-    state = StringField('State', validators=[Optional(), Length(max=50)])
-    zip = StringField('Zip Code', validators=[Optional(), Length(max=20)])
+    zone_code = SelectField('Region / Subdivision', choices=[], validators=[Optional()])
+    postal_code = StringField('Postal Code', validators=[Optional(), Length(max=20)])
     agree = BooleanField('I agree to the terms of service', validators=[DataRequired()])
     captcha = StringField("Enter CAPTCHA", validators=[CaptchaRequired()])
     nobot_check = StringField('Leave empty')  # hidden in template
@@ -63,11 +64,13 @@ class RegisterForm(FlaskForm):
 
         if not env.use_user_location:
             # Remove location fields if location is disabled
-            del self.country
+            del self.country_code
             del self.address
             del self.city
-            del self.state
-            del self.zip
+            del self.zone_code
+            del self.postal_code
+        else:
+            configure_location_choices(self)
 
 @register_bp.route('/register', methods=['GET', 'POST'])
 @limiter.limit("5 per hour", key_func=get_client_ip)
@@ -200,11 +203,11 @@ def register():
             first_name=get_field_data('first_name'),
             last_name=get_field_data('last_name'),
             phone=get_field_data('phone'),
-            country=get_field_data('country'),
+            country_code=get_field_data('country_code'),
             address=get_field_data('address'),
             city=get_field_data('city'),
-            state=get_field_data('state'),
-            zip=get_field_data('zip'),
+            zone_code=get_field_data('zone_code'),
+            postal_code=get_field_data('postal_code'),
             reg_date=datetime.now(timezone.utc),
             last_active=datetime.now(timezone.utc),
             activated=False,

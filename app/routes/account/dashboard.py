@@ -6,6 +6,7 @@ from flask_login import current_user
 from app.core.auth import login_required
 
 from app.core.extensions import limiter
+from app.core.locations import country_name, zone_name
 from app.core.meta import page_metadata
 from app.core.decorators import log_view_action
 
@@ -20,4 +21,9 @@ dashboard_bp = Blueprint('dashboard', __name__)
 def dashboard():
     meta = page_metadata.get("dashboard", {})
 
-    return render_template('account/dashboard.html', **meta)
+    return render_template(
+        'account/dashboard.html',
+        country_name=country_name(current_user.country_code),
+        zone_name=zone_name(current_user.zone_code),
+        **meta,
+    )

@@ -30,6 +30,7 @@ from .robots import robots_bp
 from .sitemap import sitemap_bp
 from .captcha import captcha_bp
 from .contact import contact_bp
+from .locations import locations_bp
 
 # Logging
 logger = logging.getLogger(__name__)
@@ -40,6 +41,7 @@ all_blueprints = [
     mfa_bp,
     captcha_bp,
     contact_bp,
+    locations_bp,
     sitemap_bp,
     robots_bp,
     about_bp,
