@@ -26,6 +26,9 @@
 
     try {
       const url = new URL(endpoint, window.location.origin);
+      if (url.origin !== window.location.origin) {
+        throw new Error("Subdivision lookup endpoint must be same-origin");
+      }
       url.searchParams.set("country", countryCode);
       const response = await fetch(url, {
         credentials: "same-origin",
