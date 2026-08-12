@@ -87,29 +87,51 @@
               {% endif %}
 
               {% if row.datasets or row.dataset_error %}
-                <div class="plugin-application-data">
-                  <h4>Application Data</h4>
+                <section class="plugin-application-data panel"
+                         aria-labelledby="application-data-{{ registration.id }}">
+                  <h4 id="application-data-{{ registration.id }}">Application Data</h4>
                   {% if row.dataset_error %}
                     <p class="form-error">{{ row.dataset_error }}</p>
                   {% endif %}
-                  {% for dataset in row.datasets %}
-                    <div class="plugin-dataset">
-                      <p>
-                        <strong>{{ dataset.label }}</strong>
-                        {% if dataset.description %}<br />{{ dataset.description }}{% endif %}
-                        {% if dataset.status %}<br /><strong>Status:</strong> {{ dataset.status }}{% endif %}
-                      </p>
-                      {% if dataset.action_label %}
-                        <form method="POST"
-                              action="{{ url_for('plugins.run_dataset_action', registration_id=registration.id, dataset_key=dataset.key) }}"
-                              class="inline-action-form">
-                          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
-                          <button type="submit" class="button-link">{{ dataset.action_label }}</button>
-                        </form>
-                      {% endif %}
+                  {% if row.datasets %}
+                    <div class="table-wrap">
+                      <table class="data-table">
+                        <thead>
+                          <tr>
+                            <th scope="col">Data Type</th>
+                            <th scope="col">Status</th>
+                            <th scope="col">Action</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {% for dataset in row.datasets %}
+                            <tr>
+                              <td>
+                                <strong>{{ dataset.label }}</strong>
+                                {% if dataset.description %}
+                                  <div class="data-table__description">{{ dataset.description }}</div>
+                                {% endif %}
+                              </td>
+                              <td>{{ dataset.status or "—" }}</td>
+                              <td>
+                                {% if dataset.action_label %}
+                                  <form method="POST"
+                                        action="{{ url_for('plugins.run_dataset_action', registration_id=registration.id, dataset_key=dataset.key) }}"
+                                        class="inline-action-form">
+                                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+                                    <button type="submit" class="button-link">{{ dataset.action_label }}</button>
+                                  </form>
+                                {% else %}
+                                  —
+                                {% endif %}
+                              </td>
+                            </tr>
+                          {% endfor %}
+                        </tbody>
+                      </table>
                     </div>
-                  {% endfor %}
-                </div>
+                  {% endif %}
+                </section>
               {% endif %}
 
               <div class="user-actions">

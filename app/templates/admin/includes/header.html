@@ -1,9 +1,9 @@
-<header class="site-header">
+<header id="site-header" class="site-header">
   <div class="container header-flex">
     <h1 class="logo">
       <a href="{{ url_for('index.index') }}" class="logo__link">{{ env.site_name }}</a>
     </h1>
-    <nav class="menu">
+    <nav id="primary-navigation" class="menu" aria-label="Primary navigation">
       <ul class="menu__list">
         <li class="menu__item"><a class="menu__link" href="{{ url_for('index.index') }}">Home</a></li>
         <li class="menu__item"><a class="menu__link" href="{{ url_for('about.about') }}">About</a></li>
@@ -14,7 +14,7 @@
         {% else %}
           <li class="menu__item"><a class="menu__link" href="{{ url_for('login.login') }}">Login</a></li>
           {% if env.allow_registration %}
-            <li class="menu__item"><a href="{{ url_for('register.register') }}">Register</a></li>
+            <li class="menu__item"><a class="menu__link" href="{{ url_for('register.register') }}">Register</a></li>
           {% endif %}
         {% endif %}
       </ul>

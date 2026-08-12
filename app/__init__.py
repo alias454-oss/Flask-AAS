@@ -220,13 +220,6 @@ def create_app():
     # same current enabled/configured access state as plugin application routes.
     app.jinja_env.globals["plugin_navigation"] = visible_plugin_navigation
 
-    @app.context_processor
-    def inject_timing():
-        page_gen_time = None
-        if hasattr(g, "start_time"):
-            page_gen_time = round((time.time() - g.start_time) * 1000, 2)  # ms
-        return {"page_gen_time": page_gen_time}
-
     # User loader for Flask-Login
     @login_manager.user_loader
     def load_user(session_id):
@@ -285,7 +278,22 @@ def create_app():
     @app.after_request
     def response_minify(response):
         if response.content_type == u'text/html; charset=utf-8':
-            response.set_data(minify_html.minify(response.get_data(as_text=True)))
+            html = minify_html.minify(
+                response.get_data(as_text=True),
+                keep_closing_tags=True,
+                keep_html_and_head_opening_tags=True,
+            )
+
+            # Ordinary template comments remain stripped by the minifier. Add only
+            # the intentional request timing marker after minification so it survives.
+            if hasattr(g, "start_time"):
+                closing_body = html.rfind("</body>")
+                if closing_body != -1:
+                    page_gen_time = round((time.time() - g.start_time) * 1000, 2)
+                    marker = f"<!-- PageGen in {page_gen_time} ms -->"
+                    html = f"{html[:closing_body]}{marker}{html[closing_body:]}"
+
+            response.set_data(html)
         return response
 
     return app

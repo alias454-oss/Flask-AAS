@@ -30,13 +30,7 @@
     </ul>
 
     {% if current_user.is_admin %}
-      <h3>Admin Menu</h3>
-      <ul>
-        <li><a href="{{ url_for('admin.admin_home') }}">Admin Home</a></li>
-        <li><a href="{{ url_for('settings.settings') }}">Site Settings</a></li>
-        <li><a href="{{ url_for('register.register') }}">Register User</a></li>
-        <li><a href="{{ url_for('users.list_users') }}">View Users</a></li>
-      </ul>
+      {% include "admin/includes/menu.html" %}
     {% endif %}
   {% endif %}
 </div>
