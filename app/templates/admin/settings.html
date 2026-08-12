@@ -108,6 +108,13 @@
       </div>
       <div class="form-group">
         {{ form.users_stored_path.label }} {{ form.users_stored_path(class_="form-control") }}
+        <div class="form-help">
+          Relative paths resolve from the application root. Absolute paths are used as configured.
+          Changing this path does not move existing user files.
+        </div>
+        {% for error in form.users_stored_path.errors %}
+          <div class="form-error">{{ error }}</div>
+        {% endfor %}
       </div>
     </fieldset>
 

@@ -100,7 +100,10 @@ class AdminSettingsForm(FlaskForm):
         "Show Users Per Page",
         validators=[Optional(), NumberRange(min=1, max=100)],
     )
-    users_stored_path = StringField("User Storage Path", validators=[Optional()])
+    users_stored_path = StringField(
+        "User Storage Path",
+        validators=[DataRequired(), Length(max=255)],
+    )
 
     # UI and Look & Feel
     template = SelectField("Main Site Template", choices=[], validators=[Optional()])
@@ -220,6 +223,14 @@ class AdminSettingsForm(FlaskForm):
     )
 
     submit = SubmitField("Update Settings")
+
+    def validate_users_stored_path(self, field):
+        normalized = str(field.data or "").strip()
+        if not normalized:
+            raise ValidationError("User Storage Path is required.")
+        if "\x00" in normalized:
+            raise ValidationError("User Storage Path contains an invalid null byte.")
+        field.data = normalized
 
     def validate_site_url(self, field):
         try:

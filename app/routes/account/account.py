@@ -7,10 +7,18 @@ from flask_login import current_user
 
 from app.core.auth import login_required
 from flask_wtf import FlaskForm
+from flask_wtf.file import FileField, FileRequired
 from sqlalchemy.exc import SQLAlchemyError
 from wtforms import SelectField, StringField, SubmitField
 from wtforms.validators import Length, Optional
 
+from app.core.avatar import (
+    ProfileImageError,
+    delete_profile_image,
+    max_upload_request_bytes,
+    profile_image_data_uri,
+    store_profile_image,
+)
 from app.core.cache import get_cached_env_settings
 from app.core.decorators import log_view_action
 from app.core.extensions import db, limiter
@@ -63,6 +71,17 @@ def normalize_optional_text(value):
         .strip()
     )
     return normalized or None
+
+
+class ProfileImageForm(FlaskForm):
+    image = FileField(
+        'Profile Image',
+        validators=[FileRequired(message='Select an image to upload.')],
+    )
+
+
+class RemoveProfileImageForm(FlaskForm):
+    pass
 
 
 class ProfileForm(FlaskForm):
@@ -141,8 +160,16 @@ class ProfileForm(FlaskForm):
 def account():
     meta = page_metadata.get("account", {})
     form = ProfileForm(obj=current_user)
+    image_form = ProfileImageForm()
+    remove_image_form = RemoveProfileImageForm()
+    profile_image = profile_image_data_uri(current_user.image)
     active_sessions = UserSession.active_for_user(current_user.id)
     current_session_id = current_user.session_record_id
+    other_sessions = [
+        user_session
+        for user_session in active_sessions
+        if user_session.id != current_session_id
+    ]
     previous_login_at = UserSession.previous_login_at(
         current_user.id,
         current_session_id,
@@ -187,8 +214,12 @@ def account():
             return render_template(
                 "account/account.html",
                 form=form,
+                image_form=image_form,
+                remove_image_form=remove_image_form,
+                profile_image=profile_image,
                 active_sessions=active_sessions,
                 current_session_id=current_session_id,
+                other_sessions=other_sessions,
                 previous_login_at=previous_login_at,
                 **meta,
             )
@@ -199,11 +230,115 @@ def account():
     return render_template(
         "account/account.html",
         form=form,
+        image_form=image_form,
+        remove_image_form=remove_image_form,
+        profile_image=profile_image,
         active_sessions=active_sessions,
         current_session_id=current_session_id,
+        other_sessions=other_sessions,
         previous_login_at=previous_login_at,
         **meta,
     )
+
+
+@account_bp.route('/account/profile-image', methods=['POST'])
+@limiter.limit("5 per minute", exempt_when=lambda: not current_user.is_authenticated)
+@login_required
+def upload_profile_image():
+    request.max_content_length = max_upload_request_bytes()
+    form = ProfileImageForm()
+    if not form.validate_on_submit():
+        message = next(
+            (error for errors in form.errors.values() for error in errors),
+            "Select an image to upload.",
+        )
+        flash(message, "danger")
+        return redirect(url_for('account.account'))
+
+    old_filename = current_user.image
+    try:
+        new_filename = store_profile_image(form.image.data)
+    except ProfileImageError as exc:
+        flash(str(exc), "danger")
+        return redirect(url_for('account.account'))
+    except (OSError, RuntimeError):
+        logger.exception(
+            "Profile image storage failed for user_id=%s ip=%s",
+            current_user.id,
+            get_client_ip(),
+        )
+        flash("Your profile image could not be stored. Please try again.", "danger")
+        return redirect(url_for('account.account'))
+
+    current_user.image = new_filename
+    if audit_activity_enabled():
+        log_action(
+            user_id=current_user.id,
+            action="profile_image_updated",
+            target=current_route(),
+            extra_data={"replaced_existing": bool(old_filename)},
+        )
+
+    try:
+        db.session.commit()
+    except SQLAlchemyError:
+        db.session.rollback()
+        delete_profile_image(new_filename)
+        logger.exception(
+            "Profile image update commit failed for user_id=%s",
+            current_user.id,
+        )
+        flash("Your profile image could not be updated. Please try again.", "danger")
+        return redirect(url_for('account.account'))
+
+    if old_filename and old_filename != new_filename:
+        delete_profile_image(old_filename)
+
+    flash(
+        "Your profile image has been replaced."
+        if old_filename
+        else "Your profile image has been uploaded.",
+        "success",
+    )
+    return redirect(url_for('account.account'))
+
+
+@account_bp.route('/account/profile-image/remove', methods=['POST'])
+@limiter.limit("5 per minute", exempt_when=lambda: not current_user.is_authenticated)
+@login_required
+def remove_profile_image():
+    form = RemoveProfileImageForm()
+    if not form.validate_on_submit():
+        flash("The profile image removal request was invalid.", "danger")
+        return redirect(url_for('account.account'))
+
+    old_filename = current_user.image
+    if not old_filename:
+        flash("No profile image is currently set.", "info")
+        return redirect(url_for('account.account'))
+
+    current_user.image = None
+    if audit_activity_enabled():
+        log_action(
+            user_id=current_user.id,
+            action="profile_image_removed",
+            target=current_route(),
+        )
+
+    try:
+        db.session.commit()
+    except SQLAlchemyError:
+        db.session.rollback()
+        logger.exception(
+            "Profile image removal commit failed for user_id=%s",
+            current_user.id,
+        )
+        flash("Your profile image could not be removed. Please try again.", "danger")
+        return redirect(url_for('account.account'))
+
+    delete_profile_image(old_filename)
+    flash("Your profile image has been removed.", "success")
+    return redirect(url_for('account.account'))
 
 
 @account_bp.route('/account/sessions/<int:session_id>/revoke', methods=['POST'])
