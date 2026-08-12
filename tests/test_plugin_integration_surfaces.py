@@ -3,6 +3,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+import click
 from flask import Flask
 
 from app.core.extensions import db
@@ -10,7 +11,8 @@ from app.models import EnvSettings, PluginRegistration, User
 from app.plugins.cli import plugin_cli
 from app.plugins.example import plugin as example_plugin
 from app.plugins.example.models import ExampleSettings
-from app.plugins.interface import PluginConfiguration
+from app.plugins.interface import ApplicationPlugin, PluginConfiguration
+from app.plugins.manifest import PluginManifest
 from app.plugins.migrations import PluginMigrationManager
 from app.plugins.loader import STATUS_NEEDS_CONFIGURATION, initialize_plugins
 from app.plugins.navigation import get_plugin_navigation, visible_plugin_navigation
@@ -162,6 +164,92 @@ class ExamplePluginIntegrationSurfaceTests(unittest.TestCase):
         self.assertEqual(result.exit_code, 0)
         self.assertIn("Reference application commands.", result.output)
         self.assertIn("status", result.output)
+        self.assertIn("db", result.output)
+        self.assertNotIn("db", example_plugin.get_cli().commands)
+
+    def test_plugin_db_help_exposes_migration_init(self):
+        result = self.app.test_cli_runner().invoke(
+            args=["plugin", "run", "example", "db", "--help"]
+        )
+
+        self.assertEqual(result.exit_code, 0)
+        self.assertIn("init", result.output)
+        self.assertIn("migrate", result.output)
+        self.assertIn("upgrade", result.output)
+
+    def test_manifest_migrations_supply_db_cli_without_plugin_owned_cli(self):
+        plugin_dir = Path(self.temp_dir.name) / "migration-only-plugin"
+        plugin_dir.mkdir()
+        manifest_path = plugin_dir / "plugin.toml"
+        manifest_path.write_text("[plugin]\n", encoding="utf-8")
+        manifest = PluginManifest(
+            plugin_id="migration-only",
+            name="Migration Only",
+            version="0.1.0",
+            api_version=1,
+            entrypoint="migration_only.plugin:plugin",
+            migrations="migrations",
+            path=manifest_path,
+        )
+
+        class MigrationOnlyPlugin(ApplicationPlugin):
+            plugin_id = manifest.plugin_id
+            name = manifest.name
+            version = manifest.version
+            api_version = manifest.api_version
+
+            def __init__(self):
+                self.manifest = manifest
+
+            def validate_config(self):
+                return PluginConfiguration(configured=True)
+
+            def clear_secrets(self):
+                return None
+
+            def register(self, app):
+                return None
+
+        plugin = MigrationOnlyPlugin()
+        runner = self.app.test_cli_runner()
+        with patch("app.plugins.cli._registered_plugin", return_value=plugin):
+            help_result = runner.invoke(
+                args=["plugin", "run", "migration-only", "--help"]
+            )
+            init_result = runner.invoke(
+                args=["plugin", "run", "migration-only", "db", "init"]
+            )
+
+        self.assertEqual(help_result.exit_code, 0, help_result.output)
+        self.assertIn("db", help_result.output)
+        self.assertEqual(init_result.exit_code, 0, init_result.output)
+        self.assertIn(
+            "Initialized Migration Only migration environment",
+            init_result.output,
+        )
+        self.assertTrue((plugin_dir / "migrations" / "env.py").is_file())
+        self.assertTrue((plugin_dir / "migrations" / "script.py.mako").is_file())
+        self.assertTrue((plugin_dir / "migrations" / "versions").is_dir())
+
+    def test_manifest_migrations_reserve_top_level_db_command(self):
+        manifest = example_plugin.manifest
+
+        @click.group()
+        def conflicting_cli():
+            pass
+
+        @conflicting_cli.group("db")
+        def conflicting_db():
+            pass
+
+        with patch.object(example_plugin, "get_cli", return_value=conflicting_cli):
+            result = self.app.test_cli_runner().invoke(
+                args=["plugin", "run", "example", "--help"]
+            )
+
+        self.assertNotEqual(result.exit_code, 0)
+        self.assertIn("reserved top-level CLI command 'db'", result.output)
+        self.assertEqual(example_plugin.manifest, manifest)
 
     def test_unknown_plugin_cli_fails_cleanly(self):
         result = self.app.test_cli_runner().invoke(

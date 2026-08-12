@@ -56,65 +56,6 @@ def _refresh_host_configuration(registration: PluginRegistration):
     return refresh_configuration(registration, plugin)
 
 
-@cli.group("db")
-def database_commands():
-    """Manage Example-owned database schema migrations."""
-
-
-@database_commands.command("current")
-def database_current():
-    """Show the current and head Example schema revisions."""
-
-    try:
-        manager = _migration_manager()
-        current = manager.current_revision()
-        head = manager.head_revision()
-    except PluginMigrationError as exc:
-        raise click.ClickException(str(exc)) from exc
-
-    click.echo(f"current={current or '<base>'}")
-    click.echo(f"head={head or '<none>'}")
-
-
-@database_commands.command("upgrade")
-@click.argument("revision", required=False, default="head")
-def database_upgrade(revision: str):
-    """Upgrade the Example schema, bootstrapping a fresh namespace at head."""
-
-    try:
-        current = _migration_manager().upgrade(revision)
-    except PluginMigrationError as exc:
-        raise click.ClickException(str(exc)) from exc
-
-    click.echo(f"Example schema revision={current or '<base>'}")
-
-
-@database_commands.command("downgrade")
-@click.argument("revision", required=False, default="-1")
-def database_downgrade(revision: str):
-    """Explicitly downgrade the Example-owned schema."""
-
-    try:
-        current = _migration_manager().downgrade(revision)
-    except PluginMigrationError as exc:
-        raise click.ClickException(str(exc)) from exc
-
-    click.echo(f"Example schema revision={current or '<base>'}")
-
-
-@database_commands.command("migrate")
-@click.option("-m", "--message", required=True, help="Migration revision message.")
-def database_migrate(message: str):
-    """Autogenerate a new Example-owned migration revision."""
-
-    try:
-        revision = _migration_manager().migrate(message)
-    except PluginMigrationError as exc:
-        raise click.ClickException(str(exc)) from exc
-
-    click.echo(f"Generated Example migration {revision}.")
-
-
 @cli.command("status")
 def status():
     """Show reference configuration and persistence state without secrets."""

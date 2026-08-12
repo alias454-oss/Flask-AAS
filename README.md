@@ -97,7 +97,7 @@ Additional implementations extend `PasswordCheckProvider` and register through `
 - Admin **Upgrade Database Schema** action for an enabled compatible plugin that is migration-pending; the browser path upgrades only to `head`
 - **Reload App Config** applies structural/runtime-snapshot changes through a fresh Gunicorn worker instead of mutating Flask Blueprints in a running process; already-loaded route/navigation access still follows the current persisted `enabled/configured` gate
 - Immediate request/navigation denial after disable, followed by structural removal on reload
-- Plugin-owned CLI commands through `python manage.py plugin run <plugin_id> ...`, including plugin-owned migration/configuration commands
+- Plugin CLI dispatch through `python manage.py plugin run <plugin_id> ...`; manifest-declared migrations receive host-owned `db` commands automatically while configuration/maintenance commands remain plugin-owned
 - Host-owned navigation integration and host theme/template inheritance for plugin pages
 - Plugin-owned ordinary configuration and persistence; disabling preserves business data/schema while clearing plugin-managed persisted secrets
 - Versioned `PLUGIN_API_VERSION = 1` compatibility boundary
@@ -257,14 +257,23 @@ For a plugin with declared migrations:
 - existing unversioned `plugin_<id>_*` tables fail closed rather than being blindly stamped;
 - plugin history uses its own `plugin_<id>_alembic_version` table and must not own Flask-AAS core tables.
 
-Example migration operations are explicit:
+When a manifest declares ``migrations``, Flask-AAS automatically supplies the
+standard plugin migration CLI; the plugin does not implement or register these
+commands itself. Initializing the Alembic environment is a source-development
+operation, while released plugins normally ship that environment and operators
+only inspect or upgrade it:
 
 ```bash
+python manage.py plugin run example db init
 python manage.py plugin run example db current
 python manage.py plugin run example db migrate -m "Describe plugin schema change"
 python manage.py plugin run example db upgrade
 python manage.py plugin run example db downgrade
 ```
+
+The top-level ``db`` command is reserved by Flask-AAS for any plugin whose
+manifest declares migrations. New plugins gain this lifecycle automatically
+from ``plugin.toml`` without adding plugin-specific migration commands to core.
 
 Development migration history remains disposable before the first supported release/checkpoint. Published schema checkpoints become durable upgrade origins. `AAS-039` remains open for the remaining release-grade acceptance work, including explicit core-Alembic exclusion of plugin-owned namespaces such as `plugin_example_*` while preserving the core-owned `plugin_registrations` table, a real `0001 -> 0002` upgrade, failed-migration semantics, and focused PostgreSQL coverage.
 
@@ -473,7 +482,7 @@ Admin → Site Settings
 → ACTIVE
 ```
 
-`Reload App Config` performs the structural Gunicorn reload and reconciles the worker runtime snapshot with persisted state. For an already structurally loaded plugin, request/navigation gating reads the current persisted `enabled/configured` flags immediately; reload is still the normal administrative step for reconciling runtime status and any startup-time plugin behavior. Database migration remains a separate privileged operation. The explicit plugin CLI is also available for diagnostics, migration, configuration, and plugin-owned maintenance when deliberately invoked:
+`Reload App Config` performs the structural Gunicorn reload and reconciles the worker runtime snapshot with persisted state. For an already structurally loaded plugin, request/navigation gating reads the current persisted `enabled/configured` flags immediately; reload is still the normal administrative step for reconciling runtime status and any startup-time plugin behavior. Database migration remains a separate privileged operation. The explicit plugin CLI is also available for diagnostics, host-provided migration management, configuration, and plugin-owned maintenance when deliberately invoked:
 
 ```bash
 python manage.py plugin run example status

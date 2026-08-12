@@ -8,7 +8,68 @@ from sqlalchemy import inspect, text
 from app.core.extensions import db
 from app.plugins.example.plugin import plugin as example_plugin
 from app.plugins.example.models import ExampleSettings
+from app.plugins.manifest import PluginManifest
 from app.plugins.migrations import PluginMigrationError, PluginMigrationManager
+
+
+class PluginMigrationInitializationTests(unittest.TestCase):
+    def setUp(self):
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.plugin_dir = Path(self.temp_dir.name) / "sample"
+        self.plugin_dir.mkdir()
+        manifest_path = self.plugin_dir / "plugin.toml"
+        manifest_path.write_text("[plugin]\n", encoding="utf-8")
+        self.manifest = PluginManifest(
+            plugin_id="sample",
+            name="Sample Application",
+            version="0.1.0",
+            api_version=1,
+            entrypoint="sample.plugin:plugin",
+            migrations="migrations",
+            path=manifest_path,
+        )
+        self.manager = PluginMigrationManager(self.manifest)
+
+    def tearDown(self):
+        self.temp_dir.cleanup()
+
+    def test_manager_can_exist_before_migration_environment_is_initialized(self):
+        self.assertFalse(self.manager.initialized())
+
+        with self.assertRaisesRegex(
+            PluginMigrationError,
+            "plugin run sample db init",
+        ):
+            self.manager.head_revision()
+
+    def test_initialize_creates_canonical_plugin_migration_environment(self):
+        migration_path = self.manager.initialize()
+
+        self.assertEqual(migration_path, self.plugin_dir / "migrations")
+        self.assertTrue(self.manager.initialized())
+        self.assertTrue((migration_path / "versions").is_dir())
+        env_source = (migration_path / "env.py").read_text(encoding="utf-8")
+        script_source = (migration_path / "script.py.mako").read_text(encoding="utf-8")
+        self.assertIn("run_plugin_migration_environment(context)", env_source)
+        self.assertIn("revision: str = ${repr(up_revision)}", script_source)
+        self.assertIn("${upgrades if upgrades else \"pass\"}", script_source)
+
+    def test_initialize_refuses_to_overwrite_initialized_environment(self):
+        self.manager.initialize()
+
+        with self.assertRaisesRegex(PluginMigrationError, "already initialized"):
+            self.manager.initialize()
+
+    def test_initialize_refuses_nonempty_partial_environment(self):
+        migration_path = self.plugin_dir / "migrations"
+        migration_path.mkdir()
+        marker = migration_path / "keep.txt"
+        marker.write_text("keep me", encoding="utf-8")
+
+        with self.assertRaisesRegex(PluginMigrationError, "not empty"):
+            self.manager.initialize()
+
+        self.assertEqual(marker.read_text(encoding="utf-8"), "keep me")
 
 
 class PluginMigrationTests(unittest.TestCase):
