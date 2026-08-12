@@ -1,4 +1,6 @@
+import io
 import os
+import shutil
 import tempfile
 import unittest
 from contextlib import ExitStack
@@ -6,10 +8,12 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import patch
 
-from flask import Blueprint, Flask
+from flask import Blueprint, Flask, g
 from flask_login import LoginManager
 from sqlalchemy.exc import SQLAlchemyError
+from PIL import Image
 
+from app.core.avatar import profile_image_data_uri, profile_image_root
 from app.core.extensions import bcrypt, csrf, db, limiter
 from app.models import AuditActivity, Country, EnvSettings, User, UserSession, Zone
 from app.routes.account.account import account_bp
@@ -147,6 +151,9 @@ class AccountProfileRouteTests(unittest.TestCase):
         db.drop_all()
         db.create_all()
         EnvSettings._cached_instance = None
+        self.image_root = Path(self.temp_dir.name) / 'profile-images'
+        shutil.rmtree(self.image_root, ignore_errors=True)
+        self.image_root.mkdir(parents=True, exist_ok=True)
 
         owner = User(
             username='settings-owner',
@@ -166,7 +173,7 @@ class AccountProfileRouteTests(unittest.TestCase):
             description='',
             keywords='',
             users_per_page=20,
-            users_stored_path='/tmp/users',
+            users_stored_path=str(self.image_root),
             use_captcha=True,
             use_mfa=False,
             use_verify_email=True,
@@ -273,6 +280,45 @@ class AccountProfileRouteTests(unittest.TestCase):
                 follow_redirects=False,
             )
 
+    def _profile_image_payload(self, *, format='JPEG', size=(480, 320), exif=False):
+        image = Image.new('RGB', size, color=(40, 90, 140))
+        payload = io.BytesIO()
+        save_kwargs = {}
+        if exif and format == 'JPEG':
+            metadata = Image.Exif()
+            metadata[0x010E] = 'private profile metadata'
+            save_kwargs['exif'] = metadata
+        image.save(payload, format=format, **save_kwargs)
+        image.close()
+        payload.seek(0)
+        return payload
+
+    def _upload_profile_image(self, payload=None, filename='avatar.jpg', *, route_audit=False):
+        if payload is None:
+            payload = self._profile_image_payload()
+        self._login()
+        with self._request_patches(route_audit=route_audit):
+            return self.client.post(
+                '/account/profile-image',
+                data={'image': (payload, filename)},
+                content_type='multipart/form-data',
+                follow_redirects=False,
+            )
+
+    def test_user_storage_path_uses_complete_configured_directory(self):
+        self.assertEqual(profile_image_root(), self.image_root.resolve())
+
+        self.settings.users_stored_path = 'static/images/users'
+        db.session.commit()
+        EnvSettings._cached_instance = None
+        if hasattr(g, '_env_settings'):
+            delattr(g, '_env_settings')
+
+        self.assertEqual(
+            profile_image_root(),
+            (Path(self.app.root_path) / 'static/images/users').resolve(),
+        )
+
     def test_login_is_required(self):
         with self._request_patches():
             response = self.client.get('/account', follow_redirects=False)
@@ -317,9 +363,18 @@ class AccountProfileRouteTests(unittest.TestCase):
 
         html = response.get_data(as_text=True)
         self.assertEqual(response.status_code, 200)
+        self.assertIn('<div class="account-summary-grid">', html)
         self.assertIn('<legend>Account Details</legend>', html)
         self.assertIn('<legend>Active Sessions</legend>', html)
         self.assertIn('<legend>Update Account Details</legend>', html)
+        self.assertLess(
+            html.index('<legend>Account Details</legend>'),
+            html.index('<legend>Update Account Details</legend>'),
+        )
+        self.assertLess(
+            html.index('<legend>Active Sessions</legend>'),
+            html.index('<legend>Update Account Details</legend>'),
+        )
         self.assertIn('<legend>Location</legend>', html)
         self.assertIn('name="country_code"', html)
         self.assertIn('name="zone_code"', html)
@@ -332,15 +387,20 @@ class AccountProfileRouteTests(unittest.TestCase):
             html,
         )
         self.assertIn('profile-user@example.test', html)
-        self.assertIn('<strong>Name:</strong> Existing User', html)
+        self.assertIn('id="account-identity-name"', html)
+        self.assertIn('Existing User', html)
+        self.assertIn('class="account-identity__username">profile-user</div>', html)
+        self.assertIn('class="account-identity__email">profile-user@example.test</div>', html)
+        self.assertIn('<dl class="account-details-list">', html)
+        self.assertIn('<dt>Email Status</dt>', html)
         self.assertIn('Email changes are not currently available.', html)
-        self.assertIn('<strong>Previous Login:</strong>', html)
-        self.assertIn('Previous Login:</strong>\n      None', html)
+        self.assertIn('<dt>Previous Login</dt>', html)
+        self.assertIn('<dd>None</dd>', html)
         self.assertIn('Current Session', html)
         self.assertIn('account-profile-test-agent', html)
         self.assertNotIn('name="email"', html)
         self.assertNotIn('name="username"', html)
-        self.assertNotIn('Multi-Factor Authentication:', html)
+        self.assertNotIn('<dt>MFA</dt>', html)
         self.assertNotIn('CAPTCHA', html)
 
     def test_mfa_controls_are_part_of_account_details_when_enabled(self):
@@ -353,7 +413,7 @@ class AccountProfileRouteTests(unittest.TestCase):
             disabled_response = self.client.get('/account')
 
         disabled_html = disabled_response.get_data(as_text=True)
-        self.assertIn('Multi-Factor Authentication:', disabled_html)
+        self.assertIn('<dt>MFA</dt>', disabled_html)
         self.assertIn('Disabled', disabled_html)
         self.assertIn('/mfa/setup', disabled_html)
         self.assertNotIn('<legend>Account Security</legend>', disabled_html)
@@ -372,6 +432,213 @@ class AccountProfileRouteTests(unittest.TestCase):
         self.assertIn('/mfa/recovery-codes', enabled_html)
         self.assertIn('/mfa/disable', enabled_html)
         self.assertNotIn('<legend>Account Security</legend>', enabled_html)
+
+    def test_profile_page_renders_profile_image_controls(self):
+        self._login()
+
+        with self._request_patches(render=False):
+            response = self.client.get('/account')
+
+        html = response.get_data(as_text=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('class="profile-image-preview"', html)
+        self.assertIn('images/no_user.jpg', html)
+        identity_section = html.split('<section class="account-identity"', 1)[1].split('</section>', 1)[0]
+        update_section = html.split('<legend>Update Account Details</legend>', 1)[1]
+        self.assertIn('class="profile-image-form"', identity_section)
+        self.assertIn('class="profile-image-help"', identity_section)
+        self.assertNotIn('class="profile-image-form"', update_section)
+        self.assertIn('action="/account/profile-image"', html)
+        self.assertIn('accept="image/jpeg,image/png,image/webp"', html)
+        self.assertIn('value="Upload Image"', html)
+        self.assertNotIn('/account/profile-image/remove', html)
+
+    def test_valid_profile_image_is_normalized_and_rendered_as_data_uri(self):
+        response = self._upload_profile_image(
+            self._profile_image_payload(size=(640, 320), exif=True),
+            'camera-original.jpg',
+        )
+
+        self.assertEqual(response.status_code, 302)
+        db.session.expire_all()
+        user = db.session.get(User, self.user_id)
+        self.assertRegex(user.image, r'^[0-9a-f]{32}\.webp$')
+        self.assertNotIn('camera-original', user.image)
+
+        stored_path = self.image_root / user.image
+        self.assertTrue(stored_path.is_file())
+        with Image.open(stored_path) as stored:
+            self.assertEqual(stored.format, 'WEBP')
+            self.assertEqual(stored.size, (256, 256))
+            self.assertEqual(len(stored.getexif()), 0)
+
+        data_uri = profile_image_data_uri(user.image)
+        self.assertTrue(data_uri.startswith('data:image/webp;base64,'))
+
+        with self._request_patches(render=False):
+            rendered = self.client.get('/account')
+        self.assertIn('data:image/webp;base64,', rendered.get_data(as_text=True))
+
+    def test_png_and_webp_sources_are_accepted(self):
+        for image_format, filename in (('PNG', 'avatar.png'), ('WEBP', 'avatar.webp')):
+            with self.subTest(image_format=image_format):
+                response = self._upload_profile_image(
+                    self._profile_image_payload(format=image_format),
+                    filename,
+                )
+                self.assertEqual(response.status_code, 302)
+                db.session.expire_all()
+                user = db.session.get(User, self.user_id)
+                self.assertTrue(user.image.endswith('.webp'))
+                (self.image_root / user.image).unlink()
+                user.image = None
+                db.session.commit()
+
+    def test_invalid_image_and_invalid_stored_name_are_not_exposed(self):
+        response = self._upload_profile_image(
+            io.BytesIO(b'not an image'),
+            'avatar.png',
+        )
+        self.assertEqual(response.status_code, 302)
+        db.session.expire_all()
+        self.assertIsNone(db.session.get(User, self.user_id).image)
+        self.assertEqual(list(self.image_root.iterdir()), [])
+        self.assertIsNone(profile_image_data_uri('../../etc/passwd'))
+
+    def test_profile_image_source_size_limit_is_enforced(self):
+        original_limit = self.app.config.get('USER_IMAGE_MAX_BYTES')
+        self.app.config['USER_IMAGE_MAX_BYTES'] = 32
+        try:
+            response = self._upload_profile_image(
+                self._profile_image_payload(),
+                'avatar.jpg',
+            )
+        finally:
+            if original_limit is None:
+                self.app.config.pop('USER_IMAGE_MAX_BYTES', None)
+            else:
+                self.app.config['USER_IMAGE_MAX_BYTES'] = original_limit
+
+        self.assertEqual(response.status_code, 302)
+        db.session.expire_all()
+        self.assertIsNone(db.session.get(User, self.user_id).image)
+        self.assertEqual(list(self.image_root.iterdir()), [])
+
+    def test_profile_image_upload_has_route_specific_request_size_limit(self):
+        original_limit = self.app.config.get('USER_IMAGE_MAX_BYTES')
+        self.app.config['USER_IMAGE_MAX_BYTES'] = 32
+        self._login()
+        try:
+            response = self.client.post(
+                '/account/profile-image',
+                data={'image': (io.BytesIO(b'x' * 300_000), 'oversized.jpg')},
+                content_type='multipart/form-data',
+                follow_redirects=False,
+            )
+        finally:
+            if original_limit is None:
+                self.app.config.pop('USER_IMAGE_MAX_BYTES', None)
+            else:
+                self.app.config['USER_IMAGE_MAX_BYTES'] = original_limit
+
+        self.assertEqual(response.status_code, 413)
+        db.session.expire_all()
+        self.assertIsNone(db.session.get(User, self.user_id).image)
+        self.assertEqual(list(self.image_root.iterdir()), [])
+
+    def test_replacing_and_removing_profile_image_cleans_generated_files(self):
+        first_response = self._upload_profile_image()
+        self.assertEqual(first_response.status_code, 302)
+        db.session.expire_all()
+        first_filename = db.session.get(User, self.user_id).image
+        first_path = self.image_root / first_filename
+        self.assertTrue(first_path.is_file())
+
+        second_response = self._upload_profile_image(
+            self._profile_image_payload(format='PNG'),
+            'replacement.png',
+        )
+        self.assertEqual(second_response.status_code, 302)
+        db.session.expire_all()
+        second_filename = db.session.get(User, self.user_id).image
+        second_path = self.image_root / second_filename
+        self.assertNotEqual(first_filename, second_filename)
+        self.assertFalse(first_path.exists())
+        self.assertTrue(second_path.is_file())
+
+        self._login()
+        with self._request_patches():
+            removed = self.client.post(
+                '/account/profile-image/remove',
+                follow_redirects=False,
+            )
+        self.assertEqual(removed.status_code, 302)
+        db.session.expire_all()
+        self.assertIsNone(db.session.get(User, self.user_id).image)
+        self.assertFalse(second_path.exists())
+
+    def test_profile_image_removal_commit_failure_keeps_database_and_file(self):
+        upload_response = self._upload_profile_image()
+        self.assertEqual(upload_response.status_code, 302)
+        db.session.expire_all()
+        filename = db.session.get(User, self.user_id).image
+        stored_path = self.image_root / filename
+        self.assertTrue(stored_path.is_file())
+
+        self._login()
+        with self._request_patches(), patch.object(
+            db.session,
+            'commit',
+            side_effect=SQLAlchemyError('database unavailable'),
+        ):
+            response = self.client.post(
+                '/account/profile-image/remove',
+                follow_redirects=False,
+            )
+
+        self.assertEqual(response.status_code, 302)
+        db.session.expire_all()
+        self.assertEqual(db.session.get(User, self.user_id).image, filename)
+        self.assertTrue(stored_path.is_file())
+
+    def test_profile_image_commit_failure_removes_new_file_and_keeps_database_state(self):
+        self._login()
+        with self._request_patches(), patch.object(
+            db.session,
+            'commit',
+            side_effect=SQLAlchemyError('database unavailable'),
+        ):
+            response = self.client.post(
+                '/account/profile-image',
+                data={'image': (self._profile_image_payload(), 'avatar.jpg')},
+                content_type='multipart/form-data',
+                follow_redirects=False,
+            )
+
+        self.assertEqual(response.status_code, 302)
+        db.session.expire_all()
+        self.assertIsNone(db.session.get(User, self.user_id).image)
+        self.assertEqual(list(self.image_root.iterdir()), [])
+
+    def test_profile_image_update_audit_does_not_store_filenames(self):
+        self.settings.enable_logging = True
+        db.session.commit()
+        EnvSettings._cached_instance = None
+
+        response = self._upload_profile_image(
+            self._profile_image_payload(),
+            'sensitive-original-name.jpg',
+            route_audit=True,
+        )
+
+        self.assertEqual(response.status_code, 302)
+        event = AuditActivity.query.filter_by(action='profile_image_updated').one()
+        self.assertEqual(event.user_id, self.user_id)
+        self.assertEqual(event.extra_data, {'replaced_existing': False})
+        self.assertNotIn('sensitive-original-name', event._extra_data)
+        db.session.expire_all()
+        filename = db.session.get(User, self.user_id).image
+        self.assertNotIn(filename, event._extra_data)
 
     def test_valid_profile_update_normalizes_values_and_protects_identity_fields(self):
         response = self._post(

@@ -13,68 +13,126 @@
     <a href="{{ url_for('reset.change_password') }}">change it here</a>.
   </p>
 
-  <fieldset>
-    <legend>Account Details</legend>
-    <div class="form-group">
-      <strong>Username:</strong> {{ current_user.username }}
-    </div>
-    <div class="form-group">
-      {% set full_name = [current_user.first_name, current_user.last_name] | select | join(' ') %}
-      <strong>Name:</strong> {{ full_name or 'Not provided' }}
-    </div>
-    <div class="form-group">
-      <strong>Email:</strong> {{ current_user.email }}
-      <div class="text-muted">Email changes are not currently available.</div>
-    </div>
-    <div class="form-group">
-      <strong>Email Status:</strong>
-      {% if not env or not env.use_verify_email %}
-        Verification not required
-      {% elif current_user.activated %}
-        Verified
-      {% else %}
-        Pending verification
+  {% set full_name = [current_user.first_name, current_user.last_name] | select | join(' ') %}
+  <section class="account-identity" aria-labelledby="account-identity-name">
+    <img
+      class="profile-image-preview"
+      src="{{ profile_image or url_for('static', filename='images/no_user.jpg') }}"
+      alt="Profile image for {{ current_user.username }}"
+    />
+    <div class="account-identity__details">
+      <h3 id="account-identity-name" class="account-identity__name">
+        {{ full_name or current_user.username }}
+      </h3>
+      {% if full_name %}
+        <div class="account-identity__username">{{ current_user.username }}</div>
       {% endif %}
-    </div>
-    <div class="form-group">
-      <strong>Account Approval:</strong>
-      {% if not env or not env.use_user_approval %}
-        Approval not required
-      {% elif current_user.approved %}
-        Approved
-      {% else %}
-        Pending approval
-      {% endif %}
-    </div>
-    {% if env and env.use_mfa %}
-      <div class="form-group">
-        <strong>Multi-Factor Authentication:</strong>
-        {% if current_user.mfa_enabled %}
-          Enabled
-          —
-          <a href="{{ url_for('mfa.mfa_replace') }}">Replace Authenticator</a>,
-          <a href="{{ url_for('mfa.mfa_recovery_codes') }}">Recovery Codes</a>,
-          or
-          <a href="{{ url_for('mfa.mfa_disable') }}">Disable MFA</a>
-        {% else %}
-          Disabled
-          —
-          <a href="{{ url_for('mfa.mfa_setup') }}">Set Up MFA</a>
-        {% endif %}
-      </div>
-    {% endif %}
-    <div class="form-group">
-      <strong>Registered:</strong>
-      {{ current_user.reg_date.strftime('%Y-%m-%d') if current_user.reg_date else 'Unknown' }}
-    </div>
-    <div class="form-group">
-      <strong>Previous Login:</strong>
-      {{ previous_login_at.strftime('%Y-%m-%d %H:%M UTC') if previous_login_at else 'None' }}
-    </div>
-  </fieldset>
+      <div class="account-identity__email">{{ current_user.email }}</div>
 
-  <fieldset>
-    <legend>Active Sessions</legend>
+      <div class="account-identity__image-controls">
+        <div class="profile-image-actions">
+          <form
+            class="profile-image-form"
+            method="POST"
+            action="{{ url_for('account.upload_profile_image') }}"
+            enctype="multipart/form-data"
+          >
+            {{ image_form.hidden_tag() }}
+            {{
+              image_form.image(
+                accept='image/jpeg,image/png,image/webp',
+                aria_label='Profile Image',
+                class_='profile-image-input',
+              )
+            }}
+            <input
+              type="submit"
+              value="{{ 'Replace Image' if current_user.image else 'Upload Image' }}"
+            />
+          </form>
+
+          {% if current_user.image %}
+            <form
+              class="profile-image-remove-form"
+              method="POST"
+              action="{{ url_for('account.remove_profile_image') }}"
+            >
+              {{ remove_image_form.hidden_tag() }}
+              <button type="submit" class="button button--secondary button--small">
+                Remove Image
+              </button>
+            </form>
+          {% endif %}
+        </div>
+
+        <div class="profile-image-help">
+          JPEG, PNG, or WebP. Cropped to a square on upload.
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <div class="account-summary-grid">
+    <fieldset>
+      <legend>Account Details</legend>
+      <dl class="account-details-list">
+        <div class="account-details-list__item">
+          <dt>Email Status</dt>
+          <dd>
+            {% if not env or not env.use_verify_email %}
+              Verification not required
+            {% elif current_user.activated %}
+              Verified
+            {% else %}
+              Pending verification
+            {% endif %}
+            <div class="text-muted">Email changes are not currently available.</div>
+          </dd>
+        </div>
+        <div class="account-details-list__item">
+          <dt>Account Approval</dt>
+          <dd>
+            {% if not env or not env.use_user_approval %}
+              Approval not required
+            {% elif current_user.approved %}
+              Approved
+            {% else %}
+              Pending approval
+            {% endif %}
+          </dd>
+        </div>
+        {% if env and env.use_mfa %}
+          <div class="account-details-list__item">
+            <dt>MFA</dt>
+            <dd>
+              {% if current_user.mfa_enabled %}
+                Enabled
+                —
+                <a href="{{ url_for('mfa.mfa_replace') }}">Replace Authenticator</a>,
+                <a href="{{ url_for('mfa.mfa_recovery_codes') }}">Recovery Codes</a>,
+                or
+                <a href="{{ url_for('mfa.mfa_disable') }}">Disable MFA</a>
+              {% else %}
+                Disabled
+                —
+                <a href="{{ url_for('mfa.mfa_setup') }}">Set Up MFA</a>
+              {% endif %}
+            </dd>
+          </div>
+        {% endif %}
+        <div class="account-details-list__item">
+          <dt>Registered</dt>
+          <dd>{{ current_user.reg_date.strftime('%Y-%m-%d') if current_user.reg_date else 'Unknown' }}</dd>
+        </div>
+        <div class="account-details-list__item">
+          <dt>Previous Login</dt>
+          <dd>{{ previous_login_at.strftime('%Y-%m-%d %H:%M UTC') if previous_login_at else 'None' }}</dd>
+        </div>
+      </dl>
+    </fieldset>
+
+    <fieldset>
+      <legend>Active Sessions</legend>
     {% if active_sessions %}
       {% for user_session in active_sessions %}
         <div class="form-group">
@@ -91,7 +149,7 @@
           Remember Me: {{ 'Yes' if user_session.remembered else 'No' }}<br />
           Browser: {{ user_session.user_agent or 'Unknown' }}
 
-          {% if user_session.id != current_session_id %}
+          {% if user_session.id != current_session_id and other_sessions | length > 1 %}
             <form
               method="POST"
               action="{{ url_for('account.revoke_session', session_id=user_session.id) }}"
@@ -103,22 +161,40 @@
         </div>
       {% endfor %}
 
-      {% if active_sessions | length > 1 %}
-        <form method="POST" action="{{ url_for('account.revoke_other_sessions') }}">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
-          <input type="submit" value="Log Out All Other Sessions" />
-        </form>
+      {% if other_sessions %}
+        <div class="account-session-actions">
+          {% if other_sessions | length == 1 %}
+            <form
+              method="POST"
+              action="{{ url_for('account.revoke_session', session_id=other_sessions[0].id) }}"
+            >
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+              <input type="submit" value="Revoke Session" />
+            </form>
+          {% endif %}
+
+          <form
+            class="account-session-actions__all"
+            method="POST"
+            action="{{ url_for('account.revoke_other_sessions') }}"
+          >
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+            <input type="submit" value="Log Out All Other Sessions" />
+          </form>
+        </div>
       {% endif %}
     {% else %}
       <p>No active sessions were found.</p>
     {% endif %}
-  </fieldset>
+    </fieldset>
+  </div>
 
-  <form method="POST" action="{{ url_for('account.account') }}" novalidate>
-    {{ form.hidden_tag() }}
+  <fieldset>
+    <legend>Update Account Details</legend>
 
-    <fieldset>
-      <legend>Update Account Details</legend>
+    <form method="POST" action="{{ url_for('account.account') }}" novalidate>
+      {{ form.hidden_tag() }}
+
       <div class="form-group">
         {{ form.company_name.label }}
         {{ form.company_name(size=30, maxlength=255, class_='form-control') }}
@@ -161,16 +237,16 @@
           <span class="text-danger">{{ form.fax.errors[0] }}</span>
         {% endif %}
       </div>
-    </fieldset>
 
-    {% if env and env.use_user_location %}
-      {% include "includes/location_fields.html" %}
-    {% endif %}
+      {% if env and env.use_user_location %}
+        {% include "includes/location_fields.html" %}
+      {% endif %}
 
-    <div class="form-group">
-      {{ form.submit(class_="btn btn-primary") }}
-    </div>
-  </form>
+      <div class="form-group">
+        {{ form.submit(class_="btn btn-primary") }}
+      </div>
+    </form>
+  </fieldset>
 <script src="{{ url_for('static', filename='js/location_fields.js') }}" defer></script>
 {% endblock %}
 

@@ -26,7 +26,7 @@
     <div class="user-content">
       <div class="user-avatar">
         <a href="{{ url_for('users.edit_user', user_id=user.id) }}">
-          <img src="{{ url_for('static', filename=user.image if user.image else 'images/no_user.jpg') }}"
+          <img src="{{ profile_images.get(user.id) or url_for('static', filename='images/no_user.jpg') }}"
                alt="{{ user.first_name }} {{ user.last_name }}"
                title="{{ user.first_name }} {{ user.last_name }}" />
         </a>
@@ -56,6 +56,15 @@
           <a href="{{ url_for('users.edit_user', user_id=user.id) }}" class="button-link">
             <img src="{{ url_for('static', filename='images/id_card_view.gif') }}" alt="View" /> View Full Details
           </a>
+
+          {% if user.image %}
+          <form method="POST"
+                action="{{ url_for('users.remove_profile_image', user_id=user.id) }}"
+                class="inline-action-form js-remove-profile-image-form">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+            <button type="submit" class="button-link danger">Remove Image</button>
+          </form>
+          {% endif %}
 
           <form method="POST"
                 action="{{ url_for('users.delete_user', user_id=user.id) }}"

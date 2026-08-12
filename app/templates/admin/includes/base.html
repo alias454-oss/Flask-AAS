@@ -9,11 +9,13 @@
 
   <link rel="shortcut icon" href="{{ url_for('static', filename='favicon.ico') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='themes/default/style.css') }}" />
+  {% block extra_styles %}{% endblock %}
   {% if enable_analytics %}
     <!-- Insert GA or Plausible script here -->
   {% endif %}
 </head>
-<body>
+<body class="site-body">
+  <a class="skip-link" href="#main-content">Skip to main content</a>
   <div class="page-container">
     {% block header %}{% endblock %}
 
@@ -21,10 +23,10 @@
       {% if messages %}
         {% for category, message in messages %}
           <div class="flash-messages">
-              <div class="{{ category }} flash">
-                {{ message }}
-                <button class="close-flash">×</button>
-              </div>
+            <div class="{{ category }} flash">
+              {{ message }}
+              <button class="close-flash" type="button" aria-label="Dismiss message">×</button>
+            </div>
           </div>
         {% endfor %}
       {% endif %}
@@ -32,20 +34,21 @@
 
     <div class="container layout-with-sidebar {{ sidebar_position | default('right') }}">
       {% if sidebar_position == 'left' %}
-        <aside class="sidebar">{% include "admin/includes/sidebar.html" %}</aside>
+        <aside id="site-sidebar" class="sidebar">{% include "admin/includes/sidebar.html" %}</aside>
       {% endif %}
 
-      <main class="site-main">
+      <main id="main-content" class="site-main">
         {% block content %}{% endblock %}
       </main>
 
       {% if sidebar_position == 'right' %}
-        <aside class="sidebar">{% include "admin/includes/sidebar.html" %}</aside>
+        <aside id="site-sidebar" class="sidebar">{% include "admin/includes/sidebar.html" %}</aside>
       {% endif %}
     </div>
 
     {% block footer %}{% endblock %}
   </div>
+
   <script nonce="{{ nonce }}">
     document.querySelectorAll('.close-flash').forEach(function(button) {
       button.addEventListener('click', function() {

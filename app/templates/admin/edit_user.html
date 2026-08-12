@@ -78,10 +78,13 @@
       <a href="{{ url_for('users.list_users') }}" class="btn btn-secondary ml-2">Back to Users</a>
     </div>
   </form>
-<script src="{{ url_for('static', filename='js/location_fields.js') }}" defer></script>
 {% endblock %}
 
 {% block footer %}
   {% include "admin/includes/footer.html" %}
+{% endblock %}
+
+{% block scripts %}
+  <script src="{{ url_for('static', filename='js/location_fields.js') }}" defer></script>
 {% endblock %}
 {% endif %}

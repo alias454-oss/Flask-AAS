@@ -147,7 +147,7 @@ def seed_env_settings():
         "site_mode": 1,  # 0 = public/multi-user, 1 = single-user
         "default_role_id": user_role.id if user_role else None,
         "users_per_page": 10,
-        "users_stored_path": "/images/users",
+        "users_stored_path": "static/images/users",
         "max_failed_attempts": 5,
         "lockout_duration_seconds": 900,
         "password_policy_enabled": current_app.config.get("PASSWORD_POLICY_ENABLED", True),

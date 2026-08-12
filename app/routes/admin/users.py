@@ -6,7 +6,9 @@ from flask_wtf import FlaskForm
 from wtforms import BooleanField, SelectField, SelectMultipleField, StringField, SubmitField, TextAreaField
 from wtforms.widgets import ListWidget, CheckboxInput
 from wtforms.validators import DataRequired, Optional, Email
+from sqlalchemy.exc import SQLAlchemyError
 
+from app.core.avatar import delete_profile_image, profile_image_data_uri
 from app.core.cache import get_cached_env_settings, get_cached_roles
 from app.core.extensions import db, limiter
 from app.core.security import get_client_ip
@@ -75,19 +77,6 @@ class AdminUserForm(FlaskForm):
         else:
             configure_location_choices(self)
 
-def delete_user_image(path):
-    from pathlib import Path
-
-    full_path = Path('static') / path
-    thumb_path = full_path.with_name(full_path.stem + '_thumb' + full_path.suffix)
-
-    for file in (full_path, thumb_path):
-        try:
-            file.unlink()
-        except FileNotFoundError:
-            pass
-
-
 @users_bp.route("/", methods=["GET"])
 @limiter.limit("20 per minute", key_func=get_client_ip)
 @log_view_action()
@@ -99,14 +88,61 @@ def list_users():
     page = request.args.get("page", 1, type=int)
     paginate = User.query.order_by(User.id.desc()).paginate(page=page, per_page=env.users_per_page)
     quick_stats = get_admin_quick_stats()
+    profile_images = {
+        user.id: profile_image_data_uri(user.image)
+        for user in paginate.items
+    }
 
     return render_template(
         "admin/list_users.html",
         paginate=paginate,
         users=paginate.items,
+        profile_images=profile_images,
         quick_stats=quick_stats,
         **meta,
     )
+
+
+@users_bp.route("/<int:user_id>/profile-image/remove", methods=["POST"])
+@limiter.limit("5 per minute", key_func=get_client_ip)
+@log_view_action(action="remove_user_profile_image")
+@login_required
+@admin_required
+def remove_profile_image(user_id):
+    user = db.session.get(User, user_id)
+    if user is None:
+        flash("User not found", "error")
+        return redirect(url_for("users.list_users"))
+
+    old_filename = user.image
+    if not old_filename:
+        flash("No profile image is currently set for this user.", "info")
+        return redirect(url_for("users.list_users"))
+
+    user.image = None
+    log_action(
+        action="admin_profile_image_removed",
+        user_id=current_user.id,
+        target=f"user:{user_id}",
+    )
+
+    try:
+        db.session.commit()
+    except SQLAlchemyError as exc:
+        db.session.rollback()
+        logger.exception("Failed to remove profile image for user %s", user_id)
+        log_action_isolated(
+            action="admin_profile_image_remove_failed",
+            user_id=current_user.id,
+            target=f"user:{user_id}",
+            extra_data={"error": str(exc)},
+        )
+        flash("The profile image could not be removed.", "error")
+        return redirect(url_for("users.list_users"))
+
+    delete_profile_image(old_filename)
+    flash("Profile image removed.", "success")
+    return redirect(url_for("users.list_users"))
 
 
 @users_bp.route("/<int:user_id>/delete", methods=["POST"])
@@ -142,6 +178,8 @@ def delete_user(user_id):
 
         return redirect(url_for("users.list_users"))
 
+    profile_image_filename = user.image
+
     try:
         actor_user_id = current_user.id
         audit_user_id = actor_user_id if actor_user_id != user_id else None
@@ -158,6 +196,7 @@ def delete_user(user_id):
         )
         db.session.delete(user)
         db.session.commit()
+        delete_profile_image(profile_image_filename)
         flash("User successfully deleted.", "success")
 
     except Exception as e:

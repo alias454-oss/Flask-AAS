@@ -7,11 +7,75 @@
 {% endblock %}
 
 {% block content %}
-  <h2>Admin Center</h2>
-  <h3>Logged in as <b>{{ current_user.username }}</b></h3>
+  <div class="admin-dashboard">
+    <header class="admin-dashboard__header">
+      <h2>Admin Dashboard</h2>
+      <p class="text-muted">
+        Site administration for <strong>{{ env.site_name }}</strong>. Signed in as
+        <strong>{{ current_user.username }}</strong>.
+      </p>
+    </header>
 
-  <p>This is the control panel. From here, you have full access to configure site settings and manage user accounts.</p>
-  <p>Oversee key administrative operations using this interface to maintain the system and keep it running smoothly.</p>
+    <section class="admin-dashboard__section" aria-labelledby="admin-overview-heading">
+      <h3 id="admin-overview-heading">Overview</h3>
+      <div class="admin-stat-grid">
+        <div class="admin-stat">
+          <strong class="admin-stat__value">{{ quick_stats.total_users }}</strong>
+          <span class="admin-stat__label">Total Users</span>
+        </div>
+
+        <div class="admin-stat">
+          <strong class="admin-stat__value">{{ quick_stats.pending_users }}</strong>
+          <span class="admin-stat__label">Pending Users</span>
+        </div>
+
+        {% if quick_stats.visitor_tracking_enabled %}
+          <div class="admin-stat">
+            <strong class="admin-stat__value">{{ quick_stats.online_users }}</strong>
+            <span class="admin-stat__label">Online Users</span>
+          </div>
+          <div class="admin-stat">
+            <strong class="admin-stat__value">{{ quick_stats.online_guests }}</strong>
+            <span class="admin-stat__label">Online Guests</span>
+          </div>
+        {% else %}
+          <div class="admin-stat admin-stat--wide">
+            <strong class="admin-stat__value">Off</strong>
+            <span class="admin-stat__label">Visitor Tracking</span>
+          </div>
+        {% endif %}
+      </div>
+    </section>
+
+    <section class="admin-dashboard__section" aria-labelledby="admin-tools-heading">
+      <h3 id="admin-tools-heading">Administration</h3>
+      <div class="admin-tool-grid">
+        <article class="panel admin-tool">
+          <h4>User Accounts</h4>
+          <p>Review accounts, roles, activation status, approval state, and administrative access.</p>
+          <div class="actions">
+            <a class="button" href="{{ url_for('users.list_users') }}">View Users</a>
+          </div>
+        </article>
+
+        <article class="panel admin-tool">
+          <h4>Site Settings</h4>
+          <p>Configure site-wide authentication, email, security, location, and operational settings.</p>
+          <div class="actions">
+            <a class="button" href="{{ url_for('settings.settings') }}">Open Settings</a>
+          </div>
+        </article>
+
+        <article class="panel admin-tool">
+          <h4>Applications</h4>
+          <p>Manage installed applications, lifecycle state, configuration, schema, and application data.</p>
+          <div class="actions">
+            <a class="button" href="{{ url_for('plugins.list_plugins') }}">Manage Applications</a>
+          </div>
+        </article>
+      </div>
+    </section>
+  </div>
 {% endblock %}
 
 {% block footer %}

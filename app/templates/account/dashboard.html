@@ -7,24 +7,66 @@
 
 {% block content %}
   <h2>Account Dashboard</h2>
-  <p>Welcome, {{ current_user.username }}</p>
+  <p>Welcome, {{ current_user.username }}.</p>
 
-  <h3>Profile Information</h3>
-  <p>
-    <strong>Name:</strong> {{ current_user.first_name }} {{ current_user.last_name }}<br />
-    <strong>Phone:</strong> {{ current_user.phone if current_user.phone else NO_INFO }}<br />
-    <strong>Alt Phone:</strong> {{ current_user.alt_phone if current_user.alt_phone else NO_INFO }}<br />
-    <strong>Fax:</strong> {{ current_user.fax if current_user.fax else NO_INFO }}<br />
-    {% if env.use_user_location %}
-      <strong>Address:</strong> {{ current_user.address if current_user.address else NO_INFO }}<br />
-      <strong>City:</strong> {{ current_user.city if current_user.city else NO_INFO }}<br />
-      <strong>Country:</strong> {{ country_name if country_name else NO_INFO }}<br />
-      <strong>Region / Subdivision:</strong> {{ zone_name if zone_name else NO_INFO }}<br />
-      <strong>Postal Code:</strong> {{ current_user.postal_code if current_user.postal_code else NO_INFO }}<br />
-    {% endif %}
-    <strong>Registered On:</strong> {{ current_user.created_at.strftime('%Y-%m-%d') }}<br />
-    <strong>Roles:</strong> {{ current_user.roles | map(attribute='name') | join(', ') }}
-  </p>
+  {% set applications = plugin_navigation() if plugin_navigation is defined else [] %}
+  <div class="account-summary-grid">
+    <fieldset>
+      <legend>Account Details</legend>
+      <div class="form-group">
+        <strong>Username:</strong> {{ current_user.username }}
+      </div>
+      <div class="form-group">
+        {% set full_name = [current_user.first_name, current_user.last_name] | select | join(' ') %}
+        <strong>Name:</strong> {{ full_name or 'Not provided' }}
+      </div>
+      <div class="form-group">
+        <strong>Email Status:</strong>
+        {% if not env or not env.use_verify_email %}
+          Verification not required
+        {% elif current_user.activated %}
+          Verified
+        {% else %}
+          Pending verification
+        {% endif %}
+      </div>
+      <div class="form-group">
+        <strong>Account Approval:</strong>
+        {% if not env or not env.use_user_approval %}
+          Approval not required
+        {% elif current_user.approved %}
+          Approved
+        {% else %}
+          Pending approval
+        {% endif %}
+      </div>
+      {% if env and env.use_mfa %}
+        <div class="form-group">
+          <strong>Multi-Factor Authentication:</strong>
+          {{ 'Enabled' if current_user.mfa_enabled else 'Disabled' }}
+        </div>
+      {% endif %}
+      <div class="actions">
+        <a class="button" href="{{ url_for('account.account') }}">Manage Account</a>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Applications</legend>
+      {% if applications %}
+        {% for item in applications %}
+          <div class="form-group">
+            <strong>{{ item.label }}</strong>
+            <div class="actions">
+              <a class="button" href="{{ url_for(item.endpoint) }}">Open</a>
+            </div>
+          </div>
+        {% endfor %}
+      {% else %}
+        <p>No applications are currently available.</p>
+      {% endif %}
+    </fieldset>
+  </div>
 {% endblock %}
 
 {% block footer %}

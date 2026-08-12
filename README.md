@@ -50,10 +50,22 @@ The base is intentionally designed to remain easy to run locally. Direct HTTP, g
   - `approved` → Optional admin review
 - Role-based access control (RBAC)
 - Flexible registration fields (company, phone, location, etc.)
+- Self-service account profile editing with canonical host profile-image upload/replace/remove using the existing `User.image` identity field
 - Shared ISO 3166-1 country and ISO 3166-2 subdivision catalog for consistent host/plugin location fields
 - Admin panel with settings management
 - Single-user lockdown mode
 - Global CSRF protection
+
+### Profile Images
+- Uses the existing `User.image` field; no additional profile-image table is required.
+- `Admin → Site Settings → User Storage Path` is the complete local storage directory.
+- Relative storage paths resolve from the Flask application root; absolute paths are used as configured.
+- Fresh installs default to `static/images/users`, which resolves to `app/static/images/users`.
+- Uploaded JPEG, PNG, or WebP files are decoded/validated, EXIF-oriented, center-cropped to 256x256, metadata-stripped, and re-encoded as WebP with a generated random filename.
+- Upload/replace/remove are authenticated, CSRF-protected, rate-limited operations with transaction-aware file cleanup.
+- Administrators can immediately remove an unacceptable custom profile image from **Admin → View Users**; the database reference is committed before best-effort file deletion, and users without a custom image do not expose a meaningless removal action.
+- Flask-AAS does not currently publish a generic profile-image/media route. Account/admin pages render the stored generated WebP internally; future application plugins decide whether a canonical host profile image is relevant or visible in their own domain.
+- Domain media such as OpenAuto listing photos remains plugin-owned. S3/object-storage support is a later concern if real host profile-image usage requires it.
 
 ### Password Check Providers
 Password checking is disabled by default. When enabled in **Admin → Site Settings**, every new-password workflow sends the candidate through the selected provider after the normal local policy checks. The built-in `local` provider uses the packaged common-password blocklist and performs no network requests.
@@ -105,9 +117,18 @@ Additional implementations extend `PasswordCheckProvider` and register through `
 
 Application plugin directories are deployment-supplied native Python code. Filesystem presence automatically registers validated static `plugin.toml` metadata with the application disabled; enabling a plugin is the explicit decision to trust that code to run with the permissions of the Flask-AAS process. Flask-AAS does not claim to sandbox in-process Python plugins.
 
-The current `example` application is a deliberately small compatibility/reference plugin. It proves public, authenticated, and coarse host-role-gated routes without adding a separate application-entitlement subsystem. OpenAuto is intended to be the first substantial consumer of the completed host contract.
+The current `example` application is a deliberately small compatibility/reference plugin. It proves public, authenticated, and coarse host-role-gated routes without adding a separate application-entitlement subsystem. YATSEE completed the first substantial migration proof, and OpenAuto has completed the first substantial clean-slate consumer validation of Plugin API v1.
 
 ---
+
+### Host Theme & Admin UI
+- The selected Flask-AAS theme owns generic typography, forms, buttons, panels, tables, pagination, layout, focus/accessibility behavior, and the main shell.
+- Plugin pages inherit the host theme through `templates/plugins/base.html`; plugin CSS is additive and should remain domain-specific.
+- The host admin shell intentionally remains separate where it has admin-only behavior, but it shares the same stylesheet and one canonical Admin Menu partial.
+- The Admin homepage provides a compact Overview plus direct User Accounts, Site Settings, and Applications destinations using existing route data only.
+- The account page keeps identity/avatar presentation and image controls together, uses a semantic read-only account summary beside Active Sessions, and keeps editable account fields in their own form section.
+- Current admin JavaScript is first-party/static and remains compatible with the nonce-based CSP; location lookup also enforces same-origin use.
+- HTML response minification preserves explicit document structure and closing tags. The PageGen timing comment is injected after minification while ordinary template comments remain stripped.
 
 ### Audit Logging
 #### **AuditLogin** (Authentication Attempts)
@@ -163,47 +184,51 @@ The current `example` application is a deliberately small compatibility/referenc
 
 ## API / Route Endpoints
 
-| Endpoint                      | Methods   | Rule                                                  |
-| ----------------------------- | --------- | ----------------------------------------------------- |
-| about.about                   | GET       | `/about`                                              |
-| account.account               | GET, POST | `/account`                                            |
-| account.revoke_other_sessions | POST      | `/account/sessions/revoke-others`                     |
-| account.revoke_session        | POST      | `/account/sessions/<int:session_id>/revoke`           |
-| admin.admin_home              | GET       | `/admin/`                                             |
-| captcha.captcha_image         | GET       | `/captcha_image`                                      |
-| contact.contact               | GET, POST | `/contact`                                            |
-| dashboard.dashboard           | GET       | `/dashboard`                                          |
-| favicon.favicon               | GET       | `/favicon.ico`                                        |
-| index.index                   | GET       | `/`                                                   |
-| login.login                   | GET, POST | `/login`                                              |
-| logout.logout                 | GET       | `/logout`                                             |
-| locations.zones               | GET       | `/reference/zones`                                    |
-| mfa.mfa_disable               | GET, POST | `/mfa/disable`                                        |
-| mfa.mfa_reauth                | GET, POST | `/mfa/reauth`                                         |
-| mfa.mfa_recovery_codes        | GET, POST | `/mfa/recovery-codes`                                 |
-| mfa.mfa_replace               | GET, POST | `/mfa/replace`                                        |
-| mfa.mfa_setup                 | GET, POST | `/mfa/setup`                                          |
-| mfa.mfa_verify                | GET, POST | `/mfa/verify`                                         |
-| plugins.disable               | POST      | `/admin/plugins/<int:registration_id>/disable`        |
-| plugins.enable                | POST      | `/admin/plugins/<int:registration_id>/enable`         |
-| plugins.list_plugins          | GET       | `/admin/plugins/`                                     |
-| plugins.reload_config         | POST      | `/admin/plugins/reload`                               |
-| plugins.upgrade_schema        | POST      | `/admin/plugins/<int:registration_id>/upgrade-schema` |
-| privacy.privacy               | GET       | `/privacy`                                            |
-| register.register             | GET, POST | `/register`                                           |
-| reset.change_password         | GET, POST | `/change-password`                                    |
-| reset.forgot_password         | GET, POST | `/forgot-password`                                    |
-| reset.reset_password          | GET, POST | `/reset-password/<token>`                             |
-| reset.set_password            | GET, POST | `/set-password/<token>`                               |
-| robots.robots                 | GET       | `/robots.txt`                                         |
-| settings.settings             | GET, POST | `/admin/settings/`                                    |
-| sitemap.sitemap               | GET       | `/sitemap.xml`                                        |
-| static                        | GET       | `/static/<path:filename>`                             |
-| tos.tos                       | GET       | `/tos`                                                |
-| users.delete_user             | POST      | `/admin/users/<int:user_id>/delete`                   |
-| users.edit_user               | GET, POST | `/admin/users/<int:user_id>/edit`                     |
-| users.list_users              | GET       | `/admin/users/`                                       |
-| verify.verify_email_token     | GET       | `/email/<token>`                                      |
+| Endpoint | Methods | Rule |
+|---|---|---|
+| about.about | GET | `/about` |
+| account.account | GET, POST | `/account` |
+| account.remove_profile_image | POST | `/account/profile-image/remove` |
+| account.revoke_other_sessions | POST | `/account/sessions/revoke-others` |
+| account.revoke_session | POST | `/account/sessions/<int:session_id>/revoke` |
+| account.upload_profile_image | POST | `/account/profile-image` |
+| admin.admin_home | GET | `/admin/` |
+| captcha.captcha_image | GET | `/captcha_image` |
+| contact.contact | GET, POST | `/contact` |
+| dashboard.dashboard | GET | `/dashboard` |
+| favicon.favicon | GET | `/favicon.ico` |
+| index.index | GET | `/` |
+| locations.zones | GET | `/reference/zones` |
+| login.login | GET, POST | `/login` |
+| logout.logout | GET | `/logout` |
+| mfa.mfa_disable | GET, POST | `/mfa/disable` |
+| mfa.mfa_reauth | GET, POST | `/mfa/reauth` |
+| mfa.mfa_recovery_codes | GET, POST | `/mfa/recovery-codes` |
+| mfa.mfa_replace | GET, POST | `/mfa/replace` |
+| mfa.mfa_setup | GET, POST | `/mfa/setup` |
+| mfa.mfa_verify | GET, POST | `/mfa/verify` |
+| plugins.disable | POST | `/admin/plugins/<int:registration_id>/disable` |
+| plugins.enable | POST | `/admin/plugins/<int:registration_id>/enable` |
+| plugins.list_plugins | GET | `/admin/plugins/` |
+| plugins.reload_config | POST | `/admin/plugins/reload` |
+| plugins.run_dataset_action | POST | `/admin/plugins/<int:registration_id>/datasets/<string:dataset_key>/run` |
+| plugins.upgrade_schema | POST | `/admin/plugins/<int:registration_id>/upgrade-schema` |
+| privacy.privacy | GET | `/privacy` |
+| register.register | GET, POST | `/register` |
+| reset.change_password | GET, POST | `/change-password` |
+| reset.forgot_password | GET, POST | `/forgot-password` |
+| reset.reset_password | GET, POST | `/reset-password/<token>` |
+| reset.set_password | GET, POST | `/set-password/<token>` |
+| robots.robots | GET | `/robots.txt` |
+| settings.settings | GET, POST | `/admin/settings/` |
+| sitemap.sitemap | GET | `/sitemap.xml` |
+| static | GET | `/static/<path:filename>` |
+| tos.tos | GET | `/tos` |
+| users.delete_user | POST | `/admin/users/<int:user_id>/delete` |
+| users.edit_user | GET, POST | `/admin/users/<int:user_id>/edit` |
+| users.list_users | GET | `/admin/users/` |
+| users.remove_profile_image | POST | `/admin/users/<int:user_id>/profile-image/remove` |
+| verify.verify_email_token | GET | `/email/<token>` |
 
 Application-plugin routes are intentionally omitted from this static core-route table because their structural registration depends on the persisted plugin state at worker startup. The host request guard independently denies plugin endpoints that are not effectively usable.
 
@@ -275,7 +300,7 @@ The top-level ``db`` command is reserved by Flask-AAS for any plugin whose
 manifest declares migrations. New plugins gain this lifecycle automatically
 from ``plugin.toml`` without adding plugin-specific migration commands to core.
 
-Development migration history remains disposable before the first supported release/checkpoint. Published schema checkpoints become durable upgrade origins. `AAS-039` remains open for the remaining release-grade acceptance work, including explicit core-Alembic exclusion of plugin-owned namespaces such as `plugin_example_*` while preserving the core-owned `plugin_registrations` table, a real `0001 -> 0002` upgrade, failed-migration semantics, and focused PostgreSQL coverage.
+Development migration history remains disposable before the first supported release/checkpoint. Published schema checkpoints become durable upgrade origins. `AAS-039` is complete: manifest-driven plugin migration ownership, independent version tables, migration-aware runtime state, browser/CLI schema management, and core/plugin Alembic ownership isolation are established. Release-grade historical `N -> N+1`, failed-migration, greenfield/history-equivalence, and focused PostgreSQL migration QA remain broader `AAS-031` regression work when real released migration history exists.
 
 ---
 
@@ -445,6 +470,26 @@ python -m pytest
 
 Tests use SQLite by default. Selected audit/account lifecycle suites can also target a disposable PostgreSQL database through the documented test database environment variables so the portable transaction and schema behavior can be exercised on both backends.
 
+### Focused Profile/Theme/Admin Validation
+
+Run the host account-profile, response-minification, theme, and administrative UI contract coverage with:
+
+```bash
+python -m pytest \
+  tests/test_account_profile.py \
+  tests/test_admin_avatar.py \
+  tests/test_admin_ui_contract.py \
+  tests/test_response_minify.py \
+  tests/test_theme_contract.py
+```
+
+The most recent confirmed complete host run is:
+
+```text
+369 passed, 11 warnings, 22 subtests passed
+```
+
+
 ### Build and Run
 
 1. **Build the Docker image (no cache)**
@@ -500,6 +545,7 @@ The CLI dispatcher does not make the plugin globally active by itself; web runti
 - Seed scripts run once on clean DB
 - `default_role_id` in `.env` controls default user role
 - Admin panel for user/role/settings/application management
+- `User Storage Path` controls the complete local profile-image storage directory; relative paths resolve from the Flask application root and absolute paths are honored as configured.
 - Keep deployment SMTP credentials in external configuration, or enable the encrypted Site Settings override deliberately.
 - Treat enabled Python application plugins as trusted native application code and keep the Flask-AAS process/container least-privileged.
 
