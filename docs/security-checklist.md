@@ -37,6 +37,7 @@ High-risk examples:
 - Are identifier lookups resistant to ownership bypass?
 - Are duplicate submissions and retries safe?
 - Are file names, media types, and file contents treated as untrusted?
+- For image uploads, is decoded content authoritative rather than the submitted extension, with explicit pixel/animation/format limits and metadata normalization where required?
 - Are user-controlled redirects restricted to local or allowed destinations?
 
 Do not rely on HTML attributes or browser validation as the server-side control.
@@ -55,6 +56,7 @@ A GET request should not mutate account, role, security, or billing state.
 - Which database changes must succeed or fail together?
 - Can logging, email, cache, or queue helpers commit or roll back the caller's transaction?
 - Are external side effects performed before a durable database decision?
+- When a database row references a generated file, does a failed database commit preserve the referenced file, and does deletion happen only after the durable reference is cleared/replaced?
 - Does the user-facing result distinguish queued work from completed external delivery?
 - Is there an outbox, retry, or reconciliation mechanism when external systems are involved?
 - Are concurrent requests serialized or made idempotent where required?
@@ -178,6 +180,7 @@ At minimum, test:
 - CSRF failure;
 - rate-limit or lockout boundary;
 - database failure;
+- file-processing/filesystem failure when the route owns media;
 - external dependency failure;
 - audit-write failure;
 - success and failure redaction.

@@ -94,6 +94,19 @@ The 2026-08-05 inactivity checkpoint established these invariants:
 
 Focused inactivity coverage is maintained in `tests/test_inactivity.py`, with login integration assertions in `tests/test_login_audit.py`.
 
+## Current profile-image checkpoint
+
+The 2026-08-12 host profile-image checkpoint establishes these invariants:
+
+- the existing `User.image` field stores only a generated WebP basename; no profile-image schema migration or generic media-serving route is introduced;
+- `EnvSettings.users_stored_path` is the complete administrator-selected local storage directory;
+- JPEG, PNG, and WebP uploads are decoded/validated, bounded, EXIF-oriented, metadata-stripped, center-cropped, and normalized before persistence;
+- owner upload/replace/remove and administrator takedown are authenticated, CSRF-protected, rate-limited state changes;
+- replacement/removal makes the database decision durable before deleting the superseded generated file, while commit failure preserves the prior reference/file;
+- the account page renders the canonical image internally and keeps image controls with the identity presentation; the admin user list exposes removal only for users with a custom image.
+
+Focused coverage is maintained in `tests/test_account_profile.py`, `tests/test_admin_avatar.py`, `tests/test_admin_ui_contract.py`, and `tests/test_theme_contract.py`. The current complete Flask-AAS suite is **369 passed, 11 warnings, and 22 subtests passed**.
+
 ## Current application-plugin checkpoint
 
 The 2026-08-08 application-plugin checkpoint establishes these invariants:
@@ -189,7 +202,7 @@ The security regression suite is the most important control in this list. Static
 - Production mode rejects missing stable secrets.
 - Proxy trust is disabled unless configured.
 - HSTS and secure cookies are not forced during direct HTTP development.
-- All registered routes resolve their endpoint references.
+- All registered Flask-AAS core routes resolve their endpoint references; runtime application-plugin routes are validated under their own lifecycle tests.
 - All email templates referenced by code exist.
 - Required verification cannot be enabled without an effective outbound transport.
 - Runtime SMTP overrides are all-or-nothing, encrypted, and ignored when UI configuration is disabled.

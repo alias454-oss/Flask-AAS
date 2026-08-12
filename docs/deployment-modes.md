@@ -132,6 +132,14 @@ When the application uses multiple Gunicorn workers or multiple instances, proce
 
 Redis is one possible backend, not a mandatory development dependency.
 
+## Profile-image storage
+
+The optional canonical host profile image uses `EnvSettings.users_stored_path` as the complete local storage directory. Relative values resolve from the Flask application root; absolute values are used as configured. Fresh installations seed `static/images/users`.
+
+The selected directory must be writable by the Flask-AAS process. Uploads are normalized to generated WebP files, and the database stores only the generated basename. Profile-image replacement/removal commits the durable database decision before best-effort cleanup of the superseded file; administrative image takedown follows the same rule.
+
+Single-process development may use an ordinary local directory. A future multi-instance deployment that allows profile-image writes must provide storage visible consistently to every instance or deliberately introduce a shared/object-storage backend. Flask-AAS does not currently claim that abstraction and does not expose a generic profile-media GET route.
+
 ## Application-plugin hosting
 
 Application hosting is optional. The database-backed **Enable Application Plugins** setting is the global host switch. When it is disabled, Flask-AAS continues to provide its normal authentication, account, audit, contact, and administrative core without loading application-plugin runtime code.
