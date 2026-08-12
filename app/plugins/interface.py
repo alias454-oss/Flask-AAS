@@ -98,12 +98,16 @@ class ApplicationPlugin(ABC):
         return None
 
     def get_cli(self) -> Any | None:
-        """Return the plugin-owned Click command group, if one is provided.
+        """Return optional plugin-owned Click commands.
 
         Plugin commands remain owned by the plugin package. Flask-AAS may
         explicitly dispatch to this surface through its generic plugin
         management CLI without registering application-specific commands on
-        the host CLI itself.
+        the host CLI itself. If ``plugin.toml`` declares migrations, the host
+        automatically composes the reserved top-level ``db`` group into this
+        command surface; plugins must not reimplement migration lifecycle
+        commands themselves. A plugin with migrations does not need to provide
+        any custom CLI solely to receive the host-owned ``db`` commands.
         """
 
         return None

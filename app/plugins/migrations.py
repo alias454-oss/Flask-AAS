@@ -1,5 +1,7 @@
 # plugins/migrations.py
 from pathlib import Path
+import shutil
+import tempfile
 
 from alembic import command
 from alembic.config import Config
@@ -10,6 +12,37 @@ from sqlalchemy import inspect
 
 from app.core.extensions import db
 from app.plugins.manifest import PluginManifest
+
+
+_PLUGIN_SCRIPT_TEMPLATE = '''"""${message}
+
+Revision ID: ${up_revision}
+Revises: ${down_revision | comma,n}
+Create Date: ${create_date}
+
+"""
+from typing import Sequence, Union
+
+from alembic import op
+import sqlalchemy as sa
+${imports if imports else ""}
+
+# revision identifiers, used by Alembic.
+revision: str = ${repr(up_revision)}
+down_revision: Union[str, Sequence[str], None] = ${repr(down_revision)}
+branch_labels: Union[str, Sequence[str], None] = ${repr(branch_labels)}
+depends_on: Union[str, Sequence[str], None] = ${repr(depends_on)}
+
+
+def upgrade() -> None:
+    """Upgrade schema."""
+    ${upgrades if upgrades else "pass"}
+
+
+def downgrade() -> None:
+    """Downgrade schema."""
+    ${downgrades if downgrades else "pass"}
+'''
 
 
 class PluginMigrationError(RuntimeError):
@@ -24,10 +57,6 @@ class PluginMigrationManager:
             raise PluginMigrationError(
                 f"Plugin {manifest.plugin_id!r} does not declare migrations"
             )
-        if not manifest.migration_path.is_dir():
-            raise PluginMigrationError(
-                f"Plugin migration directory does not exist: {manifest.migration_path}"
-            )
         self.manifest = manifest
 
     @property
@@ -39,7 +68,85 @@ class PluginMigrationManager:
             )
         return migration_path
 
+    def initialized(self) -> bool:
+        """Return whether the declared plugin migration environment is complete."""
+
+        path = self.script_location
+        return bool(
+            path.is_dir()
+            and (path / "env.py").is_file()
+            and (path / "script.py.mako").is_file()
+            and (path / "versions").is_dir()
+        )
+
+    def _require_initialized(self) -> None:
+        path = self.script_location
+        if self.initialized():
+            return
+
+        if not path.exists():
+            raise PluginMigrationError(
+                f"Plugin migration environment is not initialized: {path}. "
+                f"Run 'python manage.py plugin run {self.manifest.plugin_id} db init'."
+            )
+
+        raise PluginMigrationError(
+            f"Plugin migration environment is incomplete: {path}. Expected env.py, "
+            "script.py.mako, and versions/. Reconcile or remove the incomplete "
+            f"directory before running 'python manage.py plugin run "
+            f"{self.manifest.plugin_id} db init'."
+        )
+
+    def initialize(self) -> Path:
+        """Create the canonical Alembic environment for one plugin package."""
+
+        path = self.script_location
+        if self.initialized():
+            raise PluginMigrationError(
+                f"Plugin migration environment is already initialized: {path}"
+            )
+
+        if path.exists():
+            if not path.is_dir():
+                raise PluginMigrationError(
+                    f"Plugin migration path exists and is not a directory: {path}"
+                )
+            if any(path.iterdir()):
+                raise PluginMigrationError(
+                    f"Plugin migration directory is not empty: {path}. Refusing to "
+                    "overwrite existing files."
+                )
+
+        parent = path.parent
+        parent.mkdir(parents=True, exist_ok=True)
+        env_source = (
+            "# migrations/env.py\n"
+            "from alembic import context\n\n"
+            "from app.plugins.migrations import run_plugin_migration_environment\n\n\n"
+            "run_plugin_migration_environment(context)\n"
+        )
+
+        with tempfile.TemporaryDirectory(
+            prefix=f".{path.name}-init-",
+            dir=parent,
+        ) as temp_dir:
+            staged = Path(temp_dir) / path.name
+            staged.mkdir()
+            (staged / "versions").mkdir()
+            (staged / "env.py").write_text(env_source, encoding="utf-8")
+            (staged / "script.py.mako").write_text(
+                _PLUGIN_SCRIPT_TEMPLATE,
+                encoding="utf-8",
+            )
+
+            if path.exists():
+                path.rmdir()
+            shutil.move(str(staged), str(path))
+
+        return path
+
     def _config(self, *, connection=None) -> Config:
+        self._require_initialized()
         config = Config()
         config.set_main_option("script_location", str(self.script_location))
         config.set_main_option("file_template", "%%(rev)s_%%(slug)s")
