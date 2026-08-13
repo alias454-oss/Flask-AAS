@@ -18,7 +18,7 @@ from app.plugins import (
     validate_plugin_contract,
     validate_plugin_datasets,
 )
-from app.plugins.example import plugin as example_plugin
+from tests.fixtures.plugin_app import plugin as example_plugin
 from app.plugins.registry import (
     PluginRegistrationError,
     disable_plugin,

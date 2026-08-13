@@ -1,4 +1,4 @@
-# plugins/example/models.py
+# tests/fixtures/plugin_app/models.py
 """Plugin-owned persistence for the Flask-AAS reference application."""
 
 from app.core.extensions import db

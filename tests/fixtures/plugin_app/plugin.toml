@@ -3,5 +3,5 @@ id = "example"
 name = "Example Application"
 version = "0.1.0"
 api_version = 1
-entrypoint = "app.plugins.example.plugin:plugin"
+entrypoint = "tests.fixtures.plugin_app.plugin:plugin"
 migrations = "migrations"

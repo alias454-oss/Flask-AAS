@@ -6,8 +6,8 @@ from flask import Flask
 from sqlalchemy import inspect, text
 
 from app.core.extensions import db
-from app.plugins.example.plugin import plugin as example_plugin
-from app.plugins.example.models import ExampleSettings
+from tests.fixtures.plugin_app.plugin import plugin as example_plugin
+from tests.fixtures.plugin_app.models import ExampleSettings
 from app.plugins.manifest import PluginManifest
 from app.plugins.migrations import PluginMigrationError, PluginMigrationManager
 

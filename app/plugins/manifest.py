@@ -22,6 +22,7 @@ class PluginManifest:
     entrypoint: str
     migrations: str | None
     path: Path
+    navigation_label: str | None = None
 
     @property
     def table_prefix(self) -> str:
@@ -150,6 +151,12 @@ def load_plugin_manifest(path: str | Path) -> PluginManifest:
         )
 
     entrypoint = _entrypoint(plugin_section.get("entrypoint"), path=manifest_path)
+    navigation_label_value = plugin_section.get("navigation_label")
+    navigation_label = (
+        _nonempty_string(navigation_label_value, "navigation_label", path=manifest_path)
+        if navigation_label_value is not None
+        else None
+    )
     migrations = _migration_directory(
         plugin_section.get("migrations"),
         path=manifest_path,
@@ -163,4 +170,5 @@ def load_plugin_manifest(path: str | Path) -> PluginManifest:
         entrypoint=entrypoint,
         migrations=migrations,
         path=manifest_path,
+        navigation_label=navigation_label,
     )
