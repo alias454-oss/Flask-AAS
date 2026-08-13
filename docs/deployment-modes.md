@@ -106,11 +106,16 @@ HSTS must not be sent by a direct HTTP development server. Browsers can cache HS
 
 `SESSION_INACTIVITY_TIMEOUT_SECONDS` defines a sliding inactivity window for an authenticated browser session. The default is 900 seconds. A value of `0` disables this control.
 
-The session stores a numeric Unix timestamp and refreshes it on authenticated application requests. Static asset requests do not extend the window. At the timeout boundary, Flask-AAS logs out the user, clears transient MFA and other session state, and requests deletion of the Flask-Login remember cookie.
+The session stores a numeric Unix timestamp and refreshes it on authenticated application requests. Static asset requests do not extend the window. The timeout has two intentionally different outcomes:
 
-A session restored from a valid remember cookie has no prior browser-session activity timestamp. It begins a new inactivity window and remains non-fresh, so existing fresh-login and MFA reauthentication controls continue to protect sensitive operations. Pre-authentication MFA state is not treated as an authenticated session and remains governed by its own expiry and attempt limits.
+- a **non-remembered** session expires to a complete logout; Flask-Login state is cleared, the current durable `UserSession` is ended, and a full login is required;
+- a **remembered** session is downgraded instead of forgotten; the durable remembered `UserSession` and remember cookie remain valid, transient application/MFA browser-session state is cleared, and the Flask-Login identity continues as **non-fresh** authentication.
 
-This control applies to the current browser session. Enforcing inactivity across a browser that has discarded its session cookie but still holds an otherwise valid remember cookie requires the future persisted session-management work tracked separately.
+The request that first crosses the inactivity boundary for a remembered session is stopped with HTTP `303` before normal route handling continues. This prevents a stale POST or other state-changing request from executing across the timeout boundary. The redirected request begins a new inactivity window under the retained non-fresh identity.
+
+A session restored from a valid remember cookie likewise begins a new inactivity window and remains non-fresh, so existing fresh-login and explicit MFA-reauthentication controls continue to protect sensitive operations. Inactivity does not disable MFA or preserve a previous temporary MFA authorization grant. Pre-authentication MFA state remains governed by its own expiry and attempt limits.
+
+This sliding inactivity timer applies to the current browser session. Durable `UserSession` records remain the authority for active-session validation and explicit revocation, password-change/reset invalidation, and normal logout. Remembered inactivity alone does not close an otherwise valid durable remembered session.
 
 ## Password policy
 
@@ -144,7 +149,7 @@ Single-process development may use an ordinary local directory. A future multi-i
 
 Application hosting is optional. The database-backed **Enable Application Plugins** setting is the global host switch. When it is disabled, Flask-AAS continues to provide its normal authentication, account, audit, contact, and administrative core without loading application-plugin runtime code.
 
-Bundled applications may have registration rows so the host can present their metadata after the plugin system is enabled. Registration is metadata only. A registered but disabled application must not import its plugin implementation or model modules, deploy plugin-owned schema, register routes, or contribute navigation during ordinary application startup.
+Trusted deployment-supplied plugin repositories may be placed under `app/plugins/<id>/`. Startup performs controlled metadata-only discovery of immediate-child `plugin.toml` manifests and ensures a compatible registration row exists with newly discovered applications disabled by default. Registration is metadata only: a registered but disabled application must not import its plugin implementation or model modules, deploy plugin-owned schema, register routes, or contribute navigation during ordinary application startup.
 
 Enabling an application is the explicit trust/code-execution boundary. At that point Flask-AAS may import that selected plugin's Python implementation and inspect its declared migration/configuration state. **Enable does not create, migrate, or stamp plugin-owned schema.** Python plugins execute with the permissions of the Flask-AAS process; enabling one is therefore equivalent to trusting native application code. Flask-AAS does not claim to sandbox enabled plugins.
 
@@ -185,7 +190,9 @@ The repository container runs Gunicorn as the unprivileged `flaskaas` user. **Re
 
 Disabling an application immediately removes effective route/navigation access through the host guard, clears plugin-managed persisted secrets as part of the disable transaction, and preserves ordinary plugin configuration, schema, and business data. After **Reload App Config**, the fresh worker no longer imports or structurally registers the disabled application.
 
-Current bundled plugins are trusted code shipped with the Flask-AAS deployment. Future externally supplied plugins must require an explicit install/trust action before any plugin Python is imported. Filesystem presence alone must never imply trust, registration, enablement, or runtime activation.
+Plugin acquisition remains deployment/operator-owned: Flask-AAS does not currently clone, upload, update, or provide a marketplace for plugin source. A separately maintained trusted repository such as the Example reference plugin may be cloned or copied into `app/plugins/<id>/`; controlled manifest discovery may then create disabled registration metadata without importing implementation Python. Filesystem presence/discovery therefore does not imply **Enable** trust, schema readiness, configuration readiness, or runtime activation.
+
+Because registration is persisted in the database, renaming or removing a plugin directory does not rewrite or remove an existing `PluginRegistration`. If filesystem/manifest identity and persisted registry state diverge, follow [`plugin-troubleshooting.md`](plugin-troubleshooting.md) and distinguish registration cleanup from plugin schema/business-data migration before changing the database.
 
 ## Email behavior
 
@@ -226,9 +233,9 @@ The plugin migration manager follows these rules:
 - migration operations are explicit and do not occur merely because the plugin was enabled;
 - a disabled plugin remains inert during ordinary web startup; explicit operator migration CLI is a separate deliberate code-execution boundary.
 
-Development migration directories remain disposable/ignored during the current pre-release phase and may be regenerated or squashed. At the first supported release/checkpoint, published plugin schema transitions become durable upgrade history.
+Unpublished development revisions may still be regenerated or squashed before a plugin establishes a supported schema checkpoint. Once a plugin publishes migration history that operators may apply, those revisions become durable upgrade origins and should not be rewritten casually.
 
-`AAS-039` still requires final release-grade acceptance proving core Alembic preserves its own `plugin_registrations` table while excluding plugin-owned namespaces such as `plugin_example_*`, a representative `0001 -> 0002` upgrade reaches the same final schema as greenfield bootstrap, failed migrations do not falsely advance the plugin version table, and focused PostgreSQL lifecycle/migration coverage is green.
+`AAS-039` is complete: manifest-driven plugin migration ownership, independent version tables, migration-aware runtime state, browser/CLI schema management, and core/plugin Alembic ownership isolation are established. Release-grade historical `N -> N+1`, failed-migration, greenfield/history-equivalence, and focused PostgreSQL migration QA remain broader `AAS-031` regression work when real released migration history requires it. The independent Example reference repository provides a concrete compatibility consumer for future `AAS-044` Plugin API release-gate work.
 
 ## Configuration validation goals
 

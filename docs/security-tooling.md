@@ -84,13 +84,15 @@ The 2026-08-05 inactivity checkpoint established these invariants:
 
 - authenticated browser sessions use a numeric, sliding inactivity timestamp rather than a nonexistent custom user-session key;
 - the timeout is configurable through `SESSION_INACTIVITY_TIMEOUT_SECONDS`, with `0` disabling it explicitly;
-- the exact timeout boundary forces a complete login and deletes the remember cookie;
+- the exact timeout boundary forces a complete login for non-remembered sessions;
+- remembered sessions retain their durable session and remember cookie across inactivity, but the browser session is cleared to the minimum Flask-Login identity state and downgraded to non-fresh authentication;
+- the request that crosses a remembered-session timeout boundary is stopped and redirected with `303`, preventing a POST or other state-changing request from executing across the boundary;
 - successful primary and MFA logins seed the inactivity window immediately;
-- remembered-session restoration starts a new non-fresh inactivity window;
+- remember-cookie-restored sessions begin a new non-fresh inactivity window;
 - missing, malformed, legacy, or future activity timestamps recover into a new bounded window rather than creating an indefinite session;
 - static asset requests do not refresh authenticated activity;
 - pre-authentication MFA state remains governed by its separate expiry and attempt limits;
-- inactivity expiry clears authenticated, transient MFA, and other browser-session state.
+- inactivity expiry clears transient MFA and other browser-session state; remembered sessions retain only the minimum non-fresh identity state, while non-remembered sessions are fully logged out.
 
 Focused inactivity coverage is maintained in `tests/test_inactivity.py`, with login integration assertions in `tests/test_login_audit.py`.
 
@@ -105,14 +107,14 @@ The 2026-08-12 host profile-image checkpoint establishes these invariants:
 - replacement/removal makes the database decision durable before deleting the superseded generated file, while commit failure preserves the prior reference/file;
 - the account page renders the canonical image internally and keeps image controls with the identity presentation; the admin user list exposes removal only for users with a custom image.
 
-Focused coverage is maintained in `tests/test_account_profile.py`, `tests/test_admin_avatar.py`, `tests/test_admin_ui_contract.py`, and `tests/test_theme_contract.py`. The current complete Flask-AAS suite is **369 passed, 11 warnings, and 22 subtests passed**.
+Focused coverage is maintained in `tests/test_account_profile.py`, `tests/test_admin_avatar.py`, `tests/test_admin_ui_contract.py`, and `tests/test_theme_contract.py`. The current complete Flask-AAS suite is **374 passed, 13 warnings, and 22 subtests passed**.
 
 ## Current application-plugin checkpoint
 
-The 2026-08-08 application-plugin checkpoint establishes these invariants:
+The Plugin API v1 checkpoint, including the 2026-08-12 external Example-reference decoupling, establishes these invariants:
 
 - the global plugin-system switch may remain disabled without loading application-plugin runtime code;
-- bundled plugin registration is explicit metadata, not writable-directory discovery;
+- startup discovery is restricted to immediate `app/plugins/*/plugin.toml` manifests and remains metadata-only; newly discovered compatible applications are registered disabled by default without importing implementation/model code;
 - canonical static plugin identity/compatibility metadata comes from `plugin.toml` and can be validated without importing implementation Python;
 - registration alone does not import plugin implementation or model modules and does not deploy plugin schema;
 - explicit administrator enablement is the selected plugin's native-code trust boundary, not a schema-migration operation;
@@ -128,9 +130,10 @@ The 2026-08-08 application-plugin checkpoint establishes these invariants:
 - disabling a plugin preserves ordinary configuration, business data, and schema while clearing plugin-managed persisted secrets;
 - generic plugin CLI dispatch logs plugin and command identity without logging arbitrary command arguments;
 - plugin pages inherit the host template/theme baseline and add only plugin-local presentation overrides;
-- enabled Python plugins execute with Flask-AAS process privileges and are not treated as sandboxed code.
+- enabled Python plugins execute with Flask-AAS process privileges and are not treated as sandboxed code;
+- the human-facing Example reference implementation is maintained as a separate repository, while Flask-AAS host tests use only the synthetic `tests/fixtures/plugin_app` fixture so the host does not ship or special-case the reference application.
 
-Focused plugin coverage is maintained in `tests/test_plugin_contract.py`, `tests/test_plugin_manifest.py`, `tests/test_plugin_migrations.py`, `tests/test_plugin_lifecycle.py`, `tests/test_plugin_admin.py`, `tests/test_plugin_web_surface.py`, `tests/test_plugin_integration_surfaces.py`, `tests/test_plugin_bundled.py`, `tests/test_plugin_reload.py`, and `tests/test_plugin_example_persistence.py`. The current full suite passes **239 tests, 11 warnings, and 15 subtests**.
+Focused plugin coverage is maintained in `tests/test_plugin_contract.py`, `tests/test_plugin_manifest.py`, `tests/test_plugin_migrations.py`, `tests/test_plugin_lifecycle.py`, `tests/test_plugin_admin.py`, `tests/test_plugin_web_surface.py`, `tests/test_plugin_integration_surfaces.py`, `tests/test_plugin_bundled.py`, `tests/test_plugin_reload.py`, and `tests/test_plugin_fixture_persistence.py`. The current complete Flask-AAS suite passes **374 tests, 13 warnings, and 22 subtests**.
 
 ## Recommended baseline
 
@@ -154,7 +157,7 @@ Use for framework-aware and project-specific checks. Add local rules for Flask-A
 - request metadata capture that fails to exclude authorization or cookie headers;
 - `ProxyFix` enabled without explicit configuration;
 - normal application startup importing disabled plugin implementation/model modules;
-- filesystem scanning or implicit import of undeclared plugin packages;
+- plugin discovery that scans beyond the controlled immediate-child manifest boundary or imports implementation/model code before explicit Enable;
 - plugin operational logging that records arbitrary CLI arguments.
 
 ### Dependency audit
@@ -192,6 +195,7 @@ The security regression suite is the most important control in this list. Static
 - Successful login rows are written only after Flask-Login accepts the user.
 - Sensitive MFA state changes require fresh authentication.
 - Forced full-login paths delete remembered authentication state.
+- Remembered inactivity preserves the durable remembered identity but clears transient MFA/application state, stops the boundary-crossing request with `303`, and resumes only as non-fresh authentication.
 - An accepted TOTP counter cannot be replayed.
 - Password-reset secrets are hashed at rest and accepted only once.
 - Password changes revoke outstanding reset links and invalidate earlier session identities.
@@ -212,6 +216,7 @@ The security regression suite is the most important control in this list. Static
 - A globally disabled plugin system leaves the Flask-AAS core usable and does not load plugin runtime code.
 - Registered-but-disabled plugins do not import implementation/model modules, deploy schema, register routes, or contribute navigation during ordinary startup.
 - Plugin manifests and migration declarations are validated without importing plugin implementation code.
+- Plugin registry/filesystem identity drift is treated as persisted-state troubleshooting: tests and operator procedures must not assume renaming a plugin directory rewrites `PluginRegistration`, and registration cleanup must remain separate from plugin schema/business-data destruction.
 - Core Alembic autogeneration preserves the core-owned `plugin_registrations` table while never adopting plugin-domain namespaces such as `plugin_example_*` that belong to plugin migration histories.
 - Plugin migration failure never falsely advances `plugin_<id>_alembic_version`.
 - Persisted plugin configuration drift is tested explicitly: request/navigation gating follows current persisted state on already-loaded surfaces, while worker runtime status remains stale until Reload App Config.
