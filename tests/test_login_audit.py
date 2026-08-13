@@ -489,6 +489,31 @@ class LoginAuditRouteTests(unittest.TestCase):
             stored_session.token_hash,
             UserSession.hash_token(raw_token),
         )
+        loaded = User.load_from_session_id(identity)
+        self.assertIsNotNone(loaded)
+        self.assertFalse(loaded.session_remembered)
+
+    def test_remembered_login_binds_remembered_session_identity(self):
+        user = self._save_user(username='remembered-identity-user')
+
+        response = self._post_login(
+            'remembered-identity-user',
+            'correct-password',
+            remember=True,
+        )
+
+        self.assertEqual(response.status_code, 302)
+        with self.client.session_transaction() as login_session:
+            identity = login_session.get('_user_id')
+
+        loaded = User.load_from_session_id(identity)
+        self.assertIsNotNone(loaded)
+        self.assertTrue(loaded.session_remembered)
+        self.assertIsNotNone(loaded.session_record_id)
+        record = db.session.get(UserSession, loaded.session_record_id)
+        self.assertTrue(record.remembered)
+        self.assertIsNone(record.ended_at)
+        self.assertIsNone(record.revoked_at)
 
     def test_new_login_ends_the_browser_previous_session(self):
         user = self._save_user(username='relogin-user')

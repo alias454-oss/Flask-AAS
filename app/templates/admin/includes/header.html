@@ -9,7 +9,6 @@
         <li class="menu__item"><a class="menu__link" href="{{ url_for('about.about') }}">About</a></li>
 
         {% if current_user.is_authenticated %}
-          <li class="menu__item"><a class="menu__link" href="{{ url_for('admin.admin_home') }}">Admin</a></li>
           <li class="menu__item"><a class="menu__link" href="{{ url_for('logout.logout') }}">Logout</a></li>
         {% else %}
           <li class="menu__item"><a class="menu__link" href="{{ url_for('login.login') }}">Login</a></li>

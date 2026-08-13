@@ -49,7 +49,7 @@ def mark_session_activity(timestamp=None):
 
 
 def enforce_inactivity_timeout():
-    """Expire an authenticated browser session after its configured idle period."""
+    """Expire or downgrade an authenticated session after its idle period."""
     # Static asset requests are not user activity and should not keep a login alive.
     if request.endpoint == 'static':
         return None
@@ -87,6 +87,35 @@ def enforce_inactivity_timeout():
     if now - last_activity >= timeout:
         user_id = current_user.id
         endpoint = request.endpoint or request.path
+
+        if current_user.session_remembered:
+            # Remembered browsers retain their durable session and remember cookie,
+            # but inactivity still clears application session state and downgrades
+            # the authenticated identity to non-fresh. Stop the triggering request
+            # so POST/other state-changing work is never executed across the timeout
+            # boundary; the redirected request continues under the non-fresh session.
+            user_identity = current_user.get_id()
+            session_identifier = session.get('_id')
+            session.clear()
+            session['_user_id'] = user_identity
+            if session_identifier is not None:
+                session['_id'] = session_identifier
+            session['_fresh'] = False
+            session.permanent = True
+            mark_session_activity(now)
+            flash(
+                'Your remembered sign-in was restored after inactivity. '
+                'Reauthentication may be required for sensitive actions.',
+                'info',
+            )
+            logger.info(
+                'Remembered session downgraded after inactivity for '
+                'user_id=%s endpoint=%s',
+                user_id,
+                endpoint,
+            )
+            target = request.full_path.rstrip('?') or request.path or '/'
+            return redirect(target, code=303)
 
         close_current_session()
         logout_user()

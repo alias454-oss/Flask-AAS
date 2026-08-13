@@ -91,16 +91,20 @@ class UserSession(db.Model):
         )
         db.session.add(record)
         db.session.flush()
-        user.bind_session_identity(token, record.id)
+        user.bind_session_identity(
+            token,
+            record.id,
+            remembered=record.remembered,
+        )
         return record
 
     @classmethod
-    def active_record_id(cls, user_id, token):
+    def active_record(cls, user_id, token):
         if not token:
             return None
 
         return db.session.scalar(
-            select(cls.id)
+            select(cls)
             .where(
                 cls.user_id == user_id,
                 cls.token_hash == cls.hash_token(token),
@@ -109,6 +113,11 @@ class UserSession(db.Model):
             )
             .limit(1)
         )
+
+    @classmethod
+    def active_record_id(cls, user_id, token):
+        record = cls.active_record(user_id, token)
+        return None if record is None else record.id
 
     @classmethod
     def active_for_user(cls, user_id):

@@ -57,6 +57,9 @@ def test_admin_shell_uses_shared_theme_contract_without_losing_admin_hooks():
     assert 'id="site-header" class="site-header"' in header
     assert 'id="primary-navigation" class="menu"' in header
     assert 'aria-label="Primary navigation"' in header
+    assert "url_for('admin.admin_home')" not in header
+    assert "url_for('dashboard.dashboard')" not in header
+    assert "url_for('logout.logout')" in header
     assert 'id="site-footer" class="site-footer"' in footer
 
 

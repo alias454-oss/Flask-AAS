@@ -18,11 +18,6 @@
         {% endif %}
 
         {% if current_user.is_authenticated %}
-          {% if current_user.is_admin %}
-            <li class="menu__item"><a class="menu__link" href="{{ url_for('admin.admin_home') }}">Admin</a></li>
-          {% else %}
-            <li class="menu__item"><a class="menu__link" href="{{ url_for('dashboard.dashboard') }}">Dashboard</a></li>
-          {% endif %}
           <li class="menu__item"><a class="menu__link" href="{{ url_for('logout.logout') }}">Logout</a></li>
         {% else %}
           <li class="menu__item"><a class="menu__link" href="{{ url_for('login.login') }}">Login</a></li>

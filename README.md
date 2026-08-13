@@ -32,6 +32,7 @@ This project focuses on:
 | [`docs/deployment-modes.md`](docs/deployment-modes.md) | Development versus deployed behavior |
 | [`docs/security-checklist.md`](docs/security-checklist.md) | Reusable route-review checklist |
 | [`docs/security-tooling.md`](docs/security-tooling.md) | Static analysis, dependency audit, and CI baseline |
+| [`docs/plugin-troubleshooting.md`](docs/plugin-troubleshooting.md) | Plugin discovery, persisted registry, migration, reload, and recovery troubleshooting |
 
 The base is intentionally designed to remain easy to run locally. Direct HTTP, generated development secrets, SQLite, and in-memory services are valid development choices. Stricter requirements apply only when the selected deployment mode needs them.
 
@@ -43,7 +44,8 @@ The base is intentionally designed to remain easy to run locally. Direct HTTP, g
 - Admin-managed password policy enabled by default with a 20-character minimum, passphrase-friendly composition defaults, and deployment values used only to seed a fresh database
 - Optional provider-backed new-password checking, disabled by default, with a built-in local common-password blocklist and a registration seam for additional providers
 - Active session tracking
-- Sliding authenticated-session inactivity timeout with remember-cookie deletion on expiry
+- Sliding authenticated-session inactivity timeout; ordinary sessions require a full login after expiry
+- Remembered sessions survive inactivity only as non-fresh authentication, preserving the remember cookie while requiring reauthentication for fresh-login-protected actions
 - Remember-cookie-restored sessions begin a new non-fresh inactivity window
 - Account state flags:
   - `activated` → Email verification status
@@ -65,7 +67,7 @@ The base is intentionally designed to remain easy to run locally. Direct HTTP, g
 - Upload/replace/remove are authenticated, CSRF-protected, rate-limited operations with transaction-aware file cleanup.
 - Administrators can immediately remove an unacceptable custom profile image from **Admin → View Users**; the database reference is committed before best-effort file deletion, and users without a custom image do not expose a meaningless removal action.
 - Flask-AAS does not currently publish a generic profile-image/media route. Account/admin pages render the stored generated WebP internally; future application plugins decide whether a canonical host profile image is relevant or visible in their own domain.
-- Domain media such as OpenAuto listing photos remains plugin-owned. S3/object-storage support is a later concern if real host profile-image usage requires it.
+- Domain media such as AutoGrid360 listing photos remains plugin-owned. S3/object-storage support is a later concern if real host profile-image usage requires it.
 
 ### Password Check Providers
 Password checking is disabled by default. When enabled in **Admin → Site Settings**, every new-password workflow sends the candidate through the selected provider after the normal local policy checks. The built-in `local` provider uses the packaged common-password blocklist and performs no network requests.
@@ -117,7 +119,7 @@ Additional implementations extend `PasswordCheckProvider` and register through `
 
 Application plugin directories are deployment-supplied native Python code. Filesystem presence automatically registers validated static `plugin.toml` metadata with the application disabled; enabling a plugin is the explicit decision to trust that code to run with the permissions of the Flask-AAS process. Flask-AAS does not claim to sandbox in-process Python plugins.
 
-The current `example` application is a deliberately small compatibility/reference plugin. It proves public, authenticated, and coarse host-role-gated routes without adding a separate application-entitlement subsystem. YATSEE completed the first substantial migration proof, and OpenAuto has completed the first substantial clean-slate consumer validation of Plugin API v1.
+The human-facing reference implementation is maintained separately in [`flask-aas-example-plugin`](https://github.com/alias454/flask-aas-example-plugin) and may be placed under `app/plugins/example/` like any other trusted deployment-supplied plugin. Flask-AAS keeps only a synthetic plugin fixture under `tests/fixtures/plugin_app/` so host contract tests remain self-contained. The reference plugin demonstrates public/authenticated/admin surfaces, plugin-owned configuration and persistence, independent migrations, navigation, CLI dispatch, and basic admin CRUD without adding a separate application-entitlement subsystem. YATSEE completed the first substantial migration proof, and AutoGrid360 completed the first substantial clean-slate consumer validation of Plugin API v1.
 
 ---
 
@@ -125,6 +127,7 @@ The current `example` application is a deliberately small compatibility/referenc
 - The selected Flask-AAS theme owns generic typography, forms, buttons, panels, tables, pagination, layout, focus/accessibility behavior, and the main shell.
 - Plugin pages inherit the host theme through `templates/plugins/base.html`; plugin CSS is additive and should remain domain-specific.
 - The host admin shell intentionally remains separate where it has admin-only behavior, but it shares the same stylesheet and one canonical Admin Menu partial.
+- Authenticated destination navigation is sidebar-owned: the top header no longer duplicates **Dashboard** or **Admin** links, while **Logout** remains available as the global session action.
 - The Admin homepage provides a compact Overview plus direct User Accounts, Site Settings, and Applications destinations using existing route data only.
 - The account page keeps identity/avatar presentation and image controls together, uses a semantic read-only account summary beside Active Sessions, and keeps editable account fields in their own form section.
 - Current admin JavaScript is first-party/static and remains compatible with the nonce-based CSP; location lookup also enforces same-origin use.
@@ -269,6 +272,8 @@ Application plugins have a separate migration boundary. A plugin manifest may de
 ```toml
 [plugin]
 id = "your_plugin"
+name = "Your Plugin"
+navigation_label = "Your Plugin"
 entrypoint = "app.plugins.your_plugin.plugin:plugin"
 migrations = "migrations"
 ```
@@ -284,15 +289,21 @@ For a plugin with declared migrations:
 
 When a manifest declares ``migrations``, Flask-AAS automatically supplies the
 standard plugin migration CLI; the plugin does not implement or register these
-commands itself. Initializing the Alembic environment is a source-development
-operation, while released plugins normally ship that environment and operators
-only inspect or upgrade it:
+commands itself. Initializing an Alembic environment and generating a revision
+are plugin source-development operations. A published plugin normally ships its
+migration environment/history, so an operator ordinarily inspects or upgrades it:
+
+```bash
+python manage.py plugin run your_plugin db current
+python manage.py plugin run your_plugin db upgrade
+```
+
+Plugin authors may additionally use the development commands when creating or
+testing schema history:
 
 ```bash
 python manage.py plugin run your_plugin db init
-python manage.py plugin run your_plugin db current
 python manage.py plugin run your_plugin db migrate -m "Describe plugin schema change"
-python manage.py plugin run your_plugin db upgrade
 python manage.py plugin run your_plugin db downgrade
 ```
 
@@ -459,7 +470,7 @@ python -m pytest \
   tests/test_plugin_integration_surfaces.py \
   tests/test_plugin_bundled.py \
   tests/test_plugin_reload.py \
-  tests/test_plugin_example_persistence.py
+  tests/test_plugin_fixture_persistence.py
 ```
 
 Run the complete regression suite with:
@@ -486,7 +497,7 @@ python -m pytest \
 The most recent confirmed complete host run is:
 
 ```text
-369 passed, 11 warnings, 22 subtests passed
+374 passed, 13 warnings, 22 subtests passed in 69.03s
 ```
 
 
@@ -512,7 +523,7 @@ Open your browser and go to [http://localhost:5000](http://localhost:5000)
 
 ### Enabling an Application Plugin
 
-The plugin host is disabled by default. The normal bundled-application flow is:
+The plugin host is disabled by default. After trusted plugin source has been placed under `app/plugins/<id>/` and its manifest has been discovered/registered disabled, the normal activation flow is:
 
 ```text
 Admin → Site Settings
@@ -527,7 +538,7 @@ Admin → Site Settings
 → ACTIVE
 ```
 
-`Reload App Config` performs the structural Gunicorn reload and reconciles the worker runtime snapshot with persisted state. For an already structurally loaded plugin, request/navigation gating reads the current persisted `enabled/configured` flags immediately; reload is still the normal administrative step for reconciling runtime status and any startup-time plugin behavior. Database migration remains a separate privileged operation. The explicit plugin CLI is also available for diagnostics, host-provided migration management, configuration, and plugin-owned maintenance when deliberately invoked:
+Flask-AAS does not currently clone, upload, update, or otherwise acquire plugin source; repository placement is an operator/deployment action. `Reload App Config` performs the structural Gunicorn reload and reconciles the worker runtime snapshot with persisted state. For an already structurally loaded plugin, request/navigation gating reads the current persisted `enabled/configured` flags immediately; reload is still the normal administrative step for reconciling runtime status and any startup-time plugin behavior. Database migration remains a separate privileged operation. The explicit plugin CLI is also available for diagnostics, host-provided migration management, configuration, and plugin-owned maintenance when deliberately invoked:
 
 ```bash
 python manage.py plugin run example status
@@ -538,6 +549,8 @@ python manage.py plugin run example add-item "example value"
 ```
 
 The CLI dispatcher does not make the plugin globally active by itself; web runtime activation still follows persisted enablement and the worker reload boundary.
+
+If plugin source was renamed, moved, removed, or its manifest/import path changed and the database registry no longer matches the filesystem, see [`docs/plugin-troubleshooting.md`](docs/plugin-troubleshooting.md) before deleting schema or business data. `PluginRegistration` is persisted state; renaming a directory alone does not rewrite an existing registration row.
 
 ---
 

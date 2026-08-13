@@ -20,6 +20,9 @@ def test_default_theme_exposes_semantic_site_shell_anchors():
     assert 'id="site-header" class="site-header"' in header
     assert 'id="primary-navigation" class="menu"' in header
     assert 'aria-label="Primary navigation"' in header
+    assert "url_for('dashboard.dashboard')" not in header
+    assert "url_for('admin.admin_home')" not in header
+    assert "url_for('logout.logout')" in header
     assert 'id="site-footer" class="site-footer"' in footer
 
 

@@ -21,6 +21,9 @@ from app.core.inactivity import (
 class _SessionUser(UserMixin):
     id = 1
 
+    def __init__(self):
+        self.session_remembered = False
+
     def get_id(self):
         return '1:0'
 
@@ -28,6 +31,7 @@ class _SessionUser(UserMixin):
 class InactivityTimeoutTests(unittest.TestCase):
     def setUp(self):
         self.user = _SessionUser()
+        self.mutations = 0
         self.app = Flask(__name__)
         self.app.config.update(
             TESTING=True,
@@ -50,6 +54,7 @@ class InactivityTimeoutTests(unittest.TestCase):
         @login_bp.route('/login')
         def login():
             remember = request.args.get('remember') == '1'
+            self.user.session_remembered = remember
             login_user(self.user, remember=remember, fresh=True)
             session.permanent = remember
             mark_session_activity()
@@ -63,6 +68,12 @@ class InactivityTimeoutTests(unittest.TestCase):
         @self.app.route('/public')
         def public():
             return 'public'
+
+        @self.app.route('/mutate', methods=['POST'])
+        @login_required
+        def mutate():
+            self.mutations += 1
+            return 'mutated'
 
         self.app.register_blueprint(login_bp)
         self.app.before_request(enforce_inactivity_timeout)
@@ -80,12 +91,16 @@ class InactivityTimeoutTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         return response
 
-    def _request_at(self, timestamp, path='/protected'):
+    def _request_at(self, timestamp, path='/protected', method='GET'):
         with patch(
             'app.core.inactivity._current_timestamp',
             return_value=timestamp,
         ):
-            return self.client.get(path, follow_redirects=False)
+            return self.client.open(
+                path,
+                method=method,
+                follow_redirects=False,
+            )
 
     def test_authenticated_activity_refreshes_sliding_window(self):
         self._login(timestamp=100.0)
@@ -98,13 +113,8 @@ class InactivityTimeoutTests(unittest.TestCase):
         with self.client.session_transaction() as login_session:
             self.assertEqual(login_session[SESSION_ACTIVITY_KEY], 114.0)
 
-    def test_exact_timeout_forces_full_login_and_deletes_remember_cookie(self):
-        self._login(timestamp=100.0, remember=True)
-        remember_cookie_name = self.app.config.get(
-            'REMEMBER_COOKIE_NAME',
-            'remember_token',
-        )
-        self.assertIsNotNone(self.client.get_cookie(remember_cookie_name))
+    def test_exact_timeout_without_remember_forces_full_login(self):
+        self._login(timestamp=100.0, remember=False)
 
         with self.client.session_transaction() as login_session:
             login_session['mfa_verified'] = True
@@ -115,7 +125,6 @@ class InactivityTimeoutTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 302)
         self.assertTrue(response.location.endswith('/login'))
-        self.assertIsNone(self.client.get_cookie(remember_cookie_name))
         with self.client.session_transaction() as login_session:
             self.assertNotIn('_user_id', login_session)
             self.assertNotIn(SESSION_ACTIVITY_KEY, login_session)
@@ -126,6 +135,61 @@ class InactivityTimeoutTests(unittest.TestCase):
                 login_session.get('_flashes'),
                 [('warning', 'You have been logged out due to inactivity.')],
             )
+
+    def test_exact_timeout_with_remember_downgrades_to_nonfresh(self):
+        self._login(timestamp=100.0, remember=True)
+        remember_cookie_name = self.app.config.get(
+            'REMEMBER_COOKIE_NAME',
+            'remember_token',
+        )
+        remember_cookie = self.client.get_cookie(remember_cookie_name)
+        self.assertIsNotNone(remember_cookie)
+
+        with self.client.session_transaction() as login_session:
+            login_session['mfa_verified'] = True
+            login_session['mfa_verified_at'] = 100.0
+            login_session['mfa_reauth_next'] = 'mfa.mfa_disable'
+
+        response = self._request_at(110.0)
+
+        self.assertEqual(response.status_code, 303)
+        self.assertTrue(response.location.endswith('/protected'))
+        self.assertEqual(
+            self.client.get_cookie(remember_cookie_name).value,
+            remember_cookie.value,
+        )
+        with self.client.session_transaction() as login_session:
+            self.assertEqual(login_session.get('_user_id'), self.user.get_id())
+            self.assertFalse(login_session.get('_fresh'))
+            self.assertTrue(login_session.permanent)
+            self.assertEqual(login_session[SESSION_ACTIVITY_KEY], 110.0)
+            self.assertNotIn('mfa_verified', login_session)
+            self.assertNotIn('mfa_verified_at', login_session)
+            self.assertNotIn('mfa_reauth_next', login_session)
+            self.assertEqual(
+                login_session.get('_flashes'),
+                [(
+                    'info',
+                    'Your remembered sign-in was restored after inactivity. '
+                    'Reauthentication may be required for sensitive actions.',
+                )],
+            )
+
+        restored = self._request_at(111.0)
+        self.assertEqual(restored.status_code, 200)
+        self.assertEqual(restored.get_data(as_text=True), 'nonfresh')
+
+    def test_remembered_timeout_stops_state_changing_request(self):
+        self._login(timestamp=100.0, remember=True)
+
+        response = self._request_at(110.0, path='/mutate', method='POST')
+
+        self.assertEqual(response.status_code, 303)
+        self.assertTrue(response.location.endswith('/mutate'))
+        self.assertEqual(self.mutations, 0)
+        with self.client.session_transaction() as login_session:
+            self.assertFalse(login_session.get('_fresh'))
+            self.assertEqual(login_session[SESSION_ACTIVITY_KEY], 110.0)
 
     def test_missing_timestamp_starts_new_window(self):
         self._login(timestamp=100.0)
@@ -181,9 +245,13 @@ class InactivityTimeoutTests(unittest.TestCase):
             self.assertFalse(login_session.get('_fresh'))
 
         expired = self._request_at(510.0)
-        self.assertEqual(expired.status_code, 302)
-        self.assertTrue(expired.location.endswith('/login'))
-        self.assertIsNone(self.client.get_cookie(remember_cookie_name))
+        self.assertEqual(expired.status_code, 303)
+        self.assertTrue(expired.location.endswith('/protected'))
+        self.assertIsNotNone(self.client.get_cookie(remember_cookie_name))
+
+        restored_again = self._request_at(511.0)
+        self.assertEqual(restored_again.status_code, 200)
+        self.assertEqual(restored_again.get_data(as_text=True), 'nonfresh')
 
     def test_unauthenticated_pending_mfa_state_is_ignored(self):
         with self.client.session_transaction() as login_session:

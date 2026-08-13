@@ -158,10 +158,14 @@ When reviewing plugin host or plugin-owned code:
 - Does plugin-managed persisted secret cleanup complete before the registration is reported disabled, including when schema was never installed?
 - Can one incompatible or failed optional plugin fail closed without taking down the Flask-AAS core or unrelated plugins?
 - Are plugin package `__init__.py` files and metadata paths kept free of unnecessary import-time side effects?
-- Is filesystem presence kept distinct from trust, registration, enablement, schema readiness, configuration readiness, and runtime activation?
+- Is controlled metadata discovery limited to the intended immediate `app/plugins/*/plugin.toml` boundary, with filesystem presence/discovery kept distinct from **Enable** trust, schema readiness, configuration readiness, and runtime activation?
+- If a plugin ID, package directory, manifest entrypoint, or import path changes, is persisted `PluginRegistration` state explicitly reconciled instead of assuming a filesystem rename updates the database?
+- If stale registration cleanup is proposed, has the reviewer distinguished the host-owned registration row from plugin-owned schema, migration history, configuration, secrets, and business data?
 - Do sensitive host admin/plugin-management responses retain the host `no-store` policy without forcing that cache policy onto intentionally public plugin content?
 
 Do not treat an in-process Python plugin as sandboxed. Least-privilege process/container permissions limit blast radius; they do not make untrusted plugin code safe.
+
+For operator recovery from a registry/filesystem mismatch, see [`plugin-troubleshooting.md`](plugin-troubleshooting.md). Direct registration-row cleanup is a narrow pre-release/disposable-development recovery technique, not a substitute for a published plugin's compatibility or data migration.
 
 ## 12. Required route test cases
 
