@@ -1,4 +1,4 @@
-# plugins/example/routes.py
+# tests/fixtures/plugin_app/routes.py
 """Web surface for the Flask-AAS Plugin API reference application."""
 
 from flask import Blueprint, abort, render_template
@@ -7,7 +7,7 @@ from sqlalchemy import func, select
 
 from app.core.auth import login_required
 from app.core.extensions import db
-from app.plugins.example.models import ExampleItem, get_example_settings
+from tests.fixtures.plugin_app.models import ExampleItem, get_example_settings
 from app.plugins.interface import PLUGIN_API_VERSION
 
 

@@ -10,8 +10,8 @@ from jinja2 import ChoiceLoader, DictLoader
 
 from app.core.extensions import db
 from app.models import EnvSettings, PluginRegistration, Role, User
-from app.plugins.example import plugin as example_plugin
-from app.plugins.example.models import ExampleItem, ExampleSettings
+from tests.fixtures.plugin_app import plugin as example_plugin
+from tests.fixtures.plugin_app.models import ExampleItem, ExampleSettings
 from app.plugins.interface import PluginConfiguration
 from app.plugins.migrations import PluginMigrationManager
 from app.plugins.loader import (
@@ -126,7 +126,7 @@ class ExamplePluginWebSurfaceTests(unittest.TestCase):
         self.example_item = ExampleItem(value="persisted business data")
         self.registration = PluginRegistration(
             plugin_id="example",
-            import_path="app.plugins.example.plugin:plugin",
+            import_path="tests.fixtures.plugin_app.plugin:plugin",
             enabled=True,
             configured=False,
         )

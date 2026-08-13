@@ -78,7 +78,7 @@ class InvalidConfigEndpointPlugin(LifecyclePlugin):
 
 
 EXAMPLE_MANIFEST = load_plugin_manifest(
-    Path(__file__).resolve().parents[1] / "app" / "plugins" / "example" / "plugin.toml"
+    Path(__file__).resolve().parents[1] / "tests" / "fixtures" / "plugin_app" / "plugin.toml"
 )
 
 

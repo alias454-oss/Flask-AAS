@@ -10,7 +10,7 @@ from app.core.migrations import (
     core_migration_include_object,
 )
 from app.models.plugin import PluginRegistration
-from app.plugins.example.models import ExampleItem, ExampleSettings
+from tests.fixtures.plugin_app.models import ExampleItem, ExampleSettings
 
 
 class CoreMigrationOwnershipTests(unittest.TestCase):

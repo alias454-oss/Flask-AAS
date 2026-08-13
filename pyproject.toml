@@ -64,10 +64,6 @@ app = [
     "static/**/*.webp",
     "static/**/*.ico",
 ]
-"app.plugins.example" = [
-    "templates/**/*.html",
-    "static/**/*.css",
-]
 
 [project.optional-dependencies]
 test = [

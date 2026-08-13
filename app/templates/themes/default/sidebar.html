@@ -1,4 +1,8 @@
 <div class="sidebar-content">
+  {% if sidebar_extra_template is defined and sidebar_extra_template %}
+    {% include sidebar_extra_template %}
+  {% endif %}
+
   {% if current_user.is_authenticated %}
     <h3>Account Menu</h3>
     <ul>
@@ -33,4 +37,5 @@
       {% include "admin/includes/menu.html" %}
     {% endif %}
   {% endif %}
+
 </div>

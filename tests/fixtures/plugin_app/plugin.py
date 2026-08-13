@@ -7,9 +7,9 @@ from sqlalchemy import inspect
 
 from app.core.extensions import db
 from app.plugins import ApplicationPlugin, PluginConfiguration, load_plugin_manifest
-from app.plugins.example.cli import cli as example_cli
-from app.plugins.example.models import ExampleSettings, get_example_settings
-from app.plugins.example.routes import example_bp
+from tests.fixtures.plugin_app.cli import cli as example_cli
+from tests.fixtures.plugin_app.models import ExampleSettings, get_example_settings
+from tests.fixtures.plugin_app.routes import example_bp
 from app.plugins.navigation import register_plugin_navigation
 
 

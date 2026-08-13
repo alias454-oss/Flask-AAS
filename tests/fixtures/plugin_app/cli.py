@@ -1,4 +1,4 @@
-# plugins/example/cli.py
+# tests/fixtures/plugin_app/cli.py
 """Plugin-owned CLI commands for the Plugin API reference application."""
 
 import click
@@ -8,7 +8,7 @@ from app.core.extensions import db
 from app.models.plugin import PluginRegistration
 from app.plugins.migrations import PluginMigrationError, PluginMigrationManager
 from app.plugins.registry import refresh_configuration
-from app.plugins.example.models import (
+from tests.fixtures.plugin_app.models import (
     DEFAULT_GREETING,
     ExampleItem,
     get_example_settings,
@@ -29,7 +29,7 @@ def _registration() -> PluginRegistration:
 
 def _migration_manager() -> PluginMigrationManager:
     # Import lazily because plugin.py imports this CLI module.
-    from app.plugins.example.plugin import plugin
+    from tests.fixtures.plugin_app.plugin import plugin
 
     return PluginMigrationManager(plugin.manifest)
 
@@ -51,7 +51,7 @@ def _require_current_schema() -> PluginMigrationManager:
 
 def _refresh_host_configuration(registration: PluginRegistration):
     # Import lazily to avoid a module cycle while plugin.py imports this CLI.
-    from app.plugins.example.plugin import plugin
+    from tests.fixtures.plugin_app.plugin import plugin
 
     return refresh_configuration(registration, plugin)
 

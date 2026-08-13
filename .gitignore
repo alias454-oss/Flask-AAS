@@ -26,9 +26,6 @@ build/
 # Separately maintained application plugins
 /app/plugins/*/
 
-# Host-owned reference plugin
-!/app/plugins/example/
-!/app/plugins/example/**
 
 # Flask instance folder (if used)
 instance/

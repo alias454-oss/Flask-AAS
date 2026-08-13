@@ -7,8 +7,8 @@ from sqlalchemy import inspect
 
 from app.core.extensions import db
 from app.models.plugin import PluginRegistration
-from app.plugins.example.models import ExampleItem, ExampleSettings
-from app.plugins.example.plugin import plugin as example_plugin
+from tests.fixtures.plugin_app.models import ExampleItem, ExampleSettings
+from tests.fixtures.plugin_app.plugin import plugin as example_plugin
 from app.plugins.migrations import PluginMigrationManager
 from app.plugins.registry import disable_plugin, enable_plugin, refresh_configuration
 
@@ -54,7 +54,7 @@ class ExamplePluginPersistenceTests(unittest.TestCase):
 
         self.registration = PluginRegistration(
             plugin_id="example",
-            import_path="app.plugins.example.plugin:plugin",
+            import_path="tests.fixtures.plugin_app.plugin:plugin",
             enabled=True,
             configured=False,
         )

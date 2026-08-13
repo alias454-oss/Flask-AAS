@@ -268,8 +268,8 @@ Application plugins have a separate migration boundary. A plugin manifest may de
 
 ```toml
 [plugin]
-id = "example"
-entrypoint = "app.plugins.example.plugin:plugin"
+id = "your_plugin"
+entrypoint = "app.plugins.your_plugin.plugin:plugin"
 migrations = "migrations"
 ```
 
@@ -289,11 +289,11 @@ operation, while released plugins normally ship that environment and operators
 only inspect or upgrade it:
 
 ```bash
-python manage.py plugin run example db init
-python manage.py plugin run example db current
-python manage.py plugin run example db migrate -m "Describe plugin schema change"
-python manage.py plugin run example db upgrade
-python manage.py plugin run example db downgrade
+python manage.py plugin run your_plugin db init
+python manage.py plugin run your_plugin db current
+python manage.py plugin run your_plugin db migrate -m "Describe plugin schema change"
+python manage.py plugin run your_plugin db upgrade
+python manage.py plugin run your_plugin db downgrade
 ```
 
 The top-level ``db`` command is reserved by Flask-AAS for any plugin whose
@@ -531,8 +531,8 @@ Admin → Site Settings
 
 ```bash
 python manage.py plugin run example status
-python manage.py plugin run example db current
-python manage.py plugin run example db upgrade
+python manage.py plugin run your_plugin db current
+python manage.py plugin run your_plugin db upgrade
 python manage.py plugin run example configure
 python manage.py plugin run example add-item "example value"
 ```

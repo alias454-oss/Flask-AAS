@@ -43,78 +43,85 @@ class BundledPluginSeedTests(unittest.TestCase):
         db.drop_all()
         db.create_all()
 
+        self.plugins_dir = tempfile.TemporaryDirectory()
+        plugins_root = Path(self.plugins_dir.name)
+        plugin_dir = plugins_root / "downstream"
+        plugin_dir.mkdir()
+        (plugin_dir / "plugin.toml").write_text(
+            "\n".join(
+                (
+                    "[plugin]",
+                    'id = "downstream"',
+                    'name = "Downstream Application"',
+                    'version = "1.0.0"',
+                    "api_version = 1",
+                    'entrypoint = "downstream.plugin:plugin"',
+                    "",
+                )
+            ),
+            encoding="utf-8",
+        )
+        self.bundled_file = str(plugins_root / "bundled.py")
+
     def tearDown(self):
         db.session.rollback()
         db.session.remove()
+        self.plugins_dir.cleanup()
         self.app_context.pop()
 
-    def test_example_is_bundled_for_fresh_deployments(self):
-        bundled = {entry.plugin_id: entry for entry in bundled_plugin_registrations()}
+    def test_catalog_discovers_manifests_without_runtime_import(self):
+        with patch("app.plugins.bundled.__file__", self.bundled_file):
+            bundled = bundled_plugin_registrations()
 
-        self.assertIn("example", bundled)
-        self.assertEqual(
-            bundled["example"].import_path,
-            "app.plugins.example.plugin:plugin",
-        )
-        self.assertEqual(
-            bundled["example"].model_modules,
-            ("app.plugins.example.models",),
-        )
+        self.assertEqual(len(bundled), 1)
+        self.assertEqual(bundled[0].plugin_id, "downstream")
+        self.assertEqual(bundled[0].import_path, "downstream.plugin:plugin")
+        self.assertEqual(bundled[0].manifest.name, "Downstream Application")
 
-    def test_bundled_model_declarations_do_not_require_importing_them(self):
-        self.assertIn(
-            "app.plugins.example.models",
-            bundled_plugin_model_modules(),
-        )
+    def test_model_module_declaration_is_derived_from_entrypoint(self):
+        with patch("app.plugins.bundled.__file__", self.bundled_file):
+            modules = bundled_plugin_model_modules()
 
-    def test_seed_registers_bundled_plugins_disabled_by_default(self):
-        seed_bundled_plugins()
+        self.assertEqual(modules, ("downstream.models",))
 
-        record = PluginRegistration.query.filter_by(plugin_id="example").one()
-        self.assertEqual(record.import_path, "app.plugins.example.plugin:plugin")
-        self.assertFalse(record.enabled)
-        self.assertFalse(record.configured)
-
-    def test_seed_automatically_discovers_plugin_manifest_without_runtime_import(self):
-        with tempfile.TemporaryDirectory() as temp_dir:
-            plugins_root = Path(temp_dir)
-            plugin_dir = plugins_root / "downstream"
-            plugin_dir.mkdir()
-            (plugin_dir / "plugin.toml").write_text(
-                "\n".join(
-                    (
-                        "[plugin]",
-                        'id = "downstream"',
-                        'name = "Downstream Application"',
-                        'version = "1.0.0"',
-                        "api_version = 1",
-                        'entrypoint = "does.not.exist.plugin:plugin"',
-                        "",
-                    )
-                )
-            )
-
-            with patch("app.plugins.bundled.__file__", str(plugins_root / "bundled.py")):
-                seed_bundled_plugins()
+    def test_seed_registers_discovered_plugins_disabled_by_default(self):
+        with patch("app.plugins.bundled.__file__", self.bundled_file):
+            seed_bundled_plugins()
 
         record = PluginRegistration.query.filter_by(plugin_id="downstream").one()
-        self.assertEqual(record.import_path, "does.not.exist.plugin:plugin")
+        self.assertEqual(record.import_path, "downstream.plugin:plugin")
         self.assertFalse(record.enabled)
         self.assertFalse(record.configured)
 
     def test_repeat_seed_preserves_administrator_requested_state(self):
-        seed_bundled_plugins()
-        record = PluginRegistration.query.filter_by(plugin_id="example").one()
-        record.enabled = True
-        record.configured = True
-        db.session.commit()
-
-        seed_bundled_plugins()
+        with patch("app.plugins.bundled.__file__", self.bundled_file):
+            seed_bundled_plugins()
+            record = PluginRegistration.query.filter_by(plugin_id="downstream").one()
+            record.enabled = True
+            record.configured = True
+            db.session.commit()
+            seed_bundled_plugins()
 
         db.session.refresh(record)
-        self.assertEqual(
-            PluginRegistration.query.count(),
-            len(bundled_plugin_registrations()),
-        )
+        self.assertEqual(PluginRegistration.query.count(), 1)
         self.assertTrue(record.enabled)
         self.assertTrue(record.configured)
+
+    def test_seed_rejects_conflicting_existing_import_path(self):
+        db.session.add(
+            PluginRegistration(
+                plugin_id="downstream",
+                import_path="somewhere.else:plugin",
+                enabled=False,
+                configured=False,
+            )
+        )
+        db.session.commit()
+
+        with patch("app.plugins.bundled.__file__", self.bundled_file):
+            with self.assertRaisesRegex(ValueError, "unexpected path"):
+                seed_bundled_plugins()
+
+
+if __name__ == "__main__":
+    unittest.main()

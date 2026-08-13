@@ -9,8 +9,8 @@ from flask import Flask
 from app.core.extensions import db
 from app.models import EnvSettings, PluginRegistration, User
 from app.plugins.cli import plugin_cli
-from app.plugins.example import plugin as example_plugin
-from app.plugins.example.models import ExampleSettings
+from tests.fixtures.plugin_app import plugin as example_plugin
+from tests.fixtures.plugin_app.models import ExampleSettings
 from app.plugins.interface import ApplicationPlugin, PluginConfiguration
 from app.plugins.manifest import PluginManifest
 from app.plugins.migrations import PluginMigrationManager
@@ -72,7 +72,7 @@ class ExamplePluginIntegrationSurfaceTests(unittest.TestCase):
         )
         self.registration = PluginRegistration(
             plugin_id="example",
-            import_path="app.plugins.example.plugin:plugin",
+            import_path="tests.fixtures.plugin_app.plugin:plugin",
             enabled=True,
             configured=False,
         )
