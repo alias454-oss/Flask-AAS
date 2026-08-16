@@ -242,7 +242,12 @@ def track_online_user():
         return False
 
 
-def expire_stale_online_users(minutes=CLEAN_ONLINE_USER_MINUTES):
+def expire_stale_online_users(
+    minutes=CLEAN_ONLINE_USER_MINUTES,
+    *,
+    suppress_errors=True,
+):
+    """Delete stale online-presence rows outside normal request processing."""
     cutoff = datetime.now(timezone.utc) - timedelta(minutes=minutes)
 
     try:
@@ -252,6 +257,8 @@ def expire_stale_online_users(minutes=CLEAN_ONLINE_USER_MINUTES):
             )
         return result.rowcount or 0
     except SQLAlchemyError:
+        if not suppress_errors:
+            raise
         logger.exception("Error expiring stale online users")
         return 0
 

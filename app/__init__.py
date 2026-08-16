@@ -6,22 +6,22 @@ import time
 from flask import Flask, g, current_app, request, session, redirect, url_for
 from flask_login import LoginManager, current_user
 from werkzeug.middleware.proxy_fix import ProxyFix
-from datetime import datetime, timezone
 from sqlalchemy.exc import OperationalError, ProgrammingError
 import minify_html
 
 from app.core.cache import get_cached_env_settings
-from app.core.extensions import db, migrate, bcrypt, csrf, cache, limiter, mail
+from app.core.extensions import db, migrate, csrf, cache, limiter, mail
 from app.routes import register_error_handlers, register_all_routes
 from app.core.config import settings
 from app.core.inactivity import enforce_inactivity_timeout
 from app.core.sessions import touch_current_session
+from app.core.schema import table_exists
 from app.core.site import (
     LEGACY_SITE_URL_PLACEHOLDERS,
     normalize_site_url,
     site_url_flask_config,
 )
-from app.core.trackers import track_online_user, expire_stale_online_users, visitor_tracking_enabled
+from app.core.trackers import track_online_user, visitor_tracking_enabled
 from app.models.user import EnvSettings, User
 from app.models.plugin import PluginRegistration  # noqa: F401 - register model metadata
 from app.plugins.cli import plugin_cli
@@ -39,6 +39,11 @@ def safe_get_cached_env_settings():
         return None
 
 def update_log_level():
+    if not table_exists(EnvSettings.__tablename__):
+        logger.info("Core schema not initialized; using default log level")
+        logger.setLevel(logging.INFO)
+        return
+
     env = safe_get_cached_env_settings()
     if not env:
         logger.info("DB not ready, using default log level")
@@ -81,7 +86,6 @@ def create_app():
 
     # Init extensions
     cache.init_app(app)
-    bcrypt.init_app(app)
     csrf.init_app(app)
     limiter.init_app(app)
     mail.init_app(app)
@@ -99,7 +103,11 @@ def create_app():
     # Derive Flask's native SERVER_NAME, PREFERRED_URL_SCHEME, and TRUSTED_HOSTS
     # before the application begins accepting requests.
     with app.app_context():
-        env = safe_get_cached_env_settings()
+        env = (
+            safe_get_cached_env_settings()
+            if table_exists(EnvSettings.__tablename__)
+            else None
+        )
         persisted_site_url = getattr(env, "site_url", None) if env else None
         if persisted_site_url and persisted_site_url not in LEGACY_SITE_URL_PLACEHOLDERS:
             try:
@@ -145,26 +153,8 @@ def create_app():
 
     @app.before_request
     def before_request_online_tracking():
-        if not visitor_tracking_enabled():
-            return
-
-        track_online_user()
-
-        now = datetime.now(timezone.utc)
-        last_expire_run = current_app.config.get("LAST_EXPIRE_RUN")
-        expire_interval = current_app.config.get("EXPIRE_INTERVAL_SECONDS")
-
-        if not expire_interval:
-            return
-
-        if isinstance(last_expire_run, str):
-            last_expire_run = datetime.fromisoformat(last_expire_run)
-        if last_expire_run.tzinfo is None:
-            last_expire_run = last_expire_run.replace(tzinfo=timezone.utc)
-
-        if (now - last_expire_run).total_seconds() > expire_interval:
-            expire_stale_online_users()
-            current_app.config["LAST_EXPIRE_RUN"] = now
+        if visitor_tracking_enabled():
+            track_online_user()
 
     @app.before_request
     def enforce_mfa():

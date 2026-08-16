@@ -11,6 +11,7 @@ from flask_login import current_user
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.extensions import db
+from app.core.schema import table_exists
 from app.models.env_settings import EnvSettings
 from app.models.plugin import PluginRegistration
 from app.plugins.interface import (
@@ -182,6 +183,12 @@ def enforce_plugin_access() -> None:
 
 def _read_plugin_system_enabled() -> bool:
     """Read the persisted global feature toggle, failing closed during bootstrap."""
+
+    if not table_exists(EnvSettings.__tablename__):
+        logger.info(
+            "Application plugin loader deferred; core schema is not initialized"
+        )
+        return False
 
     try:
         env = EnvSettings.query.first()

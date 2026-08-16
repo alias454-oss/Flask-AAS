@@ -14,7 +14,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from PIL import Image
 
 from app.core.avatar import profile_image_data_uri, profile_image_root
-from app.core.extensions import bcrypt, csrf, db, limiter
+from app.core.extensions import csrf, db, limiter
 from app.models import AuditActivity, Country, EnvSettings, User, UserSession, Zone
 from app.routes.account.account import account_bp
 from app.routes.locations import locations_bp
@@ -49,7 +49,6 @@ class AccountProfileRouteTests(unittest.TestCase):
         )
 
         db.init_app(cls.app)
-        bcrypt.init_app(cls.app)
         csrf.init_app(cls.app)
         limiter.init_app(cls.app)
 

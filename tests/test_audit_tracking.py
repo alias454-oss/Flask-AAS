@@ -15,7 +15,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.decorators import log_view_action
-from app.core.extensions import bcrypt, db
+from app.core.extensions import db
 from app.core.logger import extract_request_metadata, redact_route_values
 from app.core.security import get_client_ip
 from app.core.trackers import (
@@ -48,7 +48,6 @@ class AuditTrackingTests(unittest.TestCase):
         )
 
         db.init_app(cls.app)
-        bcrypt.init_app(cls.app)
         cls.login_manager = LoginManager(cls.app)
 
         @cls.login_manager.user_loader
@@ -329,6 +328,15 @@ class AuditTrackingTests(unittest.TestCase):
         self.assertEqual(User.query.count(), 0)
         self.assertEqual(get_total_user_count_statistics('guest'), 0)
         self.assertEqual(get_total_user_count_statistics('online'), 1)
+
+    def test_stale_online_cleanup_can_surface_database_failure_for_maintenance(self):
+        with patch.object(
+            db.engine,
+            "begin",
+            side_effect=SQLAlchemyError("cleanup database unavailable"),
+        ):
+            with self.assertRaises(SQLAlchemyError):
+                expire_stale_online_users(suppress_errors=False)
 
     def test_admin_pending_count_follows_enabled_account_requirements(self):
         owner = self._new_user(

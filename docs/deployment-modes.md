@@ -28,7 +28,7 @@ The application does not require internal certificates for ordinary development 
 | `ProxyFix` | Off | Explicit hop count | Explicit hop count matching topology |
 | Host validation | Optional localhost allowance | Local host allowlist | Required allowlist or canonical host |
 | Cache and lockouts | In-memory allowed | In-memory allowed for one process | Shared backend for multiple workers/instances |
-| Database | SQLite allowed | SQLite allowed | Deployment-specific durable database |
+| Database | SQLite allowed | SQLite allowed | Durable database; PostgreSQL is the currently validated production/integration backend |
 | Outbound email | Optional; disabled or mock delivery | Optional; deployment SMTP or UI override | Explicitly configured when email-dependent features are enabled |
 | Migrations | Explicit init/generate/upgrade | Same | Clean bootstrap only until a versioned upgrade contract exists |
 | Application plugins | Optional; global host may remain disabled | Same | Explicitly enabled applications activate at a Gunicorn reload boundary |
@@ -137,6 +137,46 @@ When the application uses multiple Gunicorn workers or multiple instances, proce
 
 Redis is one possible backend, not a mandatory development dependency.
 
+## Current container and Compose checkpoint
+
+The repository container is currently validated on `python:3.13.13-slim-trixie`. Runtime dependencies are installed from the hash-pinned `requirements.txt` with `--require-hashes` and `--only-binary=:all:`, and Gunicorn runs as the unprivileged `flaskaas` user.
+
+Local container workflows deliberately keep the database choice explicit:
+
+```bash
+# Flask-AAS container using the normal .env configuration.
+# The default development configuration remains SQLite.
+docker compose up -d
+
+# Same application image with a PostgreSQL service and URI override.
+docker compose -f compose.yml -f compose.postgres.yml up -d
+```
+
+`compose.yml` is the base development/integration composition. `compose.postgres.yml` adds PostgreSQL and overrides `SQLALCHEMY_DATABASE_URI` inside the web service; it does not require the developer to change the normal SQLite-oriented `.env`. Both paths have been exercised from a clean container/database state. The PostgreSQL path has also exercised plugin discovery, explicit enablement, `NEEDS_MIGRATION`, plugin schema initialization, reload to `ACTIVE`, and optional Application Data initialization.
+
+The PostgreSQL overlay uses the SQLAlchemy `postgresql+psycopg://` dialect for Psycopg 3. Flask-AAS also normalizes a legacy/generic `postgresql://` deployment value to that driver explicitly.
+
+These Compose files are test/development helpers, not a hardened production recipe. Production still needs deployment-owned secrets, a durable database/media design, explicit `SITE_URL`/proxy topology, and shared state if multiple workers or instances are used.
+
+### Clean pre-schema startup
+
+A completely empty database must not be probed as though `EnvSettings` or other core tables already exist. Startup/bootstrap boundaries use the core schema-readiness helper in `app/core/schema.py` to inspect table presence before database-backed settings or plugin-loader state are queried.
+
+On a true greenfield bootstrap, messages such as:
+
+```text
+Application plugin loader deferred; core schema is not initialized
+Core schema not initialized; using default log level
+```
+
+are expected before the core migration runs. A database-server error such as `relation "env_settings" does not exist` during that phase is not expected and should be treated as a bootstrap regression.
+
+### Current pre-release entrypoint behavior
+
+Until the first durable core migration baseline is packaged, the repository `entrypoint.sh` still supports clean pre-release bootstrap by explicitly initializing/generating/upgrading the core migration state and then seeding the database. Its initialization and seed marker filenames include a short hash of `SQLALCHEMY_DATABASE_URI` so SQLite and PostgreSQL state cannot collide inside one container filesystem.
+
+Those marker files are only container-local optimization state; Alembic/database state remains authoritative. Recreating the web container can therefore rerun bootstrap/seed work against an existing durable database, and `seed-db` must remain safe to repeat. Once reviewed core migrations are packaged as the supported release contract, normal deployment should simplify to applying known upgrades plus idempotent seeding rather than generating migrations at startup.
+
 ## Profile-image storage
 
 The optional canonical host profile image uses `EnvSettings.users_stored_path` as the complete local storage directory. Relative values resolve from the Flask application root; absolute values are used as configured. Fresh installations seed `static/images/users`.
@@ -213,7 +253,7 @@ Mail dispatch remains asynchronous. A route may report that a message was queued
 
 ## Migration behavior
 
-Convenient development commands may initialize migrations and generate revisions explicitly. During the current pre-release phase, generated migration directories are ignored and clean deployments may generate an initial schema from the live host models.
+Convenient development commands may initialize migrations and generate revisions explicitly. During the current pre-release phase, generated migration directories are ignored and clean deployments may generate an initial schema from the live host models; the repository entrypoint currently automates that clean-bootstrap path for container evaluation.
 
 This policy has a strict boundary:
 

@@ -12,7 +12,8 @@ from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
 
 from app.core.cache import get_cached_env_settings
 from app.core.config import settings
-from app.core.extensions import bcrypt, cache
+from app.core.extensions import cache
+from app.core.password_hashing import verify_password_hash
 
 logger = logging.getLogger(__name__)
 
@@ -76,15 +77,12 @@ def normalize_username(username: str) -> str:
     return username[:60]                                            # Limit length to DB column max (e.g., 60)
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    """Verify a password with the application's bcrypt backend."""
-    try:
-        return bcrypt.check_password_hash(hashed_password, plain_password)
-    except (TypeError, ValueError):
-        return False
+    """Verify a password with the application's supported hash stack."""
+    return verify_password_hash(hashed_password, plain_password)
 
 
 def old_password_match(user, new_password: str) -> bool:
-    return bcrypt.check_password_hash(user.hashed_password, new_password)
+    return verify_password_hash(user.hashed_password, new_password)
 
 def get_serializer():
     return URLSafeTimedSerializer(current_app.config['SECRET_KEY'])

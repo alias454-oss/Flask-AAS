@@ -2,7 +2,6 @@
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
 from flask_caching import Cache
-from flask_bcrypt import Bcrypt
 from flask_wtf import CSRFProtect
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
@@ -23,7 +22,6 @@ migrate = Migrate(
     include_name=core_migration_include_name,
     include_object=core_migration_include_object,
 )
-bcrypt = Bcrypt()
 csrf = CSRFProtect()
 cache = Cache()
 mail = Mail()

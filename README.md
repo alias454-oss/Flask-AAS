@@ -40,7 +40,7 @@ The base is intentionally designed to remain easy to run locally. Direct HTTP, g
 
 ### Authentication & User Management
 - Secure login with **Flask-Login**
-- Password hashing via **bcrypt**, with full long-password handling enabled
+- Password hashing via **Argon2id**, with transparent verification and login-time upgrade of legacy Flask-Bcrypt hashes
 - Admin-managed password policy enabled by default with a 20-character minimum, passphrase-friendly composition defaults, and deployment values used only to seed a fresh database
 - Optional provider-backed new-password checking, disabled by default, with a built-in local common-password blocklist and a registration seam for additional providers
 - Active session tracking
@@ -66,7 +66,7 @@ The base is intentionally designed to remain easy to run locally. Direct HTTP, g
 - Uploaded JPEG, PNG, or WebP files are decoded/validated, EXIF-oriented, center-cropped to 256x256, metadata-stripped, and re-encoded as WebP with a generated random filename.
 - Upload/replace/remove are authenticated, CSRF-protected, rate-limited operations with transaction-aware file cleanup.
 - Administrators can immediately remove an unacceptable custom profile image from **Admin → View Users**; the database reference is committed before best-effort file deletion, and users without a custom image do not expose a meaningless removal action.
-- Flask-AAS does not currently publish a generic profile-image/media route. Account/admin pages render the stored generated WebP internally; future application plugins decide whether a canonical host profile image is relevant or visible in their own domain.
+- Flask-AAS does not publish a generic profile-image/media route. Account/admin pages render the stored generated WebP internally; application plugins decide whether the canonical host profile image is relevant or visible in their own domain. AutoGrid360 now proves this contract by consuming the host image for its public seller identity card without adding duplicate avatar storage/lifecycle behavior.
 - Domain media such as AutoGrid360 listing photos remains plugin-owned. S3/object-storage support is a later concern if real host profile-image usage requires it.
 
 ### Password Check Providers
@@ -250,6 +250,10 @@ python manage.py db upgrade
 python manage.py seed-db
 ```
 
+The current pre-release container entrypoint automates this clean-bootstrap sequence when its database-specific initialization marker is absent. The marker name includes a short hash of `SQLALCHEMY_DATABASE_URI`, preventing SQLite and PostgreSQL initialization state from colliding inside one container filesystem. Seed state uses the same pattern. These marker files are not database authority: recreating the web container can rerun bootstrap/seed work against an existing durable database, and `seed-db` is expected to remain safe to repeat.
+
+A completely empty database is detected before startup reads persisted settings. `app/core/schema.py` uses SQLAlchemy schema inspection so early settings and plugin-loader initialization defer cleanly until `env_settings` exists; greenfield PostgreSQL startup should not emit `relation "env_settings" does not exist` errors.
+
 Country and subdivision reference data is vendored under `app/data/` from the `iso-codes` project. `seed-db` synchronizes ISO 3166-1 countries and ISO 3166-2 zones, including subdivision type and parent hierarchy. To refresh the vendored snapshot from a locally installed `iso-codes` package:
 
 ```bash
@@ -336,7 +340,7 @@ flask run
 
 `pyproject.toml` is the human-maintained source for direct runtime dependencies. `requirements.txt` is a generated, fully pinned, hash-verified deployment lock and should not be edited manually.
 
-The current lock baseline was generated on Fedora 42 Linux x86_64 with Python 3.13.13, pip 26.1.2, and pip-tools 7.6.0. It was validated in the `python:3.13.13-slim-trixie` container using binary wheels only.
+Generate the lock on Fedora 42 Linux x86_64 with Python 3.13.13, pip 26.1.2, and pip-tools 7.6.0. Release validation should install the result in the `python:3.13.13-slim-trixie` container using binary wheels only.
 
 Regenerate the lock from a clean Python 3.13 environment:
 
@@ -344,7 +348,7 @@ Regenerate the lock from a clean Python 3.13 environment:
 ./scripts/lock.sh
 ```
 
-The lock workflow uses `pip-tools`; deployment still requires only standard `pip` and `requirements.txt`. JWT support uses PyJWT, password hashing and verification use the single Flask-Bcrypt stack, and `cryptography` is a direct dependency for encrypted runtime SMTP credentials.
+The lock workflow uses `pip-tools`; deployment still requires only standard `pip` and `requirements.txt`. JWT support uses PyJWT, current password hashing uses Argon2id via `argon2-cffi`, direct `bcrypt` remains only for legacy-hash migration, PostgreSQL uses Psycopg 3, timezone selection uses the standard-library `zoneinfo` API with first-party `tzdata`, and `cryptography` is a direct dependency for encrypted runtime SMTP credentials.
 
 ---
 
@@ -497,7 +501,7 @@ python -m pytest \
 The most recent confirmed complete host run is:
 
 ```text
-374 passed, 13 warnings, 22 subtests passed in 69.03s
+386 passed, 13 warnings, 22 subtests passed in 27.94s
 ```
 
 
@@ -520,6 +524,41 @@ docker run --rm -it --env-file .env -p 5000:5000 flask-aas:local
 3. **Access the app**
 
 Open your browser and go to [http://localhost:5000](http://localhost:5000)
+
+### Local Docker Compose database matrix
+
+The base Compose file uses the normal `.env` application configuration, so the default development database remains SQLite:
+
+```bash
+docker compose up -d
+```
+
+Add the PostgreSQL overlay when explicitly validating the production database backend. The overlay adds the database service and replaces only `SQLALCHEMY_DATABASE_URI` inside the web container; local PostgreSQL values may be supplied through `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, and `POSTGRES_PORT`, otherwise the bounded local defaults are used:
+
+Flask-AAS uses Psycopg 3 and therefore emits `postgresql+psycopg://` URLs. A legacy/generic `postgresql://` value is normalized to the Psycopg 3 dialect during settings validation.
+
+```bash
+docker compose -f compose.yml -f compose.postgres.yml up -d
+```
+
+Both clean paths are currently validated through core bootstrap, seed, and Gunicorn startup. The PostgreSQL path has also been exercised with the real AutoGrid360 lifecycle:
+
+```text
+discover/register disabled
+→ administrator Enable
+→ Reload App Config
+→ NEEDS_MIGRATION
+→ Upgrade Database Schema
+→ Reload App Config
+→ ACTIVE
+→ initialize/refresh optional Application Data
+```
+
+The same PostgreSQL run successfully exercised the plugin's provisional schema head `6e71dd7952ab` plus automotive/postal dataset actions. This proves the current clean-bootstrap/runtime path; AutoGrid360's first durable packaged migration is still a separate plugin release step.
+
+The repository image uses `python:3.13.13-slim-trixie`, installs the hash-pinned runtime lock with `--require-hashes --only-binary=:all:`, and runs as the unprivileged `flaskaas` account.
+
+These Compose files are development/integration helpers, not a hardened production deployment recipe. Production deployments must supply explicit secrets, site/proxy configuration, durable PostgreSQL/media services, and shared state when multiple workers/instances are claimed.
 
 ### Enabling an Application Plugin
 
@@ -564,18 +603,22 @@ If plugin source was renamed, moved, removed, or its manifest/import path change
 
 
 ## Maintenance
-### Manual Log Cleanup
-Keep log tables lean with the CLI cleanup command:
+### Manual Cleanup
+Keep retained operational rows bounded with explicit maintenance commands:
 
 ```bash
 python manage.py cleanup-logins --days 7
+python manage.py cleanup-online-users
 ```
-- **`--days`** → Number of days to retain logs (default: 7)
-- Deletes `AuditLogin` records older than the retention period
+
+- **`cleanup-logins --days`** retains login-attempt audit rows for the selected number of days (default: 7).
+- **`cleanup-online-users --minutes`** removes stale online-presence rows older than the selected window (default: 10 minutes).
+- Online/guest statistics already apply the same active-window cutoff when queried, so stale-row deletion is storage housekeeping and no longer runs synchronously while serving a request.
 
 ---
 
-- Run `cleanup-logins` regularly when login-attempt retention is required
+- Run `cleanup-logins` regularly when login-attempt retention is required.
+- Run `cleanup-online-users` periodically when visitor tracking is enabled.
 
 - Monitor audit logs for anomalies
 - Enable email verification & CAPTCHA for public reg

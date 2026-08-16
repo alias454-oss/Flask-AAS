@@ -2,7 +2,7 @@
 import os
 import logging
 import secrets
-from datetime import datetime, timedelta, timezone
+from datetime import timedelta
 from typing import List, Optional, ClassVar, Literal
 
 from pydantic_settings import BaseSettings
@@ -32,13 +32,19 @@ class Settings(BaseSettings):
     PASSWORD_REQUIRE_NUMBER: bool = False
     PASSWORD_REQUIRE_SPECIAL: bool = False
 
-    # Flask-Bcrypt otherwise ignores password bytes after 72 bytes. Flask-AAS
-    # requires the complete submitted password to participate in verification.
-    BCRYPT_HANDLE_LONG_PASSWORDS: Literal[True] = True
-
     # Single database URI — can be PostgreSQL, SQLite, etc.
     SQLALCHEMY_DATABASE_URI: str
     SQLALCHEMY_TRACK_MODIFICATIONS: bool = False
+
+    @field_validator("SQLALCHEMY_DATABASE_URI")
+    def normalize_database_uri(cls, value):
+        # SQLAlchemy still maps a bare postgresql:// URL to psycopg2. Flask-AAS
+        # uses Psycopg 3, so preserve legacy/generic deployment URLs by making
+        # the selected driver explicit before Flask-SQLAlchemy creates an engine.
+        legacy_prefix = "postgresql://"
+        if value.startswith(legacy_prefix):
+            return "postgresql+psycopg://" + value[len(legacy_prefix):]
+        return value
 
     # Registration control
     REGISTRATION_ENABLED: bool = True
@@ -126,10 +132,6 @@ class Settings(BaseSettings):
             )
         return value
 
-    # --- Online tracking ---
-    EXPIRE_INTERVAL_SECONDS: Optional[int] = 900  # None disables expiration
-    LAST_EXPIRE_RUN: datetime = datetime.now(timezone.utc).isoformat()
-
     # --- Email ---
     MAIL_DEBUG: bool = False
     MAIL_CONFIG_UI_ENABLED: bool = False
@@ -215,17 +217,6 @@ class Settings(BaseSettings):
                 "Generated fallback SECRET_KEY. "
                 "Set a strong key in your .env file for production."
             )
-
-        # Validate EXPIRE_INTERVAL_SECONDS toggle logic
-        if (
-            self.EXPIRE_INTERVAL_SECONDS is not None
-            and self.EXPIRE_INTERVAL_SECONDS <= 0
-        ):
-            logger.warning(
-                "EXPIRE_INTERVAL_SECONDS is <= 0. "
-                "Disabling expiration checks."
-            )
-            self.EXPIRE_INTERVAL_SECONDS = None
 
 
 settings = Settings()

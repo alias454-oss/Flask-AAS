@@ -178,6 +178,21 @@ That requires an explicit compatibility/migration design. Deleting the registrat
 
 Likewise, do not drop plugin tables merely because a registration is stale. Registration state is host metadata; schema and business data have separate ownership and lifecycle.
 
+## Greenfield host bootstrap versus plugin state
+
+Plugin troubleshooting starts only after the Flask-AAS core schema is ready. On a completely empty SQLite or PostgreSQL database, current Flask-AAS startup first checks whether core tables exist before reading database-backed settings or persisted plugin registrations.
+
+Expected pre-schema messages include:
+
+```text
+Application plugin loader deferred; core schema is not initialized
+Core schema not initialized; using default log level
+```
+
+The entrypoint can then initialize/generate/upgrade the current pre-release core schema and run idempotent seeding. A PostgreSQL server error such as `relation "env_settings" does not exist` during this clean-bootstrap phase indicates that startup code bypassed the core schema-readiness boundary; do not misdiagnose it as a stale plugin registration or plugin migration failure.
+
+The clean PostgreSQL path has been exercised through core bootstrap, seed, plugin discovery, explicit AutoGrid360 enablement, `NEEDS_MIGRATION`, plugin schema initialization, reload to `ACTIVE`, and optional Application Data actions.
+
 ## Common plugin states and what they mean
 
 ### Plugin is discovered but Disabled

@@ -2,7 +2,7 @@
 import logging
 import os
 
-import pytz
+from zoneinfo import available_timezones
 from flask import Blueprint, current_app, flash, redirect, render_template, request, url_for
 from flask_login import current_user
 from flask_wtf import FlaskForm
@@ -424,7 +424,7 @@ def get_supported_languages():
 
 
 def get_timezones():
-    return [(tz, tz) for tz in pytz.all_timezones]
+    return [(tz, tz) for tz in sorted(available_timezones())]
 
 
 @settings_bp.route("/", methods=["GET", "POST"])

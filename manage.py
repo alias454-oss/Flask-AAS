@@ -16,6 +16,9 @@ python3 manage.py db current
 # Purge AuditLogin records (default 7 days)
 python manage.py cleanup-logins --days=30 # Purge with custom retention
 
+# Purge stale online-presence rows (default 10 minutes)
+python manage.py cleanup-online-users
+
 # Run data seeder on fresh DB
 python manage.py seed-db
 
@@ -39,6 +42,10 @@ from app.core.migrations import (
     core_migration_include_object,
 )
 from app.core.seeder import run_all_seeds
+from app.core.trackers import (
+    CLEAN_ONLINE_USER_MINUTES,
+    expire_stale_online_users,
+)
 from app.models.audit_login import AuditLogin
 
 logging.basicConfig(level=logging.INFO)
@@ -100,6 +107,34 @@ def cleanup_logins(days):
         db.session.rollback()
         logger.error(f"Failed to cleanup login logs: {str(e)}")
         exit(1)
+
+
+@cli.command("cleanup-online-users")
+@click.option(
+    "--minutes",
+    default=CLEAN_ONLINE_USER_MINUTES,
+    show_default=True,
+    type=click.IntRange(min=1),
+    help="Delete online-presence rows older than this many minutes.",
+)
+def cleanup_online_users(minutes):
+    """Delete stale online-presence rows outside the request path."""
+    try:
+        with app.app_context():
+            num_deleted = expire_stale_online_users(
+                minutes=minutes,
+                suppress_errors=False,
+            )
+        logger.info(
+            "Successfully deleted %s online-presence records older than %s minutes.",
+            num_deleted,
+            minutes,
+        )
+    except Exception as exc:
+        logger.error("Failed to cleanup stale online-presence records: %s", exc)
+        raise click.ClickException(
+            "Online-presence cleanup failed. Check application logs."
+        ) from exc
 
 
 @cli.command("mail-test")

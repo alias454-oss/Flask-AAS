@@ -5,17 +5,21 @@ Security tooling should support the review process, not replace code-level reaso
 
 ## Current dependency checkpoint
 
-The 2026-08-03 dependency/runtime checkpoint uses:
+The 2026-08-15 dependency/runtime checkpoint uses:
 
 - Python 3.13.13;
 - pip 26.1.2 and pip-tools 7.6.0 for lock generation;
 - `pyproject.toml` for direct dependencies;
 - `requirements.txt` as the hash-pinned deployment lock;
-- PyJWT for JWT support;
-- Flask-Bcrypt as the single password-hashing implementation;
+- PyJWT for retained JWT/API support;
+- Argon2id via `argon2-cffi` as the current password-hashing implementation;
+- direct `bcrypt` only for transitional verification and login-time upgrade of legacy Flask-Bcrypt hashes;
+- Psycopg 3 for PostgreSQL;
+- standard-library `zoneinfo` with first-party `tzdata` for IANA timezone data;
+- Pillow alone for CAPTCHA image distortion; NumPy is not required by the host;
 - `python:3.13.13-slim-trixie` as the validated container base.
 
-The lock was generated on Fedora 42 Linux x86_64 and validated in the Trixie container with `--require-hashes` and `--only-binary=:all:`. Dependency auditing should continue to run against the generated lock before release checkpoints.
+Lock generation is performed on Fedora 42 Linux x86_64, and release checkpoints should validate the generated lock in the Trixie container with `--require-hashes` and `--only-binary=:all:`. Dependency auditing should continue to run against the generated lock before release checkpoints.
 
 ## Current audit-integrity checkpoint
 
@@ -107,7 +111,7 @@ The 2026-08-12 host profile-image checkpoint establishes these invariants:
 - replacement/removal makes the database decision durable before deleting the superseded generated file, while commit failure preserves the prior reference/file;
 - the account page renders the canonical image internally and keeps image controls with the identity presentation; the admin user list exposes removal only for users with a custom image.
 
-Focused coverage is maintained in `tests/test_account_profile.py`, `tests/test_admin_avatar.py`, `tests/test_admin_ui_contract.py`, and `tests/test_theme_contract.py`. The current complete Flask-AAS suite is **374 passed, 13 warnings, and 22 subtests passed**.
+Focused coverage is maintained in `tests/test_account_profile.py`, `tests/test_admin_avatar.py`, `tests/test_admin_ui_contract.py`, and `tests/test_theme_contract.py`. The current complete Flask-AAS suite is **377 passed, 13 warnings, and 22 subtests passed**.
 
 ## Current application-plugin checkpoint
 
@@ -133,7 +137,20 @@ The Plugin API v1 checkpoint, including the 2026-08-12 external Example-referenc
 - enabled Python plugins execute with Flask-AAS process privileges and are not treated as sandboxed code;
 - the human-facing Example reference implementation is maintained as a separate repository, while Flask-AAS host tests use only the synthetic `tests/fixtures/plugin_app` fixture so the host does not ship or special-case the reference application.
 
-Focused plugin coverage is maintained in `tests/test_plugin_contract.py`, `tests/test_plugin_manifest.py`, `tests/test_plugin_migrations.py`, `tests/test_plugin_lifecycle.py`, `tests/test_plugin_admin.py`, `tests/test_plugin_web_surface.py`, `tests/test_plugin_integration_surfaces.py`, `tests/test_plugin_bundled.py`, `tests/test_plugin_reload.py`, and `tests/test_plugin_fixture_persistence.py`. The current complete Flask-AAS suite passes **374 tests, 13 warnings, and 22 subtests**.
+Focused plugin coverage is maintained in `tests/test_plugin_contract.py`, `tests/test_plugin_manifest.py`, `tests/test_plugin_migrations.py`, `tests/test_plugin_lifecycle.py`, `tests/test_plugin_admin.py`, `tests/test_plugin_web_surface.py`, `tests/test_plugin_integration_surfaces.py`, `tests/test_plugin_bundled.py`, `tests/test_plugin_reload.py`, and `tests/test_plugin_fixture_persistence.py`. The current complete Flask-AAS suite passes **377 tests, 13 warnings, and 22 subtests**.
+
+## Current clean-bootstrap schema-readiness checkpoint
+
+The 2026-08-15 container/PostgreSQL checkpoint adds these host invariants:
+
+- application startup checks for the core `env_settings` table before reading persisted Site Settings or plugin-loader state on a completely empty database;
+- schema inspection is confined to startup/bootstrap boundaries rather than adding metadata probes to ordinary request-time settings access;
+- missing core schema defers plugin loading and uses the default log-level path without issuing expected-failure queries against nonexistent tables;
+- the schema existence check uses SQLAlchemy inspection and is portable across the normal SQLite development path and PostgreSQL integration/deployment path;
+- the base Compose path using SQLite and the PostgreSQL overlay both complete clean bootstrap, seed, and Gunicorn startup;
+- the PostgreSQL path additionally completes explicit plugin enablement, `NEEDS_MIGRATION`, plugin schema initialization, reload to `ACTIVE`, and optional dataset actions.
+
+Focused coverage is maintained in `tests/test_core_schema.py` plus plugin lifecycle coverage. The current user-confirmed complete host regression run is **377 passed, 13 warnings, and 22 subtests passed in 73.48s**. The current user-confirmed AutoGrid360 plugin run is **347 passed, 15 warnings, and 256 subtests passed in 63.00s**.
 
 ## Recommended baseline
 
@@ -204,6 +221,8 @@ The security regression suite is the most important control in this list. Static
 - Audit helpers do not call transaction-ending methods.
 - Direct-development mode starts without SMTP, Redis, certificates, or a supplied secret.
 - Production mode rejects missing stable secrets.
+- A clean empty database reaches migration/bootstrap without querying `env_settings` before the core schema exists.
+- The SQLite base Compose path and PostgreSQL overlay remain viable clean-bootstrap integration paths.
 - Proxy trust is disabled unless configured.
 - HSTS and secure cookies are not forced during direct HTTP development.
 - All registered Flask-AAS core routes resolve their endpoint references; runtime application-plugin routes are validated under their own lifecycle tests.

@@ -1,0 +1,28 @@
+services:
+  web:
+    environment:
+      SQLALCHEMY_DATABASE_URI: "postgresql+psycopg://${POSTGRES_USER:-dev-user}:${POSTGRES_PASSWORD:-test}@db:5432/${POSTGRES_DB:-flaskaas}"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: "${POSTGRES_DB:-flaskaas}"
+      POSTGRES_USER: "${POSTGRES_USER:-dev-user}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-test}"
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - "pg_isready -U ${POSTGRES_USER:-dev-user} -d ${POSTGRES_DB:-flaskaas}"
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+volumes:
+  postgres_data:

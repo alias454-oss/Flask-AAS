@@ -162,6 +162,8 @@ When reviewing plugin host or plugin-owned code:
 - If a plugin ID, package directory, manifest entrypoint, or import path changes, is persisted `PluginRegistration` state explicitly reconciled instead of assuming a filesystem rename updates the database?
 - If stale registration cleanup is proposed, has the reviewer distinguished the host-owned registration row from plugin-owned schema, migration history, configuration, secrets, and business data?
 - Do sensitive host admin/plugin-management responses retain the host `no-store` policy without forcing that cache policy onto intentionally public plugin content?
+- On a clean database, does startup inspect core schema readiness before querying database-backed settings or persisted plugin registrations?
+- If deployment bootstrap may run against SQLite or PostgreSQL, are schema existence checks portable and are missing-schema conditions handled without issuing expected-failure SQL against nonexistent core tables?
 
 Do not treat an in-process Python plugin as sandboxed. Least-privilege process/container permissions limit blast radius; they do not make untrusted plugin code safe.
 

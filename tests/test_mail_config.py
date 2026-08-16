@@ -7,7 +7,7 @@ from cryptography.fernet import Fernet
 from flask import Blueprint, Flask
 from flask_login import LoginManager
 
-from app.core.extensions import bcrypt, cache, db, limiter
+from app.core.extensions import cache, db, limiter
 from app.core.mailer import decrypt_smtp_password, encrypt_smtp_password
 from app.core.passwords import password_policy_errors
 from app.core.seeder import initial_outbound_email_enabled
@@ -47,7 +47,6 @@ class MailConfigurationRouteTests(unittest.TestCase):
         )
 
         db.init_app(cls.app)
-        bcrypt.init_app(cls.app)
         cache.init_app(cls.app)
         limiter.init_app(cls.app)
 
