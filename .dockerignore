@@ -33,6 +33,10 @@ migrations/
 .db_initialized
 .seeded
 
+# Runtime-uploaded media
+app/static/images/listings/
+app/static/images/users/
+
 # Runtime database state
 instance/
 

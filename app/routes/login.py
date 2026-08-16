@@ -14,6 +14,10 @@ from app.core.cache import get_cached_env_settings
 from app.core.decorators import log_view_action
 from app.core.extensions import db, limiter
 from app.core.meta import page_metadata
+from app.core.password_hashing import (
+    password_hash_needs_rehash,
+    verify_login_password,
+)
 from app.core.inactivity import mark_session_activity
 from app.core.sessions import close_current_session, create_login_session
 from app.core.security import (
@@ -33,7 +37,7 @@ from app.core.trackers import (
     log_action,
     log_login,
 )
-from app.models.user import User, bcrypt
+from app.models.user import User
 from .captcha import is_captcha_enabled, CaptchaRequired
 
 logger = logging.getLogger(__name__)
@@ -104,13 +108,11 @@ def login():
     user = User.query.filter_by(username=username).first()
     env = get_cached_env_settings()
 
-    # Perform one password check whether or not the submitted user exists.
-    dummy_hash = "$2b$12$KIn6.tJpD4nB/Q2FhK.R.O0fK0jK0jK0jK0jK0jK0jK0jK0jK0jK"
-    stored_hash = user.hashed_password if user else dummy_hash
-    credentials_valid = (
-        user is not None
-        and bcrypt.check_password_hash(stored_hash, password)
-    )
+    # Always perform balanced password-hash work so unknown usernames do not
+    # take a shortcut around either supported verification scheme.
+    stored_hash = user.hashed_password if user else None
+    password_matches = verify_login_password(stored_hash, password)
+    credentials_valid = user is not None and password_matches
 
     if not credentials_valid:
         _log_login_result(
@@ -143,6 +145,11 @@ def login():
         flash("This account is not currently available for sign-in.", "warning")
         return redirect(url_for('login.login'))
 
+    password_hash_upgraded = False
+    if password_hash_needs_rehash(user.hashed_password):
+        user.set_password(password)
+        password_hash_upgraded = True
+
     if current_user.is_authenticated:
         close_current_session()
         logout_user()
@@ -152,6 +159,27 @@ def login():
 
     # MFA users are not accepted by Flask-Login until the second factor succeeds.
     if env.use_mfa and user.mfa_enabled:
+        if password_hash_upgraded:
+            try:
+                db.session.commit()
+            except SQLAlchemyError:
+                db.session.rollback()
+                _log_login_result(
+                    username,
+                    ip,
+                    ua,
+                    ref,
+                    success=False,
+                    failure_reason=LOGIN_FAILURE_REJECTED,
+                )
+                logger.exception(
+                    "Password-hash upgrade failed for user '%s' from %s",
+                    username,
+                    ip,
+                )
+                flash('Login could not be completed. Please try again.', 'danger')
+                return render_template('login.html', form=form, **meta)
+
         session['pre_2fa_user_id'] = user.id
         session['pre_2fa_username'] = username
         session['pre_2fa_ip'] = ip

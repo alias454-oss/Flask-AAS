@@ -7,11 +7,10 @@ import math
 import os
 import random
 import secrets
-import numpy as np
 from datetime import datetime, timezone
 from flask import Blueprint, current_app, session, send_file, abort
 from wtforms.validators import ValidationError
-from PIL import Image, ImageDraw, ImageFont, ImageFilter
+from PIL import Image, ImageChops, ImageDraw, ImageFont, ImageFilter
 from PIL.Image import Resampling
 from app.core.cache import get_cached_env_settings
 from app.core.extensions import cache, limiter
@@ -149,16 +148,15 @@ def generate_captcha_image(code: str) -> bytes:
         rotated = char_img.rotate(random.uniform(-15, 20), resample=Resampling.BICUBIC, expand=1)
         img.paste(rotated, (i * char_width, 0), rotated)
 
-    # Distort with sine wave
-    def sine_distort(img):
-        arr = np.array(img)
-        offset_img = np.zeros_like(arr)
-        for y in range(CAPTCHA_HEIGHT):
-            offset = int(5.0 * np.sin(2 * np.pi * y / 30))
-            offset_img[y] = np.roll(arr[y], offset, axis=0)
-        return Image.fromarray(offset_img)
-
-    img = sine_distort(img)
+    # Distort each row with a sine-wave offset. Pillow's ImageChops.offset
+    # wraps pixels at the row edges, matching the previous NumPy roll behavior
+    # without carrying NumPy solely for this tiny image operation.
+    distorted = Image.new(img.mode, img.size)
+    for y in range(CAPTCHA_HEIGHT):
+        offset = int(5.0 * math.sin(2 * math.pi * y / 30))
+        row = img.crop((0, y, CAPTCHA_WIDTH, y + 1))
+        distorted.paste(ImageChops.offset(row, offset, 0), (0, y))
+    img = distorted
 
     # Slight blur
     img = img.filter(ImageFilter.GaussianBlur(1))

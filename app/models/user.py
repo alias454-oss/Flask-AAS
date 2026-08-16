@@ -1,7 +1,8 @@
 # models/user.py
 from ipaddress import ip_address
 from app.models.env_settings import EnvSettings
-from app.core.extensions import db, bcrypt
+from app.core.extensions import db
+from app.core.password_hashing import hash_password, verify_password_hash
 
 class User(db.Model):
     __tablename__ = "users"
@@ -59,10 +60,10 @@ class User(db.Model):
 
     # Password helpers
     def set_password(self, password: str):
-        self.hashed_password = bcrypt.generate_password_hash(password).decode('utf-8')
+        self.hashed_password = hash_password(password)
 
     def check_password(self, password: str) -> bool:
-        return bcrypt.check_password_hash(self.hashed_password, password)
+        return verify_password_hash(self.hashed_password, password)
 
     # IP helpers as property getter/setter
     @property

@@ -1,0 +1,9 @@
+services:
+  web:
+    build:
+      context: .
+    image: flask-aas:local
+    env_file:
+      - .env
+    ports:
+      - "${FLASK_AAS_PORT:-5000}:5000"
