@@ -12,7 +12,7 @@ from flask import Blueprint, Flask
 from flask_login import LoginManager
 from sqlalchemy.exc import SQLAlchemyError
 
-from app.core.extensions import bcrypt, cache, db, limiter
+from app.core.extensions import cache, db, limiter
 from app.models import (
     AuditActivity,
     AuditLogin,
@@ -26,6 +26,12 @@ from app.routes.login import login_bp
 from app.routes.logout import logout_bp
 from app.routes.mfa.mfa import mfa_bp
 from app.routes.reset import reset_bp
+
+
+LEGACY_PASSWORD = 'legacy-correct-password'
+LEGACY_FLASK_BCRYPT_HASH = (
+    '$2b$12$Xu5MNvTzhYSCFTNiLnky3e08HnFrRrWgt1HyXbGw4GcNaqTUpG77y'
+)
 
 # Flask-Login 0.6.3 uses datetime.utcnow() while setting remember-cookie
 # expiration. The upstream fix has not yet shipped in a release. Keep this
@@ -58,7 +64,6 @@ class LoginAuditRouteTests(unittest.TestCase):
         )
 
         db.init_app(cls.app)
-        bcrypt.init_app(cls.app)
         cache.init_app(cls.app)
         limiter.init_app(cls.app)
 
@@ -349,6 +354,58 @@ class LoginAuditRouteTests(unittest.TestCase):
                 active_session_identity,
             )
         self.assertIsNotNone(self.client.get_cookie(remember_cookie_name))
+
+    def test_nonexistent_user_still_performs_password_hash_verification(self):
+        with self._request_patches(), patch(
+            'app.routes.login.verify_login_password',
+            return_value=False,
+        ) as verify_hash:
+            response = self.client.post(
+                '/login',
+                data={
+                    'username': 'missing-user',
+                    'password': 'wrong-password',
+                },
+                follow_redirects=False,
+            )
+
+        self.assertEqual(response.status_code, 200)
+        verify_hash.assert_called_once_with(None, 'wrong-password')
+
+    def test_legacy_bcrypt_hash_is_upgraded_after_password_verification(self):
+        user = self._save_user(username='legacy-password-user')
+        user.hashed_password = LEGACY_FLASK_BCRYPT_HASH
+        db.session.commit()
+
+        response = self._post_login('legacy-password-user', LEGACY_PASSWORD)
+
+        self.assertEqual(response.status_code, 302)
+        db.session.expire_all()
+        stored_user = db.session.get(User, user.id)
+        self.assertTrue(stored_user.hashed_password.startswith('$argon2id$'))
+        self.assertTrue(stored_user.check_password(LEGACY_PASSWORD))
+
+    def test_legacy_bcrypt_hash_upgrade_persists_before_mfa_redirect(self):
+        secret = pyotp.random_base32()
+        self.settings.use_mfa = True
+        db.session.commit()
+        EnvSettings._cached_instance = None
+        user = self._save_user(
+            username='legacy-mfa-user',
+            mfa_enabled=True,
+            otp_secret=secret,
+        )
+        user.hashed_password = LEGACY_FLASK_BCRYPT_HASH
+        db.session.commit()
+
+        response = self._post_login('legacy-mfa-user', LEGACY_PASSWORD)
+
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(response.location.endswith('/mfa/verify'))
+        db.session.expire_all()
+        stored_user = db.session.get(User, user.id)
+        self.assertTrue(stored_user.hashed_password.startswith('$argon2id$'))
+        self.assertTrue(stored_user.check_password(LEGACY_PASSWORD))
 
     def test_nonexistent_user_and_wrong_password_share_failure_reason(self):
         self._save_user(username='known-user')

@@ -4,7 +4,7 @@ from pathlib import Path
 
 from flask import Flask
 
-from app.core.extensions import bcrypt, db
+from app.core.extensions import db
 from app.core.passwords import (
     generate_random_password,
     password_policy_errors,
@@ -18,9 +18,7 @@ class PasswordPolicyTests(unittest.TestCase):
         self.app = Flask(__name__)
         self.app.config.update(
             TESTING=True,
-            BCRYPT_HANDLE_LONG_PASSWORDS=True,
         )
-        bcrypt.init_app(self.app)
         self.context = self.app.app_context()
         self.context.push()
 
@@ -81,7 +79,7 @@ class PasswordPolicyTests(unittest.TestCase):
         self.assertEqual(len(password), 32)
         self.assertEqual(password_policy_errors(password), [])
 
-    def test_long_password_hash_uses_bytes_beyond_bcrypt_native_limit(self):
+    def test_long_password_hash_uses_the_complete_password(self):
         password = "a" * 100 + "X"
         changed_tail = "a" * 100 + "Y"
         user = User(
@@ -112,13 +110,11 @@ class PersistedPasswordPolicyTests(unittest.TestCase):
         self.app = Flask(__name__)
         self.app.config.update(
             TESTING=True,
-            BCRYPT_HANDLE_LONG_PASSWORDS=True,
             SQLALCHEMY_DATABASE_URI=f"sqlite:///{database_path}",
             SQLALCHEMY_TRACK_MODIFICATIONS=False,
             PASSWORD_MIN_LENGTH=8,
         )
         db.init_app(self.app)
-        bcrypt.init_app(self.app)
         self.context = self.app.app_context()
         self.context.push()
         db.create_all()

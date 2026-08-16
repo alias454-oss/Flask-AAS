@@ -5,7 +5,7 @@ from unittest.mock import patch
 
 from flask import Flask
 
-from app.core.extensions import bcrypt, db
+from app.core.extensions import db
 from app.core.passwords import password_validation_errors
 from app.core.pwcheck import (
     LocalPasswordCheckProvider,
@@ -117,12 +117,10 @@ class PasswordCheckSeederTests(unittest.TestCase):
             TESTING=True,
             SQLALCHEMY_DATABASE_URI=f"sqlite:///{database_path}",
             SQLALCHEMY_TRACK_MODIFICATIONS=False,
-            BCRYPT_HANDLE_LONG_PASSWORDS=True,
             MAIL_DEBUG=False,
             ADMIN_SECRET="adminpass",
         )
         db.init_app(self.app)
-        bcrypt.init_app(self.app)
         self.context = self.app.app_context()
         self.context.push()
         db.create_all()

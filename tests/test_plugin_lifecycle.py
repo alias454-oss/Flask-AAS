@@ -449,7 +449,12 @@ class PluginLifecycleTests(unittest.TestCase):
     def test_missing_database_tables_fail_closed_during_bootstrap(self):
         db.drop_all()
 
-        runtime = initialize_plugins(self.app)
+        with self.assertLogs("app.plugins.loader", level="INFO") as logs:
+            runtime = initialize_plugins(self.app)
 
         self.assertFalse(runtime.system_enabled)
         self.assertEqual(runtime.plugins, {})
+        self.assertIn(
+            "Application plugin loader deferred; core schema is not initialized",
+            "\n".join(logs.output),
+        )

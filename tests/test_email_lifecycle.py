@@ -11,7 +11,7 @@ from flask import Blueprint, Flask
 from flask_login import LoginManager
 from sqlalchemy.exc import SQLAlchemyError
 
-from app.core.extensions import bcrypt, cache, db, limiter
+from app.core.extensions import cache, db, limiter
 from app.core.security import generate_token
 from app.models import (
     AuditActivity,
@@ -51,7 +51,6 @@ class EmailLifecycleRouteTests(unittest.TestCase):
         )
 
         db.init_app(cls.app)
-        bcrypt.init_app(cls.app)
         cache.init_app(cls.app)
         limiter.init_app(cls.app)
 

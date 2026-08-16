@@ -10,7 +10,7 @@ from flask_login import LoginManager
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.avatar import profile_image_root
-from app.core.extensions import bcrypt, csrf, db, limiter
+from app.core.extensions import csrf, db, limiter
 from app.models import AuditActivity, EnvSettings, Role, User, UserSession
 from app.routes.admin.users import users_bp
 
@@ -37,7 +37,6 @@ class AdminProfileImageRouteTests(unittest.TestCase):
         )
 
         db.init_app(cls.app)
-        bcrypt.init_app(cls.app)
         csrf.init_app(cls.app)
         limiter.init_app(cls.app)
 
