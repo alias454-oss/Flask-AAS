@@ -1,3 +1,5 @@
+"""Tests for authenticated browser-session inactivity handling."""
+
 import unittest
 from datetime import timedelta
 from unittest.mock import patch
@@ -50,6 +52,11 @@ class InactivityTimeoutTests(unittest.TestCase):
             return None
 
         login_bp = Blueprint('login', __name__)
+        index_bp = Blueprint('index', __name__)
+
+        @index_bp.route('/')
+        def index():
+            return 'index'
 
         @login_bp.route('/login')
         def login():
@@ -76,6 +83,7 @@ class InactivityTimeoutTests(unittest.TestCase):
             return 'mutated'
 
         self.app.register_blueprint(login_bp)
+        self.app.register_blueprint(index_bp)
         self.app.before_request(enforce_inactivity_timeout)
         self.client = self.app.test_client()
 
@@ -185,7 +193,7 @@ class InactivityTimeoutTests(unittest.TestCase):
         response = self._request_at(110.0, path='/mutate', method='POST')
 
         self.assertEqual(response.status_code, 303)
-        self.assertTrue(response.location.endswith('/mutate'))
+        self.assertTrue(response.location.endswith('/'))
         self.assertEqual(self.mutations, 0)
         with self.client.session_transaction() as login_session:
             self.assertFalse(login_session.get('_fresh'))

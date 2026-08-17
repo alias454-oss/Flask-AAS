@@ -1,4 +1,5 @@
-# app/core/inactivity.py
+"""Sliding inactivity enforcement for authenticated browser sessions."""
+
 import logging
 import math
 import time
@@ -46,6 +47,20 @@ def mark_session_activity(timestamp=None):
     session.pop(LEGACY_SESSION_ACTIVITY_KEY, None)
     session[SESSION_ACTIVITY_KEY] = normalized
     return normalized
+
+
+def _remembered_timeout_redirect_target():
+    """Return a safe GET target after a remembered-session timeout.
+
+    GET requests can resume at their original URL. State-changing requests must
+    not be redirected back to a mutation endpoint because a 303 changes the next
+    request to GET and many mutation routes intentionally do not support GET.
+
+    :return: Same-page URL for GET requests, otherwise the application index URL.
+    """
+    if request.method == "GET":
+        return request.full_path.rstrip("?") or request.path or "/"
+    return url_for("index.index")
 
 
 def enforce_inactivity_timeout():
@@ -114,8 +129,7 @@ def enforce_inactivity_timeout():
                 user_id,
                 endpoint,
             )
-            target = request.full_path.rstrip('?') or request.path or '/'
-            return redirect(target, code=303)
+            return redirect(_remembered_timeout_redirect_target(), code=303)
 
         close_current_session()
         logout_user()
