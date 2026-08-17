@@ -36,6 +36,9 @@
               <label class="form-check-label" for="{{ subfield.id }}">{{ subfield.label.text }}</label>
             </div>
           {% endfor %}
+          {% if form.roles.errors %}
+            <span class="text-danger">{{ form.roles.errors[0] }}</span>
+          {% endif %}
         </div>
 
         {% if env.use_user_approval %}

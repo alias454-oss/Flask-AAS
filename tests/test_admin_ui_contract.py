@@ -154,10 +154,36 @@ def test_user_storage_path_contract_is_explicit_and_not_host_extended():
     seeder = _read(ROOT / "app" / "core" / "seeder.py")
     avatar = _read(ROOT / "app" / "core" / "avatar.py")
 
-    assert '"users_stored_path": "static/images/users"' in seeder
-    assert "Relative paths resolve from the application root." in settings_template
+    assert '"users_stored_path": "uploads/users"' in seeder
+    assert "Relative paths resolve from the project root." in settings_template
     assert "Absolute paths are used as configured." in settings_template
     assert "Changing this path does not move existing user files." in settings_template
-    assert 'Path(current_app.root_path) / root' in avatar
+    assert 'Path(current_app.root_path).parent / root' in avatar
     assert 'getattr(env, "users_stored_path"' in avatar
     assert "USER_IMAGE_ROOT" not in avatar
+
+
+def test_flash_messages_use_one_compact_container_and_style_danger_as_error():
+    css = _read(ROOT / "app" / "static" / "themes" / "default" / "style.css")
+    bases = (
+        _read(DEFAULT_THEME / "base.html"),
+        _read(ADMIN_TEMPLATES / "includes" / "base.html"),
+    )
+
+    for base in bases:
+        assert base.count('class="flash-messages"') == 1
+        assert base.index('class="flash-messages"') < base.index(
+            "{% for category, message in messages %}"
+        )
+
+    assert ".flash-messages {" in css
+    assert ".flash + .flash {" in css
+    assert ".flash.error,\n.flash.danger {" in css
+
+
+def test_validated_registration_and_admin_role_fields_render_errors_inline():
+    register = _read(ROOT / "app" / "templates" / "register.html")
+    edit_user = _read(ADMIN_TEMPLATES / "edit_user.html")
+
+    assert "form.company_name.errors" in register
+    assert "form.roles.errors" in edit_user

@@ -1,17 +1,25 @@
-# routes/admin/users.py
+"""Administrative user-management routes and forms."""
+
 import logging
 from flask import Blueprint, render_template, redirect, request, url_for, flash
 from flask_login import current_user
 from flask_wtf import FlaskForm
-from wtforms import BooleanField, SelectField, SelectMultipleField, StringField, SubmitField, TextAreaField
+from wtforms import (
+    BooleanField,
+    SelectField,
+    SelectMultipleField,
+    StringField,
+    SubmitField,
+    TextAreaField,
+)
 from wtforms.widgets import ListWidget, CheckboxInput
-from wtforms.validators import DataRequired, Optional, Email
+from wtforms.validators import DataRequired, Email, Length, Optional
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.avatar import delete_profile_image, profile_image_data_uri
 from app.core.cache import get_cached_env_settings, get_cached_roles
 from app.core.extensions import db, limiter
-from app.core.security import get_client_ip
+from app.core.security import get_client_ip, normalize_email, normalize_username
 from app.core.auth import login_required, admin_required
 from app.core.locations import configure_location_choices
 from app.core.meta import page_metadata
@@ -27,15 +35,83 @@ logger = logging.getLogger(__name__)
 
 users_bp = Blueprint('users', __name__, url_prefix='/admin/users')
 
+def _normalize_optional_text(value):
+    """Normalize optional single-line profile text before persistence.
+
+    :param value: Raw form value.
+    :return: Normalized text or ``None`` when empty.
+    """
+    if value is None:
+        return None
+
+    normalized = (
+        str(value)
+        .replace("\x00", "")
+        .replace("\r", " ")
+        .replace("\n", " ")
+        .strip()
+    )
+    return normalized or None
+
+
+def _audit_failure_metadata(exc):
+    """Return bounded failure metadata suitable for authoritative audit rows.
+
+    Full exception details remain in operational logs; audit records retain only
+    stable failure facts so database/driver messages are not persisted.
+
+    :param exc: Exception raised by the failed administrative operation.
+    :return: Stable failure metadata.
+    """
+    return {
+        "outcome": "failed",
+        "error_type": type(exc).__name__,
+    }
+
+
 class AdminUserForm(FlaskForm):
-    username = StringField('Username', validators=[DataRequired()])
-    email = StringField('Email', validators=[DataRequired(), Email()])
-    company_name = StringField('Company Name', validators=[Optional()])
-    first_name = StringField('First Name', validators=[Optional()])
-    last_name = StringField('Last Name', validators=[Optional()])
-    phone = StringField('Phone', validators=[Optional()])
-    alt_phone = StringField('Alt Phone', validators=[Optional()])
-    fax = StringField('Fax', validators=[Optional()])
+    """Validate and canonicalize administrator-managed user profile fields."""
+
+    username = StringField(
+        'Username',
+        validators=[DataRequired(), Length(max=60)],
+        filters=[normalize_username],
+    )
+    email = StringField(
+        'Email',
+        validators=[DataRequired(), Email(), Length(max=255)],
+        filters=[normalize_email],
+    )
+    company_name = StringField(
+        'Company Name',
+        validators=[Optional(), Length(max=255)],
+        filters=[_normalize_optional_text],
+    )
+    first_name = StringField(
+        'First Name',
+        validators=[Optional(), Length(max=100)],
+        filters=[_normalize_optional_text],
+    )
+    last_name = StringField(
+        'Last Name',
+        validators=[Optional(), Length(max=100)],
+        filters=[_normalize_optional_text],
+    )
+    phone = StringField(
+        'Phone',
+        validators=[Optional(), Length(max=50)],
+        filters=[_normalize_optional_text],
+    )
+    alt_phone = StringField(
+        'Alt Phone',
+        validators=[Optional(), Length(max=50)],
+        filters=[_normalize_optional_text],
+    )
+    fax = StringField(
+        'Fax',
+        validators=[Optional(), Length(max=50)],
+        filters=[_normalize_optional_text],
+    )
     roles = SelectMultipleField(
         "Assigned Roles",
         choices=[],  # Will populate in your view
@@ -44,10 +120,22 @@ class AdminUserForm(FlaskForm):
         widget=ListWidget(prefix_label=False),
     )
     country_code = SelectField('Country', choices=[], validators=[Optional()])
-    address = StringField('Address', validators=[Optional()])
-    city = StringField('City', validators=[Optional()])
+    address = StringField(
+        'Address',
+        validators=[Optional(), Length(max=255)],
+        filters=[_normalize_optional_text],
+    )
+    city = StringField(
+        'City',
+        validators=[Optional(), Length(max=100)],
+        filters=[_normalize_optional_text],
+    )
     zone_code = SelectField('Region / Subdivision', choices=[], validators=[Optional()])
-    postal_code = StringField('Postal Code', validators=[Optional()])
+    postal_code = StringField(
+        'Postal Code',
+        validators=[Optional(), Length(max=20)],
+        filters=[_normalize_optional_text],
+    )
     activated = BooleanField('Activated')
     approved = BooleanField('Approved')
     notes = TextAreaField('User Notes')
@@ -135,7 +223,7 @@ def remove_profile_image(user_id):
             action="admin_profile_image_remove_failed",
             user_id=current_user.id,
             target=f"user:{user_id}",
-            extra_data={"error": str(exc)},
+            extra_data=_audit_failure_metadata(exc),
         )
         flash("The profile image could not be removed.", "error")
         return redirect(url_for("users.list_users"))
@@ -209,7 +297,7 @@ def delete_user(user_id):
             action="delete_user_failed",
             user_id=current_user.id,
             target=f"user:{user_id}",
-            extra_data={"error": str(e)}
+            extra_data=_audit_failure_metadata(e)
         )
 
     return redirect(url_for("users.list_users"))
@@ -306,7 +394,7 @@ def edit_user(user_id):
                     action="edit_user_failed",
                     user_id=current_user.id,
                     target=f"user:{user_id}",
-                    extra_data={"error": str(e)}
+                    extra_data=_audit_failure_metadata(e)
                 )
 
     # Render form with errors or initial data
