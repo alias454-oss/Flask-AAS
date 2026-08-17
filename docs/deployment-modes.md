@@ -1,84 +1,58 @@
 # Development and Deployment Modes
 
-Flask-AAS should be easy to run locally and strict when deployed. Production requirements must not be imposed blindly on development.
+Flask-AAS is intentionally easy to run locally and stricter where deployment topology requires it.
 
-## Design principle
+The core rule is:
 
 ```text
 low-friction development
-+ explicit deployment mode
-+ validation at the deployment boundary
++ explicit deployment boundaries
++ validation where trust changes
 ```
 
-The application does not require internal certificates for ordinary development or for a trusted proxy-to-application hop. TLS can terminate at Caddy, Nginx, a load balancer, or another external boundary while the isolated internal hop remains HTTP.
+## Configuration matrix
 
-## Target configuration matrix
+| Capability | Local development | Production / multi-worker |
+|---|---|---|
+| Application URL | Local HTTP is valid | Explicit canonical external URL |
+| TLS | Not required | Required at the external boundary |
+| `SECRET_KEY` | Generated/local fallback allowed | Stable externally supplied shared key |
+| Secure cookies | Off for HTTP | On for HTTPS |
+| `HttpOnly` | On | On |
+| `SameSite` | Normally `Lax` | Policy-defined, normally `Lax` |
+| HSTS | Not required for direct HTTP | Enable at an HTTPS boundary |
+| `ProxyFix` | Off unless using a known proxy | Explicit hop count matching topology |
+| Host validation | Localhost-friendly | Canonical/allowed host required |
+| Rate-limit/cache state | In-memory is acceptable for one process | Shared backend for multiple workers/instances |
+| Database | SQLite supported | PostgreSQL is the validated production backend |
+| Email | Optional | Configure when email-dependent features are enabled |
+| Media | Local directory | Durable storage appropriate to topology |
+| Plugins | Optional | Explicitly enabled and trusted |
 
-| Capability | Direct development | Development behind local proxy | Production or multi-worker |
-|---|---|---|---|
-| Application URL | `http://127.0.0.1:5000` or similar | Local proxy URL | Explicit canonical external URL |
-| TLS | Not required | Optional at proxy | Required at the external boundary |
-| Internal proxy-to-app TLS | Not required | Not required | Optional; topology-dependent |
-| `SECRET_KEY` | Generated fallback allowed | Generated or local persisted key | Stable externally supplied shared key |
-| Secure cookies | Off for HTTP | Match proxy scheme | On when external scheme is HTTPS |
-| `HttpOnly` | On | On | On |
-| `SameSite` | `Lax` by default | `Lax` by default | Policy-defined, normally `Lax` |
-| Session inactivity | Local default or disabled deliberately | Same | Explicit timeout appropriate to the application |
-| HSTS | Off | Off unless deliberately testing HTTPS | On only at an HTTPS boundary |
-| `ProxyFix` | Off | Explicit hop count | Explicit hop count matching topology |
-| Host validation | Optional localhost allowance | Local host allowlist | Required allowlist or canonical host |
-| Cache and lockouts | In-memory allowed | In-memory allowed for one process | Shared backend for multiple workers/instances |
-| Database | SQLite allowed | SQLite allowed | Durable database; PostgreSQL is the currently validated production/integration backend |
-| Outbound email | Optional; disabled or mock delivery | Optional; deployment SMTP or UI override | Explicitly configured when email-dependent features are enabled |
-| Migrations | Explicit init/generate/upgrade | Same | Clean bootstrap only until a versioned upgrade contract exists |
-| Application plugins | Optional; global host may remain disabled | Same | Explicitly enabled applications activate at a Gunicorn reload boundary |
+Internal TLS between a trusted reverse proxy and Flask/Gunicorn is topology-dependent. Flask-AAS
+does not require certificates for an isolated internal HTTP hop.
 
-## Secret-key behavior
+## Secret key
 
-### Development
+Local development may generate or load a local secret when `SECRET_KEY` is absent.
 
-When no `SECRET_KEY` is supplied, the application may generate one automatically. This is safer and more usable than failing startup for a disposable development server.
+Production and multi-worker deployments must use one stable shared key. Per-process or per-restart
+keys invalidate sessions and signed tokens unpredictably.
 
-Acceptable development options:
+Never log the secret.
 
-1. Generate an ephemeral key on each start.
-2. Generate a local key once under an ignored `instance/` path so sessions survive reloads.
-3. Supply a development value through an ignored `.env` file.
+## Site URL and host validation
 
-The application should clearly log which behavior is active without printing the secret.
+`SITE_URL` is the clean-install seed for the public application origin. The default supports direct
+local development:
 
-### Production and multiple workers
+```text
+http://127.0.0.1:5000
+```
 
-Every process must share the same stable key. Startup should fail clearly when production or multi-worker mode lacks one.
+After `EnvSettings` exists, **Admin → Site Settings → Site URL** becomes the persisted source.
 
-A random per-process fallback in this mode causes inconsistent sessions and invalid tokens across workers and restarts.
-
-## Proxy behavior
-
-### Direct development
-
-Do not enable `ProxyFix`. Ignore client-supplied forwarding headers and use the direct peer address.
-
-### Known proxy
-
-Enable only the forwarded fields and hop counts that the topology actually supplies. Restrict direct access to the Flask/Gunicorn port when forwarded headers are trusted.
-
-`TRUSTED_PROXIES` and `ProxyFix` must describe the same trust boundary. A custom IP parser must first establish that the immediate peer is trusted before considering forwarded client values.
-
-
-### Current proxy checkpoint
-
-`PROXY_HOPS` defaults to `0`, so direct development does not install `ProxyFix` and ignores spoofed forwarding headers for audit, tracking, and rate-limit identity.
-
-When `PROXY_HOPS` is greater than zero, the configured hop count enables `ProxyFix`, while `TRUSTED_PROXIES` controls whether the immediate peer is allowed to supply forwarded client addresses. Host validation remains independent from client-IP trust: Flask validates the effective request host after any explicitly trusted proxy rewriting.
-
-## Site URL and Host validation
-
-`SITE_URL` is the clean-install bootstrap value for the externally visible application origin. It defaults to `http://127.0.0.1:5000` for ordinary local development and may be set to a DNS name, IPv4 address, IPv6 address, and optional port. It does not control the Flask or Gunicorn listen address.
-
-On a fresh database, the seeder copies `SITE_URL` into `EnvSettings.site_url`. After that row exists, **Admin -> Site Settings -> Site URL** is the persisted source used on later application starts. Changing Site URL is therefore a startup-bound trust change and requires an application restart/reload.
-
-At application startup Flask-AAS validates and normalizes the selected origin, then derives Flask's native URL and Host controls:
+At startup Flask-AAS derives:
 
 ```text
 site_url / SITE_URL
@@ -88,210 +62,197 @@ site_url / SITE_URL
         +--> TRUSTED_HOSTS
 ```
 
-`TRUSTED_HOSTS` contains the canonical hostname. A loopback Site URL also permits the common `127.0.0.1`, `::1`, and `localhost` aliases so normal local development remains convenient. Werkzeug ignores the request port when checking the trusted hostname, so nonstandard application ports do not require separate Host entries.
+Changing Site URL is a startup-bound trust change and requires an application restart or reload.
 
-Inside an active request, Flask's `url_for(..., _external=True)` uses the effective request host. Flask-AAS relies on `TRUSTED_HOSTS` to reject an unexpected Host before route handling and pins security-sensitive generated links to `PREFERRED_URL_SCHEME`. Outside a request, Flask uses `SERVER_NAME` and `PREFERRED_URL_SCHEME` to build the external URL.
+Loopback configuration permits the common `127.0.0.1`, `::1`, and `localhost` aliases.
 
-For a reverse-proxy deployment such as Caddy, `ProxyFix` may reconstruct the effective public host and scheme only when the configured proxy hop count is correct. Direct access to a proxy-trusting Gunicorn port must remain restricted by deployment topology.
+## Reverse proxies
+
+Direct development should leave `PROXY_HOPS=0`. Forwarding headers are then ignored for effective
+client identity.
+
+When a trusted reverse proxy is used:
+
+- set `PROXY_HOPS` to the actual forwarding hop count;
+- configure `TRUSTED_PROXIES` for the immediate trusted peer;
+- prevent untrusted direct access to a Gunicorn port that accepts trusted forwarding headers;
+- keep Host validation independent from client-IP trust.
+
+Do not enable `ProxyFix` generically just because the application is deployed.
 
 ## Cookies and HSTS
 
-`Secure` cookies are not sent over plain HTTP. They must remain disabled for direct HTTP development.
+Secure cookies cannot work over direct HTTP and should remain off for that development mode.
+`HttpOnly` and an appropriate `SameSite` policy should remain enabled.
 
-`HttpOnly` and a reasonable `SameSite` policy should remain enabled in development.
-
-HSTS must not be sent by a direct HTTP development server. Browsers can cache HSTS state and make local testing unnecessarily difficult.
+HSTS belongs at an HTTPS boundary. A direct HTTP development response should not be treated as an
+HTTPS security boundary.
 
 ## Session inactivity
 
-`SESSION_INACTIVITY_TIMEOUT_SECONDS` defines a sliding inactivity window for an authenticated browser session. The default is 900 seconds. A value of `0` disables this control.
+`SESSION_INACTIVITY_TIMEOUT_SECONDS` controls the sliding authenticated-session inactivity window.
+The default is 900 seconds; `0` disables it.
 
-The session stores a numeric Unix timestamp and refreshes it on authenticated application requests. Static asset requests do not extend the window. The timeout has two intentionally different outcomes:
+When the boundary is crossed:
 
-- a **non-remembered** session expires to a complete logout; Flask-Login state is cleared, the current durable `UserSession` is ended, and a full login is required;
-- a **remembered** session is downgraded instead of forgotten; the durable remembered `UserSession` and remember cookie remain valid, transient application/MFA browser-session state is cleared, and the Flask-Login identity continues as **non-fresh** authentication.
+- a normal session is fully logged out;
+- a remembered session retains its remember identity but is downgraded to non-fresh authentication;
+- the boundary-crossing request is stopped with HTTP `303`, preventing a stale state-changing
+  request from continuing.
 
-The request that first crosses the inactivity boundary for a remembered session is stopped with HTTP `303` before normal route handling continues. This prevents a stale POST or other state-changing request from executing across the timeout boundary. The redirected request begins a new inactivity window under the retained non-fresh identity.
-
-A session restored from a valid remember cookie likewise begins a new inactivity window and remains non-fresh, so existing fresh-login and explicit MFA-reauthentication controls continue to protect sensitive operations. Inactivity does not disable MFA or preserve a previous temporary MFA authorization grant. Pre-authentication MFA state remains governed by its own expiry and attempt limits.
-
-This sliding inactivity timer applies to the current browser session. Durable `UserSession` records remain the authority for active-session validation and explicit revocation, password-change/reset invalidation, and normal logout. Remembered inactivity alone does not close an otherwise valid durable remembered session.
+Static requests do not extend the inactivity window. Password changes, session revocation, MFA, and
+fresh-login requirements remain separate controls.
 
 ## Password policy
 
-The deployment `PASSWORD_*` values are clean-install seed defaults. Once the
-`EnvSettings` row exists, **Admin -> Site Settings -> Password Policy** is the
-authoritative runtime source. Administrators can change the minimum length and
-optional composition requirements without restarting Flask-AAS.
+Deployment `PASSWORD_*` values seed a clean database. Once `EnvSettings` exists,
+**Admin → Site Settings → Password Policy** is authoritative.
 
-The default minimum is 20 characters. Spaces and long passphrases are valid,
-there is no password-policy maximum length, and existing stored passwords are
-not retroactively evaluated when the policy changes. Generated passwords use
-the same active persisted policy.
+The default minimum length is 20 characters. Long passphrases and spaces are valid. Password
+generation and user-selected passwords use the same active policy.
 
 ## Shared state
 
-In-memory rate limits, lockout counters, and cache entries are acceptable for a single development process.
+In-memory caches, lockout state, and rate limits are acceptable for a single development process.
 
-When the application uses multiple Gunicorn workers or multiple instances, process-local state is no longer authoritative. The deployment should use a shared backend or refuse/warn clearly when security behavior would be inconsistent.
+Multiple workers or instances require shared state where enforcement must be consistent across
+processes. Redis is one possible backend; it is not a mandatory local dependency.
 
-Redis is one possible backend, not a mandatory development dependency.
+## Database and clean bootstrap
 
-## Current container and Compose checkpoint
+SQLite is supported for local development. PostgreSQL is the validated production/integration
+backend.
 
-The repository container is currently validated on `python:3.13.13-slim-trixie`. Runtime dependencies are installed from the hash-pinned `requirements.txt` with `--require-hashes` and `--only-binary=:all:`, and Gunicorn runs as the unprivileged `flaskaas` user.
-
-Local container workflows deliberately keep the database choice explicit:
-
-```bash
-# Flask-AAS container using the normal .env configuration.
-# The default development configuration remains SQLite.
-docker compose up -d
-
-# Same application image with a PostgreSQL service and URI override.
-docker compose -f compose.yml -f compose.postgres.yml up -d
-```
-
-`compose.yml` is the base development/integration composition. `compose.postgres.yml` adds PostgreSQL and overrides `SQLALCHEMY_DATABASE_URI` inside the web service; it does not require the developer to change the normal SQLite-oriented `.env`. Both paths have been exercised from a clean container/database state. The PostgreSQL path has also exercised plugin discovery, explicit enablement, `NEEDS_MIGRATION`, plugin schema initialization, reload to `ACTIVE`, and optional Application Data initialization.
-
-The PostgreSQL overlay uses the SQLAlchemy `postgresql+psycopg://` dialect for Psycopg 3. Flask-AAS also normalizes a legacy/generic `postgresql://` deployment value to that driver explicitly.
-
-These Compose files are test/development helpers, not a hardened production recipe. Production still needs deployment-owned secrets, a durable database/media design, explicit `SITE_URL`/proxy topology, and shared state if multiple workers or instances are used.
-
-### Clean pre-schema startup
-
-A completely empty database must not be probed as though `EnvSettings` or other core tables already exist. Startup/bootstrap boundaries use the core schema-readiness helper in `app/core/schema.py` to inspect table presence before database-backed settings or plugin-loader state are queried.
-
-On a true greenfield bootstrap, messages such as:
+A completely empty database is inspected before persisted Site Settings or plugin state are read.
+During greenfield bootstrap, messages such as:
 
 ```text
 Application plugin loader deferred; core schema is not initialized
 Core schema not initialized; using default log level
 ```
 
-are expected before the core migration runs. A database-server error such as `relation "env_settings" does not exist` during that phase is not expected and should be treated as a bootstrap regression.
+are expected.
 
-### Current pre-release entrypoint behavior
+An error such as `relation "env_settings" does not exist` during that phase indicates a bootstrap
+regression.
 
-Until the first durable core migration baseline is packaged, the repository `entrypoint.sh` still supports clean pre-release bootstrap by explicitly initializing/generating/upgrading the core migration state and then seeding the database. Its initialization and seed marker filenames include a short hash of `SQLALCHEMY_DATABASE_URI` so SQLite and PostgreSQL state cannot collide inside one container filesystem.
+### Compose
 
-Those marker files are only container-local optimization state; Alembic/database state remains authoritative. Recreating the web container can therefore rerun bootstrap/seed work against an existing durable database, and `seed-db` must remain safe to repeat. Once reviewed core migrations are packaged as the supported release contract, normal deployment should simplify to applying known upgrades plus idempotent seeding rather than generating migrations at startup.
+Default development path:
+
+```bash
+docker compose up
+```
+
+PostgreSQL path:
+
+```bash
+docker compose \
+  -f compose.yml \
+  -f compose.postgres.yml \
+  up
+```
+
+The repository image runs as the unprivileged `flaskaas` user and installs the hash-pinned runtime
+lock with `--require-hashes` and `--only-binary=:all:`.
+
+The Compose files are integration helpers, not a production hardening recipe.
+
+## Migrations
+
+Core migrations currently support clean development/initial deployment. Until a durable core upgrade
+history is published, do not treat generated development revisions as a supported in-place upgrade
+contract.
+
+Application plugins have an independent migration boundary. A plugin may declare a package-local
+migration environment in `plugin.toml`.
+
+The host migration manager:
+
+- isolates plugin tables under `plugin_<id>_*`;
+- uses `plugin_<id>_alembic_version`;
+- allows a fresh namespace to create current plugin-owned tables and stamp the plugin head;
+- upgrades an existing versioned plugin through its own Alembic history;
+- fails closed when plugin-owned tables exist without an expected version table;
+- never migrates plugin schema merely because the plugin was enabled.
+
+Published plugin migration history should be treated as durable.
 
 ## Profile-image storage
 
-The optional canonical host profile image uses `EnvSettings.users_stored_path` as the complete local storage directory. Relative values resolve from the Flask application root; absolute values are used as configured. Fresh installations seed `static/images/users`.
+Host profile images default to:
 
-The selected directory must be writable by the Flask-AAS process. Uploads are normalized to generated WebP files, and the database stores only the generated basename. Profile-image replacement/removal commits the durable database decision before best-effort cleanup of the superseded file; administrative image takedown follows the same rule.
+```text
+uploads/users
+```
 
-Single-process development may use an ordinary local directory. A future multi-instance deployment that allows profile-image writes must provide storage visible consistently to every instance or deliberately introduce a shared/object-storage backend. Flask-AAS does not currently claim that abstraction and does not expose a generic profile-media GET route.
+Relative paths resolve from the project root; absolute paths are used as configured.
+
+The selected path must be writable. Container deployments should mount durable storage at a suitable
+location, such as the top-level `uploads` directory.
+
+A multi-instance deployment that accepts profile-image writes must provide storage visible to every
+instance or introduce an explicit shared/object-storage design.
 
 ## Application-plugin hosting
 
-Application hosting is optional. The database-backed **Enable Application Plugins** setting is the global host switch. When it is disabled, Flask-AAS continues to provide its normal authentication, account, audit, contact, and administrative core without loading application-plugin runtime code.
+Application plugins are optional. With the global plugin switch disabled, Flask-AAS continues to
+provide its normal authentication, account, audit, contact, and administrative core.
 
-Trusted deployment-supplied plugin repositories may be placed under `app/plugins/<id>/`. Startup performs controlled metadata-only discovery of immediate-child `plugin.toml` manifests and ensures a compatible registration row exists with newly discovered applications disabled by default. Registration is metadata only: a registered but disabled application must not import its plugin implementation or model modules, deploy plugin-owned schema, register routes, or contribute navigation during ordinary application startup.
+Discovery reads immediate-child `app/plugins/*/plugin.toml` metadata without importing plugin
+implementation code. Newly discovered plugins start disabled.
 
-Enabling an application is the explicit trust/code-execution boundary. At that point Flask-AAS may import that selected plugin's Python implementation and inspect its declared migration/configuration state. **Enable does not create, migrate, or stamp plugin-owned schema.** Python plugins execute with the permissions of the Flask-AAS process; enabling one is therefore equivalent to trusting native application code. Flask-AAS does not claim to sandbox enabled plugins.
-
-Schema readiness, configuration readiness, and structural runtime activation are separate boundaries:
+The important boundaries are:
 
 ```text
-registered + disabled
-        |
-        v
-administrator enables application
-        |
-        v
-Reload App Config
-        |
-        +--> NEEDS_MIGRATION
-        |         |
-        |         v
-        |    explicit plugin schema upgrade
-        |         |
-        |         v
-        |    Reload App Config
-        |
-        +--> NEEDS_CONFIGURATION
-        |         |
-        |         v
-        |    plugin-owned configuration
-        |         |
-        |         v
-        |    Reload App Config
-        |
-        v
-ACTIVE
+filesystem presence != registration != enablement != migration != configuration != activation
 ```
 
-A persisted schema/configuration change does not mutate an already running worker's plugin status snapshot. Schema migration from `NEEDS_MIGRATION` still requires a fresh worker before the plugin can be structurally registered. For a plugin that is already structurally loaded as `ACTIVE` or `NEEDS_CONFIGURATION`, request and navigation access follow the current persisted `enabled/configured` flags immediately; **Reload App Config** reconciles the worker's startup-time status and any startup-only plugin behavior.
+Enablement trusts the selected Python plugin to execute. It does not grant permission to migrate
+schema.
 
-The repository container runs Gunicorn as the unprivileged `flaskaas` user. **Reload App Config** uses a fixed `SIGHUP` to the Gunicorn master at PID 1 after verifying that PID 1 is Gunicorn; it does not invoke a shell or accept an arbitrary process or signal. If that deployment shape is not present, the action fails normally rather than attempting an unsafe fallback.
+Schema/configuration changes and structural plugin activation are reconciled through a fresh
+Gunicorn worker using **Reload App Config**. A newly disabled plugin is denied immediately by the
+host guard and removed structurally after reload.
 
-Disabling an application immediately removes effective route/navigation access through the host guard, clears plugin-managed persisted secrets as part of the disable transaction, and preserves ordinary plugin configuration, schema, and business data. After **Reload App Config**, the fresh worker no longer imports or structurally registers the disabled application.
+Plugin acquisition remains operator-owned; Flask-AAS does not clone, upload, or install plugin
+source.
 
-Plugin acquisition remains deployment/operator-owned: Flask-AAS does not currently clone, upload, update, or provide a marketplace for plugin source. A separately maintained trusted repository such as the Example reference plugin may be cloned or copied into `app/plugins/<id>/`; controlled manifest discovery may then create disabled registration metadata without importing implementation Python. Filesystem presence/discovery therefore does not imply **Enable** trust, schema readiness, configuration readiness, or runtime activation.
+See [`plugin-troubleshooting.md`](plugin-troubleshooting.md).
 
-Because registration is persisted in the database, renaming or removing a plugin directory does not rewrite or remove an existing `PluginRegistration`. If filesystem/manifest identity and persisted registry state diverge, follow [`plugin-troubleshooting.md`](plugin-troubleshooting.md) and distinguish registration cleanup from plugin schema/business-data migration before changing the database.
+## Email
 
-## Email behavior
+Development can run without SMTP.
 
-Development must be able to run without SMTP. Outbound email is controlled by the database-backed **Enable Outbound Email** switch. When it is off, no message is queued, including in debug mode.
+Outbound email is controlled by the database-backed **Enable Outbound Email** setting. Effective
+transport is resolved in this order:
 
-The effective transport is resolved for each dispatch in this order:
+1. disabled master switch;
+2. `MAIL_DEBUG=true` mock delivery;
+3. complete Site Settings SMTP override when enabled;
+4. complete deployment SMTP configuration;
+5. unavailable.
 
-1. `MAIL_DEBUG=true` provides mock delivery after the master switch is enabled. Messages are rendered and reported as queued, but no SMTP connection is made.
-2. When `MAIL_CONFIG_UI_ENABLED=true`, a complete Site Settings SMTP configuration overrides deployment values.
-3. Otherwise, a complete deployment configuration using `MAIL_SERVER`, `MAIL_PORT`, `MAIL_USE_TLS` or `MAIL_USE_SSL`, optional paired credentials, and `MAIL_DEFAULT_SENDER` is used.
-4. When no complete source exists, delivery is unavailable.
+Site Settings and deployment SMTP values are not blended field by field. Partial runtime overrides
+are rejected.
 
-Site Settings and deployment values are not blended field by field. An empty Site Settings override falls back to deployment configuration, while a partial override is rejected. UI-managed SMTP passwords are encrypted with `MAIL_CONFIG_ENCRYPTION_KEY`, which must remain outside the database. The stored password is not rendered back into the form, and clearing the override is an explicit operation.
+UI-managed SMTP passwords are encrypted with `MAIL_CONFIG_ENCRYPTION_KEY`, which must remain outside
+the database.
 
-`Require Email Verification` depends on enabled outbound email and an available effective transport. This prevents registration from creating users who cannot receive their activation link.
+Features that require email, such as required email verification, must have an effective outbound
+transport.
 
-Mail dispatch remains asynchronous. A route may report that a message was queued after the background worker starts; that does not mean the SMTP server accepted or delivered it. Final delivery success or failure is recorded by the worker. Template rendering, policy lookup, and thread-start failures remain visible to callers.
+## Production checklist
 
-## Migration behavior
+Before exposing Flask-AAS publicly, verify:
 
-Convenient development commands may initialize migrations and generate revisions explicitly. During the current pre-release phase, generated migration directories are ignored and clean deployments may generate an initial schema from the live host models; the repository entrypoint currently automates that clean-bootstrap path for container evaluation.
-
-This policy has a strict boundary:
-
-1. it is valid only for disposable development and clean initial deployments;
-2. it does not support trustworthy in-place upgrades;
-3. concurrent bootstrap must be avoided;
-4. before the first supported upgrade, reviewed migration sources must be versioned and normal startup must apply known upgrades only.
-
-Plugin registration does not import plugin models merely so Alembic can see them. Plugin API v1 now provides an independent plugin migration mechanism driven by static `plugin.toml` metadata. A plugin may declare a package-local migration directory such as `migrations = "migrations"`; the host derives a portable table namespace `plugin_<id>_*` and an independent version table `plugin_<id>_alembic_version`.
-
-The plugin migration manager follows these rules:
-
-- a fresh namespace with no plugin-owned tables and no plugin version table may create the current plugin model schema and stamp the current head;
-- an existing versioned plugin runs its own Alembic history normally;
-- existing plugin-owned tables without the plugin version table fail closed instead of being blindly stamped;
-- migration/autogenerate is constrained to the plugin-owned table prefix;
-- migration operations are explicit and do not occur merely because the plugin was enabled;
-- a disabled plugin remains inert during ordinary web startup; explicit operator migration CLI is a separate deliberate code-execution boundary.
-
-Unpublished development revisions may still be regenerated or squashed before a plugin establishes a supported schema checkpoint. Once a plugin publishes migration history that operators may apply, those revisions become durable upgrade origins and should not be rewritten casually.
-
-`AAS-039` is complete: manifest-driven plugin migration ownership, independent version tables, migration-aware runtime state, browser/CLI schema management, and core/plugin Alembic ownership isolation are established. Release-grade historical `N -> N+1`, failed-migration, greenfield/history-equivalence, and focused PostgreSQL migration QA remain broader `AAS-031` regression work when real released migration history requires it. The independent Example reference repository provides a concrete compatibility consumer for future `AAS-044` Plugin API release-gate work.
-
-## Configuration validation goals
-
-The future configuration layer should validate capabilities rather than relying only on a single `FLASK_ENV` string.
-
-Examples:
-
-- `PROXY_HOPS=0` permits direct local operation.
-- `PROXY_HOPS>0` requires a documented trusted topology.
-- `WORKER_COUNT>1` or a deployed mode requires a stable shared secret.
-- Enabling outbound email requires debug delivery or a complete deployment or Site Settings transport.
-- Email verification enabled requires outbound email and a functioning effective mail backend.
-- UI-managed SMTP credentials require `MAIL_CONFIG_UI_ENABLED=true` and an external Fernet encryption key.
-- HTTPS external URL enables secure cookies and HSTS at the correct boundary.
-- The global application-plugin switch may remain off without importing plugin runtime code.
-- Enabling an individual application is an explicit native-code trust boundary; schema migration and runtime activation remain separate explicit operations.
-- Structural plugin changes are realized through a fresh Gunicorn worker rather than live Blueprint mutation.
-
-The base should fail only when the requested capability cannot operate safely, not merely because optional production infrastructure is absent.
+- stable `SECRET_KEY`;
+- canonical `SITE_URL`;
+- HTTPS at the external boundary;
+- correct proxy hop and trusted-peer configuration;
+- durable PostgreSQL storage;
+- durable media storage;
+- shared security state when using multiple workers/instances;
+- working backups;
+- outbound-mail configuration for enabled mail-dependent features;
+- full test suite plus a clean PostgreSQL/bootstrap smoke test.

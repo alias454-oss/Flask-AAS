@@ -1,195 +1,162 @@
 # Flask Route Security Review Checklist
 
-Use this checklist when adding or reviewing a route. It is a review aid, not a substitute for tests or threat modeling.
+Use this checklist when adding or reviewing a Flask-AAS or plugin route. It is a review aid, not a
+substitute for tests or threat modeling.
 
 ## 1. Authentication and authorization
 
 - Is anonymous access intentional?
-- Is `login_required` or an equivalent guard applied where needed?
+- Is authentication required where expected?
 - Is authorization based on the target resource, not only the route?
-- Does the query enforce ownership or role scope?
-- Are inactive, unapproved, and unverified users handled consistently?
-- Does the route require a fresh login for a sensitive operation?
-- Does a privileged operation require stronger reauthentication?
-- For a plugin-owned route, is access gated by the host's effective plugin state rather than merely by route registration?
-- For a plugin-owned route, is route authorization explicit: intentionally public, authenticated, coarse host-role-gated, or protected by plugin-owned domain authorization?
+- Does the database query enforce ownership or role scope?
+- Are inactive, unapproved, or unverified users handled consistently?
+- Does the action require fresh authentication or MFA reauthentication?
+- For plugin routes, is effective plugin state enforced?
+- Is route authorization explicit: public, authenticated, host-role-gated, or plugin-domain-gated?
 
-High-risk examples:
-
-- password or email changes;
-- MFA enrollment, replacement, or disable;
-- role changes;
-- account lock or unlock;
-- security-setting changes;
-- administrative password reset.
+High-risk examples include password/email changes, MFA changes, role changes, account lock/unlock,
+administrative resets, and security-setting changes.
 
 ## 2. Request and input handling
 
-- Are all inputs parsed through one defined schema or form?
+- Is input parsed through one defined schema/form?
 - Are length, type, range, and normalization rules explicit?
-- Does every password-setting path use the canonical password policy rather than route-local rules?
-- Are passwords treated as exact secret values without stripping or truncation, while spaces and long passphrases remain valid?
-- If the application generates a password, does the generator satisfy the same active policy as user-selected passwords?
-- If password checking is enabled, does every password-setting path use the selected provider through the central password workflow rather than calling a provider directly?
-- Does a password-check provider return only the decision/message needed by the core without logging or persisting the submitted password?
-- If spam checking is enabled, does the contact workflow call only the selected spam-check provider rather than embed provider-specific detection logic in the route?
-- Does a spam-check provider avoid logging or persisting submitted message bodies unless its explicit documented contract requires that data?
+- Do password-setting paths use the canonical password policy/provider workflow?
+- Are passwords treated as exact secret values without stripping or truncation?
 - Are identifier lookups resistant to ownership bypass?
-- Are duplicate submissions and retries safe?
-- Are file names, media types, and file contents treated as untrusted?
-- For image uploads, is decoded content authoritative rather than the submitted extension, with explicit pixel/animation/format limits and metadata normalization where required?
-- Are user-controlled redirects restricted to local or allowed destinations?
+- Are retries and duplicate submissions safe?
+- Are uploaded names, media types, and contents treated as untrusted?
+- For images, is decoded content authoritative with explicit format/pixel/animation limits?
+- Are user-controlled redirects restricted to local/allowed destinations?
 
-Do not rely on HTML attributes or browser validation as the server-side control.
+Browser validation is not a server-side control.
 
 ## 3. State changes and CSRF
 
-- Does every cookie-authenticated state-changing request require CSRF protection?
-- Are state changes limited to `POST`, `PUT`, `PATCH`, or `DELETE` as appropriate?
-- Is the CSRF exemption narrowly justified for machine-to-machine routes?
+- Do cookie-authenticated state changes require CSRF protection?
+- Are mutations limited to appropriate non-GET methods?
 - If CSRF is exempt, what authenticates the request and prevents replay?
 
-A GET request should not mutate account, role, security, or billing state.
+GET should not mutate account, role, security, or business state.
 
 ## 4. Transaction integrity
 
 - Which database changes must succeed or fail together?
-- Can logging, email, cache, or queue helpers commit or roll back the caller's transaction?
-- Are external side effects performed before a durable database decision?
-- When a database row references a generated file, does a failed database commit preserve the referenced file, and does deletion happen only after the durable reference is cleared/replaced?
-- Does the user-facing result distinguish queued work from completed external delivery?
-- Is there an outbox, retry, or reconciliation mechanism when external systems are involved?
-- Are concurrent requests serialized or made idempotent where required?
+- Can audit, mail, cache, or queue helpers commit/rollback the caller's transaction?
+- Are external side effects delayed until after the durable database decision where practical?
+- When a row references a generated file, does failed commit preserve the referenced file?
+- Does file deletion happen only after the durable reference is cleared/replaced?
+- Does user-visible status distinguish queued work from completed external delivery?
+- Are concurrent requests serialized or idempotent where required?
 
-Audit helpers must not silently determine business transaction boundaries.
+Audit helpers must not silently own business transaction boundaries.
 
 ## 5. Session and replay behavior
 
-- Does the route rotate or clear session state at the correct point?
-- Are remember-cookie-restored sessions allowed to perform this action?
-- Is a one-time token actually single-use?
-- Can the same request or token be replayed?
-- Does a password or MFA change invalidate older sessions?
+- Is session state rotated or cleared at the correct point?
+- Can a remembered/non-fresh session perform this action?
+- Are one-time tokens actually single-use?
+- Can the request or token be replayed?
+- Do password/MFA changes invalidate older authentication state?
 - Are temporary pre-authentication states bounded by time and attempts?
-
-Adding a random value to the same stolen session cookie does not prevent replay. JWTs also do not inherently solve replay or revocation.
 
 ## 6. Abuse controls
 
-- Is rate limiting needed?
-- What is the correct key: IP, account, session, action, or a combination?
-- Can a client forge the apparent IP through forwarding headers?
-- Is lockout behavior safe against denial-of-service attacks on a victim account?
-- Does the control work across multiple workers?
-- Is CAPTCHA justified by observed abuse, and is its answer server-side?
-
-Per-IP controls alone do not stop distributed attacks. Per-account hard lockouts alone can be abused to lock out victims.
+- Is rate limiting required?
+- Is the correct key IP, account, session, action, or a combination?
+- Can forwarding headers forge the apparent client address?
+- Can lockout behavior be abused to deny service to another account?
+- Does enforcement remain consistent across multiple workers?
+- Is CAPTCHA justified and server-side?
 
 ## 7. Secrets and sensitive data
 
-- Could passwords, reset tokens, verification tokens, TOTP secrets, session IDs, or API keys reach logs?
-- Has the route explicitly defined which request metadata is useful and safe to retain?
-- Are secret-bearing path or query parameters declared for audit redaction?
-- Are sensitive headers such as authorization and cookies excluded from captured request metadata?
-- Are semantic audit targets stable resource identifiers rather than token-bearing URLs?
-- Are secrets stored in the correct configuration layer?
-- If a secret is runtime-managed, is it encrypted with a key stored outside the database?
-- Are blank-update and explicit-clear semantics defined for stored secrets?
-- For plugin-managed persisted credentials, is disable-time cleanup explicit and atomic with the disable decision?
-- Do plugin CLI/audit logs omit arbitrary command arguments and secret values?
+- Could passwords, reset/verification tokens, TOTP secrets, session IDs, or API keys reach logs?
+- Are secret-bearing route/query parameters explicitly redacted from audit metadata?
+- Are authorization and cookie headers excluded from captured metadata?
+- Are audit targets stable resource identifiers rather than secret-bearing URLs?
+- Are runtime-managed secrets encrypted with a key stored outside the database?
+- Are blank-update and explicit-clear semantics defined?
+- Are plugin-managed persisted secrets cleared atomically when required?
 - Are secret values ever rendered back into forms?
-- Are exception messages safe for the user-facing response?
+- Are user-facing exception messages safe?
 
 ## 8. Audit events
 
-For a security-relevant action, define:
+For security-relevant actions, define:
 
 - actor;
-- target or subject;
+- target/subject;
 - action;
 - outcome;
 - normalized failure reason;
 - timestamp;
 - trusted client address where available;
-- request or correlation ID;
+- request/correlation identifier where useful;
 - before/after state for privileged changes.
 
-Do not record raw credentials, live tokens, or entire form submissions. Ordinary routes may retain concrete request context when the route deliberately treats it as audit-safe; token-bearing routes must declare explicit redaction for the sensitive parameter.
+Do not store raw credentials, live tokens, full form submissions, or raw database exception strings
+in authoritative audit records.
 
 ## 9. Error behavior
 
-- Does the public response avoid user enumeration?
-- Is the operator-visible error sufficiently specific?
-- Does a helper swallow an error and allow a false success message?
-- Does an exception leave partial state?
+- Does the public response avoid enumeration?
+- Is operator-visible logging specific enough to diagnose the problem?
+- Can a swallowed error produce a false success response?
+- Can failure leave partial durable state?
 - Is retry behavior defined?
-- Are expected failures tested without depending on log text?
+- Are expected failures tested without depending on exact log text?
 
 ## 10. Templates and browser controls
 
 - Is output escaped by default?
 - Are intentional HTML fragments sanitized?
-- Does the CSP allow the required static resources without `unsafe-inline`?
-- Are JavaScript handlers in static files rather than inline attributes?
-- Are sensitive pages marked `no-store`?
-- Are cookie flags appropriate to the active deployment mode?
-
+- Does CSP avoid unnecessary inline script?
+- Are JavaScript handlers kept in static files?
+- Are sensitive responses marked `no-store` where appropriate?
+- Do cookie flags match the deployment mode?
 
 ## 11. Application-plugin boundary
 
-When reviewing plugin host or plugin-owned code:
+For plugin host or plugin-owned code, verify:
 
-- Does registration remain metadata-only, without importing plugin implementation or model modules?
-- Can static identity/compatibility metadata be inspected from `plugin.toml` without importing plugin implementation Python?
-- Does a globally disabled plugin system avoid plugin runtime imports and route/navigation registration?
-- Does a registered but disabled application remain inert during ordinary startup?
-- Is explicit administrator **Enable** the point where selected trusted plugin Python may execute **without** treating enablement as permission to create or migrate schema?
-- If the plugin declares migrations, does an outdated schema fail closed as `NEEDS_MIGRATION` before structural application registration?
-- Are plugin migrations isolated to the plugin's `plugin_<id>_*` namespace and independent `plugin_<id>_alembic_version` table?
-- Does core Alembic retain ownership of the host `plugin_registrations` table while excluding plugin-domain namespaces such as `plugin_example_*` from core autogeneration?
-- Does a fresh namespace bootstrap only plugin-owned model tables and stamp the plugin head?
-- Do existing unversioned plugin-owned tables fail closed rather than being silently stamped?
-- Does the browser migration action use a fixed target of `head`, refuse disabled/incompatible plugins, and avoid arbitrary downgrade/revision input?
-- Is the trust implication clear that an enabled Python plugin executes with Flask-AAS process privileges?
-- Are structural enable/disable and persisted schema/configuration changes completed through a fresh Gunicorn worker rather than live Blueprint mutation?
-- Is the persisted/runtime drift contract explicit: already-loaded route/navigation gates follow current persisted state, while **Reload App Config** reconciles the stale worker runtime-status snapshot?
-- Does disabling immediately deny effective route/navigation access before the reload finishes structural removal?
-- Does disable preserve ordinary plugin configuration, schema, and business data unless a separate destructive operation is explicitly requested?
-- Does plugin-managed persisted secret cleanup complete before the registration is reported disabled, including when schema was never installed?
-- Can one incompatible or failed optional plugin fail closed without taking down the Flask-AAS core or unrelated plugins?
-- Are plugin package `__init__.py` files and metadata paths kept free of unnecessary import-time side effects?
-- Is controlled metadata discovery limited to the intended immediate `app/plugins/*/plugin.toml` boundary, with filesystem presence/discovery kept distinct from **Enable** trust, schema readiness, configuration readiness, and runtime activation?
-- If a plugin ID, package directory, manifest entrypoint, or import path changes, is persisted `PluginRegistration` state explicitly reconciled instead of assuming a filesystem rename updates the database?
-- If stale registration cleanup is proposed, has the reviewer distinguished the host-owned registration row from plugin-owned schema, migration history, configuration, secrets, and business data?
-- Do sensitive host admin/plugin-management responses retain the host `no-store` policy without forcing that cache policy onto intentionally public plugin content?
-- On a clean database, does startup inspect core schema readiness before querying database-backed settings or persisted plugin registrations?
-- If deployment bootstrap may run against SQLite or PostgreSQL, are schema existence checks portable and are missing-schema conditions handled without issuing expected-failure SQL against nonexistent core tables?
+- metadata discovery does not import plugin implementation/model code;
+- a globally disabled plugin system leaves plugin runtime code inert;
+- newly discovered plugins start disabled;
+- **Enable** is the native-code trust boundary, not a migration operation;
+- stale schema fails closed as `NEEDS_MIGRATION`;
+- plugin migrations stay inside `plugin_<id>_*` ownership and their independent version table;
+- unversioned existing plugin tables fail closed;
+- browser migration actions are privileged, CSRF-protected, and limited to the intended target;
+- structural activation/removal occurs through a fresh worker;
+- disabling denies effective access immediately and preserves ordinary plugin data/schema;
+- plugin-managed secrets are cleared according to the plugin contract;
+- one broken optional plugin cannot take down unrelated core functionality;
+- plugin package import-time side effects are minimized;
+- filesystem identity and persisted `PluginRegistration` drift are handled explicitly;
+- enabled Python plugins are treated as trusted native code, not sandboxed code.
 
-Do not treat an in-process Python plugin as sandboxed. Least-privilege process/container permissions limit blast radius; they do not make untrusted plugin code safe.
+See [`plugin-troubleshooting.md`](plugin-troubleshooting.md) for registry/filesystem recovery.
 
-For operator recovery from a registry/filesystem mismatch, see [`plugin-troubleshooting.md`](plugin-troubleshooting.md). Direct registration-row cleanup is a narrow pre-release/disposable-development recovery technique, not a substitute for a published plugin's compatibility or data migration.
+## 12. Required test cases
 
-## 12. Required route test cases
-
-
-At minimum, test:
+At minimum, cover the cases relevant to the route:
 
 - anonymous request;
 - authenticated normal user;
 - wrong owner;
 - privileged user;
-- inactive or unapproved user where relevant;
-- valid request;
-- malformed request;
-- duplicate request;
-- expired token or state;
+- inactive/unapproved user;
+- valid and malformed input;
+- duplicate/replayed request;
+- expired token/state;
 - CSRF failure;
-- rate-limit or lockout boundary;
+- rate-limit/lockout boundary;
 - database failure;
-- file-processing/filesystem failure when the route owns media;
+- filesystem/media failure;
 - external dependency failure;
 - audit-write failure;
-- success and failure redaction.
+- success/failure redaction.
 
 ## Review record template
 
@@ -210,7 +177,7 @@ At minimum, test:
 - Audit metadata policy:
 - Redacted fields:
 - Failure behavior:
-- Plugin/runtime guard (if applicable):
+- Plugin/runtime guard:
 - Required tests:
 - Open risks:
 ```
