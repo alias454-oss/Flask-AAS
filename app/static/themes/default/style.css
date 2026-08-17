@@ -873,9 +873,17 @@ input[type="reset"]:hover,
   background: var(--surface);
 }
 
+.flash-messages {
+  margin-bottom: 1em;
+}
+
 .flash {
   padding: 10px;
-  margin-bottom: 1em;
+  margin: 0;
+}
+
+.flash + .flash {
+  margin-top: 0.25rem;
 }
 
 .flash.success {
@@ -896,7 +904,8 @@ input[type="reset"]:hover,
   border: 1px solid #ffeeba;
 }
 
-.flash.error {
+.flash.error,
+.flash.danger {
   background-color: #f8d7da;
   color: #721c24;
   border: 1px solid #f5c6cb;

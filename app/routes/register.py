@@ -365,11 +365,9 @@ def register():
             flash('A database error occurred during registration.', 'error')
             track_lockout_attempts(email, ip)
     else:
-        # If WTForms validation errors, flash them and set flags for each field
-        for fieldName, fieldErrors in form.errors.items():
-            for errorMsg in fieldErrors:
-                flash(errorMsg, 'error')
-            # For example, you can set error flags for fields to highlight in template
-            error_flags[f'{fieldName}_error'] = True
+        if form.errors:
+            flash("Please correct the highlighted fields.", "error")
+        for field_name in form.errors:
+            error_flags[f"{field_name}_error"] = True
 
     return render_template('register.html', form=form, error_flags=error_flags, **meta)

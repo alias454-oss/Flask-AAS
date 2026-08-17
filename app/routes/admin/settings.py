@@ -1,3 +1,5 @@
+"""Administrative site-settings routes and validation."""
+
 # routes/admin/settings.py
 import logging
 import os
@@ -201,7 +203,7 @@ class AdminSettingsForm(FlaskForm):
     max_failed_attempts = IntegerField(
         "Max Failed Login Attempts",
         default=5,
-        validators=[Optional(), NumberRange(min=0)],
+        validators=[Optional(), NumberRange(min=1)],
     )
     lockout_duration_seconds = IntegerField(
         "Lockout Duration in Seconds",

@@ -87,6 +87,8 @@ def login():
     ref = request.referrer
 
     if not form.validate_on_submit():
+        if request.method == 'POST':
+            flash('Please correct the highlighted fields.', 'error')
         return render_template('login.html', form=form, **meta)
 
     username = normalize_username(form.username.data)

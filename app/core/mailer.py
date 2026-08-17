@@ -1,3 +1,5 @@
+"""Outbound email configuration, rendering, and lifecycle dispatch."""
+
 import logging
 import threading
 from dataclasses import dataclass
@@ -8,6 +10,7 @@ from flask import current_app, render_template, url_for
 from flask_mailman import EmailMultiAlternatives
 from flask_mailman.backends.smtp import EmailBackend
 from jinja2 import TemplateNotFound
+from sqlalchemy.exc import SQLAlchemyError
 
 from app.models.env_settings import EnvSettings
 
@@ -83,6 +86,27 @@ def _clean_text(value: Any) -> str | None:
         return None
     cleaned = str(value).strip()
     return cleaned or None
+
+
+def get_mail_site_name() -> str:
+    """Resolve lifecycle-email branding from persisted Site Settings.
+
+    The database-backed site identity is authoritative after bootstrap. A config
+    fallback keeps mail helpers usable during bootstrap or isolated unit tests.
+
+    :return: Persisted site name, configured fallback, or ``Flask-AAS``.
+    """
+    try:
+        env = get_mail_env_settings()
+    except SQLAlchemyError:
+        logger.exception(
+            "Persisted site name unavailable; using configured mail branding"
+        )
+        env = None
+
+    persisted = _clean_text(getattr(env, "site_name", None)) if env else None
+    configured = _clean_text(current_app.config.get("SITE_NAME"))
+    return persisted or configured or "Flask-AAS"
 
 
 def _config_mapping(config: Mapping[str, Any] | None = None) -> Mapping[str, Any]:
@@ -601,7 +625,7 @@ def send_welcome_email(
     username: str,
 ) -> MailStatus:
     """Queue the account welcome message."""
-    site_name = current_app.config.get("SITE_NAME", "Flask-AAS")
+    site_name = get_mail_site_name()
     subject = f"Welcome to {site_name}"
     invite_link = url_for(
         "login.login",
@@ -622,7 +646,7 @@ def send_verification_email(
     username: str,
     verify_url: str,
 ) -> MailStatus:
-    site_name = current_app.config.get("SITE_NAME", "Flask-AAS")
+    site_name = get_mail_site_name()
     subject = f"Verify your email for {site_name}"
 
     text, html = render_email(
@@ -638,7 +662,7 @@ def send_password_setup_email(
     username: str,
     token: str,
 ) -> MailStatus:
-    site_name = current_app.config.get("SITE_NAME", "Flask-AAS")
+    site_name = get_mail_site_name()
     setup_url = url_for(
         "reset.set_password",
         token=token,
@@ -675,7 +699,7 @@ def send_password_changed_email(
     to_email: str,
     username: str,
 ) -> MailStatus:
-    site_name = current_app.config.get("SITE_NAME", "Flask-AAS")
+    site_name = get_mail_site_name()
     subject = f"Password changed for {site_name}"
 
     text, html = render_email(
@@ -690,7 +714,7 @@ def send_mfa_change_email(
     username: str,
     action: str,
 ) -> MailStatus:
-    site_name = current_app.config.get("SITE_NAME", "Flask-AAS")
+    site_name = get_mail_site_name()
     subject = f"MFA security change for {site_name}"
 
     text, html = render_email(

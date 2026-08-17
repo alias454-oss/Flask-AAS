@@ -38,7 +38,12 @@
 
         <fieldset>
           <legend>Personal Information</legend>
-          <div class="form-group">{{ form.company_name.label }} {{ form.company_name(size=30, class_='form-control') }}</div>
+          <div class="form-group">
+            {{ form.company_name.label }} {{ form.company_name(size=30, class_='form-control') }}
+            {% if form.company_name.errors %}
+              <span class="text-danger">{{ form.company_name.errors[0] }}</span>
+            {% endif %}
+          </div>
           <div class="form-group">
             {{ form.first_name.label }} {{ form.first_name(size=30, class_='form-control') }}
             {% if form.first_name.errors %}

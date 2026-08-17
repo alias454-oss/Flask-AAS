@@ -1,250 +1,149 @@
 # Security Tooling Baseline
 
-Security tooling should support the review process, not replace code-level reasoning or tests.
+Security tooling supports review and regression testing. It does not replace code-level reasoning,
+threat modeling, or tests.
 
+## Dependency baseline
 
-## Current dependency checkpoint
+Flask-AAS currently uses:
 
-The 2026-08-15 dependency/runtime checkpoint uses:
-
-- Python 3.13.13;
-- pip 26.1.2 and pip-tools 7.6.0 for lock generation;
+- Python 3.13;
 - `pyproject.toml` for direct dependencies;
-- `requirements.txt` as the hash-pinned deployment lock;
-- PyJWT for retained JWT/API support;
-- Argon2id via `argon2-cffi` as the current password-hashing implementation;
-- direct `bcrypt` only for transitional verification and login-time upgrade of legacy Flask-Bcrypt hashes;
+- a hash-pinned `requirements.txt` deployment lock;
+- Argon2id through `argon2-cffi` for password hashing;
+- bcrypt only for transitional verification/upgrade of legacy hashes;
 - Psycopg 3 for PostgreSQL;
-- standard-library `zoneinfo` with first-party `tzdata` for IANA timezone data;
-- Pillow alone for CAPTCHA image distortion; NumPy is not required by the host;
-- `python:3.13.13-slim-trixie` as the validated container base.
+- standard-library `zoneinfo` with `tzdata`;
+- Pillow for image/CAPTCHA processing;
+- a Python slim Trixie container base.
 
-Lock generation is performed on Fedora 42 Linux x86_64, and release checkpoints should validate the generated lock in the Trixie container with `--require-hashes` and `--only-binary=:all:`. Dependency auditing should continue to run against the generated lock before release checkpoints.
+Release validation should install the lock with:
 
-## Current audit-integrity checkpoint
+```bash
+python -m pip install \
+  --require-hashes \
+  --only-binary=:all: \
+  -r requirements.txt
+```
 
-The 2026-08-03 audit/tracking checkpoint established these invariants:
+Audit the resolved lock before release checkpoints.
 
-- `AuditActivity` business-success events participate in the caller-owned transaction;
-- login attempts, standalone activity events, and online-presence updates use isolated writes;
-- `AuditActivity.extra_data` is encoded exactly once and legacy double-encoded rows remain readable;
-- token-bearing routes declare explicit parameter redaction without reducing normal route audit detail;
-- `AuditLogin` records one final outcome per attempt with a normalized failure reason;
-- direct requests ignore spoofed forwarded headers unless proxy trust is explicitly configured.
-
-Focused regression coverage is maintained in `tests.test_audit_tracking` and `tests.test_login_audit`.
-
-## Current email-lifecycle checkpoint
-
-The 2026-08-04 email checkpoint established these invariants:
-
-- verification uses the registered endpoint names and the persisted `User.activated` state;
-- valid verification is idempotent, malformed or expired tokens fail safely, and activation commits with its audit event;
-- template rendering resolves the packaged HTML and text template trees;
-- callers receive `queued`, `disabled`, or `failed` dispatch status without waiting for SMTP;
-- **Enable Outbound Email** is the application master switch and required verification depends on an available transport;
-- complete Site Settings SMTP configuration may override deployment configuration only when `MAIL_CONFIG_UI_ENABLED=true`;
-- partial runtime overrides are rejected rather than blended with environment values;
-- UI-managed SMTP passwords are Fernet-encrypted with an external key, are not rendered back into forms, and are excluded from audit metadata;
-- the background worker receives an immutable resolved configuration rather than mutating global application configuration.
-
-Focused regression coverage is maintained in `tests.test_mailer`, `tests.test_mail_config`, and `tests.test_email_lifecycle`. The combined email, login, and audit checkpoint runs 69 tests.
-
-## Current MFA checkpoint
-
-The 2026-08-05 MFA checkpoint established these invariants:
-
-- MFA enrollment, authenticator replacement, and disable require fresh authentication;
-- remembered or otherwise non-fresh sessions must complete MFA reauthentication before changing MFA state;
-- MFA reauthentication and disable accept either the current TOTP or an unused single-use recovery code;
-- transient setup, verification, reauthentication, and disable state is bounded by timestamps and attempt limits;
-- terminal MFA lockout forces a complete login and deletes the remember cookie;
-- the accepted TOTP counter is persisted and an already accepted code is rejected;
-- final MFA-login persistence failure does not leave an accepted login session;
-- replay regression tests isolate MFA matching behavior without replacing the process-wide clock.
-
-Focused MFA coverage is maintained in `tests.test_login_audit`.
-
-## Current password-reset checkpoint
-
-The 2026-08-05 password-reset checkpoint established these invariants:
-
-- reset secrets are generated with high entropy and stored only as SHA-256 hashes;
-- reset records carry explicit expiry, consumption, and revocation state;
-- token consumption is a conditional database update, so only one concurrent request can succeed;
-- requesting another reset link does not revoke an earlier valid link through an unauthenticated denial-of-service path;
-- a successful reset consumes its token and revokes every other outstanding reset token for the account;
-- authenticated password changes also revoke all outstanding reset tokens;
-- every password change rotates the user authentication version, invalidating active sessions and remember cookies across clients;
-- the current browser is forced through a complete login and its remember cookie is deleted;
-- password-change notification is queued only after the password transaction commits;
-- a failed database commit preserves the old password, authentication version, and token usability.
-
-Focused password-reset coverage is maintained in `tests.test_email_lifecycle` and `tests.test_login_audit`. `ACCOUNT_TEST_DATABASE_URI` may point those lifecycle tests at a disposable PostgreSQL database.
-
-## Current inactivity checkpoint
-
-The 2026-08-05 inactivity checkpoint established these invariants:
-
-- authenticated browser sessions use a numeric, sliding inactivity timestamp rather than a nonexistent custom user-session key;
-- the timeout is configurable through `SESSION_INACTIVITY_TIMEOUT_SECONDS`, with `0` disabling it explicitly;
-- the exact timeout boundary forces a complete login for non-remembered sessions;
-- remembered sessions retain their durable session and remember cookie across inactivity, but the browser session is cleared to the minimum Flask-Login identity state and downgraded to non-fresh authentication;
-- the request that crosses a remembered-session timeout boundary is stopped and redirected with `303`, preventing a POST or other state-changing request from executing across the boundary;
-- successful primary and MFA logins seed the inactivity window immediately;
-- remember-cookie-restored sessions begin a new non-fresh inactivity window;
-- missing, malformed, legacy, or future activity timestamps recover into a new bounded window rather than creating an indefinite session;
-- static asset requests do not refresh authenticated activity;
-- pre-authentication MFA state remains governed by its separate expiry and attempt limits;
-- inactivity expiry clears transient MFA and other browser-session state; remembered sessions retain only the minimum non-fresh identity state, while non-remembered sessions are fully logged out.
-
-Focused inactivity coverage is maintained in `tests/test_inactivity.py`, with login integration assertions in `tests/test_login_audit.py`.
-
-## Current profile-image checkpoint
-
-The 2026-08-12 host profile-image checkpoint establishes these invariants:
-
-- the existing `User.image` field stores only a generated WebP basename; no profile-image schema migration or generic media-serving route is introduced;
-- `EnvSettings.users_stored_path` is the complete administrator-selected local storage directory;
-- JPEG, PNG, and WebP uploads are decoded/validated, bounded, EXIF-oriented, metadata-stripped, center-cropped, and normalized before persistence;
-- owner upload/replace/remove and administrator takedown are authenticated, CSRF-protected, rate-limited state changes;
-- replacement/removal makes the database decision durable before deleting the superseded generated file, while commit failure preserves the prior reference/file;
-- the account page renders the canonical image internally and keeps image controls with the identity presentation; the admin user list exposes removal only for users with a custom image.
-
-Focused coverage is maintained in `tests/test_account_profile.py`, `tests/test_admin_avatar.py`, `tests/test_admin_ui_contract.py`, and `tests/test_theme_contract.py`. The current complete Flask-AAS suite is **377 passed, 13 warnings, and 22 subtests passed**.
-
-## Current application-plugin checkpoint
-
-The Plugin API v1 checkpoint, including the 2026-08-12 external Example-reference decoupling, establishes these invariants:
-
-- the global plugin-system switch may remain disabled without loading application-plugin runtime code;
-- startup discovery is restricted to immediate `app/plugins/*/plugin.toml` manifests and remains metadata-only; newly discovered compatible applications are registered disabled by default without importing implementation/model code;
-- canonical static plugin identity/compatibility metadata comes from `plugin.toml` and can be validated without importing implementation Python;
-- registration alone does not import plugin implementation or model modules and does not deploy plugin schema;
-- explicit administrator enablement is the selected plugin's native-code trust boundary, not a schema-migration operation;
-- plugins with declared migrations use independent `plugin_<id>_*` namespaces and `plugin_<id>_alembic_version` histories;
-- an enabled plugin with stale schema fails closed as `NEEDS_MIGRATION` before structural application registration;
-- fresh plugin namespaces may bootstrap the current owned model schema and stamp head, while existing unversioned owned tables fail closed;
-- the admin schema-upgrade path is POST/admin/CSRF/rate-limit protected, upgrades only to `head`, and does not expose browser downgrade/arbitrary revision execution;
-- structural runtime activation occurs only when a fresh Gunicorn worker starts;
-- persisted schema/configuration changes are distinct from the running worker's status snapshot; already-loaded route/navigation gates follow current persisted `enabled/configured` state immediately, while **Reload App Config** reconciles startup-time runtime status and structure;
-- disabled plugins do not contribute routes or navigation after reload, while the request guard denies a newly disabled plugin immediately;
-- enabled-but-unconfigured plugins remain inaccessible until their plugin-owned validation succeeds;
-- plugin configuration and persistence remain plugin-owned rather than moving domain settings into Flask-AAS core;
-- disabling a plugin preserves ordinary configuration, business data, and schema while clearing plugin-managed persisted secrets;
-- generic plugin CLI dispatch logs plugin and command identity without logging arbitrary command arguments;
-- plugin pages inherit the host template/theme baseline and add only plugin-local presentation overrides;
-- enabled Python plugins execute with Flask-AAS process privileges and are not treated as sandboxed code;
-- the human-facing Example reference implementation is maintained as a separate repository, while Flask-AAS host tests use only the synthetic `tests/fixtures/plugin_app` fixture so the host does not ship or special-case the reference application.
-
-Focused plugin coverage is maintained in `tests/test_plugin_contract.py`, `tests/test_plugin_manifest.py`, `tests/test_plugin_migrations.py`, `tests/test_plugin_lifecycle.py`, `tests/test_plugin_admin.py`, `tests/test_plugin_web_surface.py`, `tests/test_plugin_integration_surfaces.py`, `tests/test_plugin_bundled.py`, `tests/test_plugin_reload.py`, and `tests/test_plugin_fixture_persistence.py`. The current complete Flask-AAS suite passes **377 tests, 13 warnings, and 22 subtests**.
-
-## Current clean-bootstrap schema-readiness checkpoint
-
-The 2026-08-15 container/PostgreSQL checkpoint adds these host invariants:
-
-- application startup checks for the core `env_settings` table before reading persisted Site Settings or plugin-loader state on a completely empty database;
-- schema inspection is confined to startup/bootstrap boundaries rather than adding metadata probes to ordinary request-time settings access;
-- missing core schema defers plugin loading and uses the default log-level path without issuing expected-failure queries against nonexistent tables;
-- the schema existence check uses SQLAlchemy inspection and is portable across the normal SQLite development path and PostgreSQL integration/deployment path;
-- the base Compose path using SQLite and the PostgreSQL overlay both complete clean bootstrap, seed, and Gunicorn startup;
-- the PostgreSQL path additionally completes explicit plugin enablement, `NEEDS_MIGRATION`, plugin schema initialization, reload to `ACTIVE`, and optional dataset actions.
-
-Focused coverage is maintained in `tests/test_core_schema.py` plus plugin lifecycle coverage. The current user-confirmed complete host regression run is **377 passed, 13 warnings, and 22 subtests passed in 73.48s**. The current user-confirmed AutoGrid360 plugin run is **347 passed, 15 warnings, and 256 subtests passed in 63.00s**.
-
-## Recommended baseline
+## Recommended tools
 
 ### Ruff
 
-Use for fast Python linting and import/style checks. Keep the rule set small enough that findings remain actionable.
+Use for fast Python linting, imports, and straightforward correctness/style checks. Keep the enabled
+rule set small enough that findings remain actionable.
 
 ### Bandit
 
-Use for basic Python security-pattern detection. Treat findings as review leads rather than proof of a vulnerability.
+Use for basic Python security-pattern detection. Treat findings as review leads, not proof of a
+vulnerability.
 
 ### Semgrep
 
-Use for framework-aware and project-specific checks. Add local rules for Flask-AAS invariants such as:
+Use for framework-aware and project-specific checks.
 
-- token-bearing routes or audit calls without explicit parameter redaction;
-- audit helpers calling `commit()` or `rollback()` on the caller-owned session;
+Useful Flask-AAS rules include:
+
+- token-bearing routes without explicit audit redaction;
+- audit helpers calling `commit()`/`rollback()` on caller-owned transactions;
 - state-changing GET routes;
-- CSRF-exempt browser routes;
-- security-sensitive routes without fresh reauthentication;
-- request metadata capture that fails to exclude authorization or cookie headers;
-- `ProxyFix` enabled without explicit configuration;
-- normal application startup importing disabled plugin implementation/model modules;
-- plugin discovery that scans beyond the controlled immediate-child manifest boundary or imports implementation/model code before explicit Enable;
-- plugin operational logging that records arbitrary CLI arguments.
+- CSRF-exempt browser mutations;
+- sensitive actions without required reauthentication;
+- request metadata capture that includes authorization/cookie headers;
+- `ProxyFix` enabled without explicit topology;
+- disabled-plugin startup importing plugin implementation/model modules;
+- plugin discovery escaping the intended immediate-child manifest boundary;
+- plugin operational logging that records arbitrary command arguments.
 
 ### Dependency audit
 
-Audit pinned runtime dependencies in CI and before releases. A dependency finding should include:
+For every relevant dependency finding, record:
 
-- affected package and resolved version;
-- whether the vulnerable code path is used;
-- available fixed version;
+- package and resolved version;
+- whether the affected code path is used;
+- fixed version;
 - compatibility impact;
 - remediation or accepted-risk decision.
 
-### CodeQL or equivalent repository scanning
+### CodeQL or equivalent
 
-Enable repository-level scanning for data-flow and injection classes that local linting may miss.
+Use repository-level data-flow scanning for injection and cross-function issues that local linters
+may miss.
 
 ### Pytest
 
-The security regression suite is the most important control in this list. Static tools cannot prove authentication state, transaction behavior, token replay resistance, or environment-mode behavior.
+The regression suite is the primary executable security control. Static tools cannot prove session
+state, transaction ownership, token replay resistance, authorization, or deployment-mode behavior.
+
+## Security invariants worth automating
+
+### Authentication and sessions
+
+- Every submitted login produces exactly one final `AuditLogin` outcome.
+- Successful login audit rows are written only after authentication succeeds.
+- Sensitive MFA changes require appropriate reauthentication.
+- Forced full-login paths clear remembered authentication state.
+- Accepted TOTP counters cannot be replayed.
+- Remembered inactivity downgrades to non-fresh authentication and stops the boundary-crossing
+  mutation.
+- Password changes invalidate earlier session identities and outstanding reset links.
+- Password-reset tokens are hashed at rest and accepted only once.
+
+### Audit and secrets
+
+- Token-bearing routes declare redaction.
+- Concrete reset/verification tokens never appear in stored audit rows.
+- Audit helpers do not end caller-owned business transactions.
+- Authoritative audit metadata does not persist raw database exception strings.
+- SMTP credentials, passwords, tokens, cookies, and authorization headers do not appear in logs or
+  rendered forms.
+
+### Deployment
+
+- Direct development starts without SMTP, Redis, certificates, or a supplied secret.
+- Production/multi-worker deployment requires stable shared secrets/state where needed.
+- Proxy trust is disabled unless explicitly configured.
+- Clean empty databases reach bootstrap without querying missing persisted-settings tables.
+- SQLite and PostgreSQL clean-bootstrap paths remain viable.
+- HSTS/secure-cookie behavior matches the external HTTP/HTTPS boundary.
+
+### Email
+
+- Required email verification cannot be enabled without usable outbound email.
+- Runtime SMTP overrides are complete-or-rejected rather than field-blended.
+- UI-managed SMTP credentials remain encrypted and are not rendered back.
+- Queued email is not represented as completed SMTP delivery.
+
+### Application plugins
+
+- Global plugin disable leaves core startup independent of plugin runtime code.
+- Registered-but-disabled plugins do not import implementation/models or register routes.
+- Plugin manifests/migration declarations can be inspected without implementation import.
+- Explicit enablement is the code-execution boundary and does not migrate schema.
+- Core Alembic does not adopt plugin-owned namespaces.
+- Plugin migration failure does not falsely advance the plugin version table.
+- Existing unversioned plugin tables fail closed.
+- Disabled plugins deny access immediately and are removed structurally after reload.
+- Disabling preserves ordinary plugin data/schema while clearing managed secrets as required.
+- Incompatible/failed optional plugins do not prevent core startup.
+- Registry/filesystem identity drift is handled without deleting unrelated plugin-owned data.
 
 ## Suggested CI stages
 
-1. Dependency installation from the canonical lock or requirement set
-2. Linting
-3. Unit and integration tests
-4. Database migration tests
-5. Dependency audit
-6. Python SAST
-7. Repository data-flow scanning
-8. Container build and configuration smoke test
+1. Install from the canonical lock.
+2. Lint.
+3. Run unit/integration tests.
+4. Run migration/database tests.
+5. Audit dependencies.
+6. Run Python SAST.
+7. Run repository data-flow scanning.
+8. Build the container and run a clean configuration/bootstrap smoke test.
 
-## Project-specific checks to automate
-
-- Every submitted login produces exactly one final `AuditLogin` outcome.
-- Successful login rows are written only after Flask-Login accepts the user.
-- Sensitive MFA state changes require fresh authentication.
-- Forced full-login paths delete remembered authentication state.
-- Remembered inactivity preserves the durable remembered identity but clears transient MFA/application state, stops the boundary-crossing request with `303`, and resumes only as non-fresh authentication.
-- An accepted TOTP counter cannot be replayed.
-- Password-reset secrets are hashed at rest and accepted only once.
-- Password changes revoke outstanding reset links and invalidate earlier session identities.
-- Token-bearing routes declare redaction and no concrete token appears anywhere in the stored audit row.
-- No concrete reset or verification token appears in audit rows.
-- Audit helpers do not call transaction-ending methods.
-- Direct-development mode starts without SMTP, Redis, certificates, or a supplied secret.
-- Production mode rejects missing stable secrets.
-- A clean empty database reaches migration/bootstrap without querying `env_settings` before the core schema exists.
-- The SQLite base Compose path and PostgreSQL overlay remain viable clean-bootstrap integration paths.
-- Proxy trust is disabled unless configured.
-- HSTS and secure cookies are not forced during direct HTTP development.
-- All registered Flask-AAS core routes resolve their endpoint references; runtime application-plugin routes are validated under their own lifecycle tests.
-- All email templates referenced by code exist.
-- Required verification cannot be enabled without an effective outbound transport.
-- Runtime SMTP overrides are all-or-nothing, encrypted, and ignored when UI configuration is disabled.
-- SMTP credentials never appear in rendered forms, logs, or audit metadata.
-- Queued email is not represented as completed SMTP delivery.
-- Migrations upgrade a new database and a representative prior schema.
-- A globally disabled plugin system leaves the Flask-AAS core usable and does not load plugin runtime code.
-- Registered-but-disabled plugins do not import implementation/model modules, deploy schema, register routes, or contribute navigation during ordinary startup.
-- Plugin manifests and migration declarations are validated without importing plugin implementation code.
-- Plugin registry/filesystem identity drift is treated as persisted-state troubleshooting: tests and operator procedures must not assume renaming a plugin directory rewrites `PluginRegistration`, and registration cleanup must remain separate from plugin schema/business-data destruction.
-- Core Alembic autogeneration preserves the core-owned `plugin_registrations` table while never adopting plugin-domain namespaces such as `plugin_example_*` that belong to plugin migration histories.
-- Plugin migration failure never falsely advances `plugin_<id>_alembic_version`.
-- Persisted plugin configuration drift is tested explicitly: request/navigation gating follows current persisted state on already-loaded surfaces, while worker runtime status remains stale until Reload App Config.
-- Explicit plugin enablement is a trusted code-execution boundary but does not migrate schema; structural runtime activation requires a fresh worker.
-- Disabling a plugin immediately denies access, clears plugin-managed persisted secrets, preserves ordinary data/schema/configuration, and removes runtime registration after reload.
-- Plugin CLI logging never exposes arbitrary command arguments or managed secret values.
-- An incompatible or failed optional plugin does not prevent core startup.
-- CSP tests cover interactive controls without allowing inline script.
+Changes affecting SQL or migration behavior should include PostgreSQL validation.
 
 ## Larger platforms
 
-SonarQube, commercial SAST, or broader application-security platforms may be useful later, but they are not prerequisites for this project. Add them only when they provide a concrete benefit beyond the baseline and do not create an unmaintained findings queue.
+SonarQube, commercial SAST, and broader application-security platforms can be added when they provide
+clear value. Do not add tooling that only creates an unmaintained findings queue.

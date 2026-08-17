@@ -227,6 +227,26 @@ class LoginAuditRouteTests(unittest.TestCase):
                 follow_redirects=False,
             )
 
+    def test_login_missing_username_flashes_single_validation_summary(self):
+        response = self._post_login('', 'provided-password')
+
+        self.assertEqual(response.status_code, 200)
+        with self.client.session_transaction() as login_session:
+            self.assertEqual(
+                login_session.get('_flashes'),
+                [('error', 'Please correct the highlighted fields.')],
+            )
+
+    def test_login_missing_password_flashes_single_validation_summary(self):
+        response = self._post_login('provided-username', '')
+
+        self.assertEqual(response.status_code, 200)
+        with self.client.session_transaction() as login_session:
+            self.assertEqual(
+                login_session.get('_flashes'),
+                [('error', 'Please correct the highlighted fields.')],
+            )
+
     def test_change_password_rejects_password_below_policy_minimum(self):
         user = self._save_user(username='short-password-change-user')
         self._post_login(
@@ -665,6 +685,33 @@ class LoginAuditRouteTests(unittest.TestCase):
             self.assertIsNotNone(login_session.get('mfa_verified_at'))
             self.assertNotIn('pre_2fa_user_id', login_session)
             self.assertNotIn('mfa_recovery_codes', login_session)
+
+    def test_mfa_setup_rejects_non_numeric_code_before_totp_validation(self):
+        user = self._save_user(username='mfa-setup-invalid-user')
+        self._post_login('mfa-setup-invalid-user', 'correct-password')
+
+        with self._request_patches():
+            setup_page = self.client.get('/mfa/setup', follow_redirects=False)
+        self.assertEqual(setup_page.status_code, 200)
+
+        with self._request_patches(), patch(
+            'app.routes.mfa.mfa._matching_totp_counter'
+        ) as match_totp, patch(
+            'app.routes.mfa.mfa.render_template', return_value='mfa'
+        ) as render_mfa:
+            response = self.client.post(
+                '/mfa/setup',
+                data={'code': 'abc123'},
+                follow_redirects=False,
+            )
+
+        self.assertEqual(response.status_code, 200)
+        rendered_form = render_mfa.call_args.kwargs['form']
+        self.assertIn('The code must be 6 digits.', rendered_form.code.errors)
+        match_totp.assert_not_called()
+        db.session.refresh(user)
+        self.assertFalse(user.mfa_enabled)
+        self.assertIsNone(user.otp_secret)
 
     def test_mfa_login_is_finalized_after_second_factor_succeeds(self):
         secret = pyotp.random_base32()

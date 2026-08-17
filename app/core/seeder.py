@@ -1,3 +1,5 @@
+"""Seed required Flask-AAS reference and bootstrap data."""
+
 # app/core/seeder.py
 import json
 import logging
@@ -77,7 +79,7 @@ def seed_admin_user():
     # Prepare user data with defaults and admin-specific values
     user_data = {
         "username": "admin",
-        "email": current_app.config.get("ADMIN_EMAIL", "admin@yoursite.com"),  # Use config or fallback
+        "email": current_app.config.get("ADMIN_EMAIL", "admin@yoursite.com"),
         "ip_address": "127.0.0.1",  # Default for seeding
         "company_name": "Alias 454 Studio",
         "first_name": "System",
@@ -143,11 +145,11 @@ def seed_env_settings():
         "description": "Short description of site",
         "keywords": "Keyword, keyword one, separate, by commas",
         "admin_name": "admin",
-        "admin_email": "admin@site.com",
+        "admin_email": current_app.config.get("ADMIN_EMAIL", admin_user.email or "admin@yoursite.com"),
         "site_mode": 1,  # 0 = public/multi-user, 1 = single-user
         "default_role_id": user_role.id if user_role else None,
         "users_per_page": 10,
-        "users_stored_path": "static/images/users",
+        "users_stored_path": "uploads/users",
         "max_failed_attempts": 5,
         "lockout_duration_seconds": 900,
         "password_policy_enabled": current_app.config.get("PASSWORD_POLICY_ENABLED", True),

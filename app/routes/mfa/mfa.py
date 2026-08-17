@@ -14,7 +14,7 @@ from flask_login import confirm_login, login_fresh, login_user, logout_user, cur
 from app.core.auth import login_required
 from flask_wtf import FlaskForm
 from wtforms import StringField, SubmitField
-from wtforms.validators import DataRequired, Length
+from wtforms.validators import DataRequired, Length, Regexp
 from sqlalchemy import or_
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -296,7 +296,7 @@ class MFASetupForm(FlaskForm):
         "Enter the code from your authenticator app:",
         validators=[
             DataRequired(message="Please enter the code."),
-            Length(min=6, max=6, message="The code must be 6 digits.")
+            Regexp(r"^[0-9]{6}$", message="The code must be 6 digits."),
         ],
         render_kw={
             "placeholder": "123456",
@@ -365,8 +365,8 @@ def mfa_setup():
     if request.method == 'GET':
         logger.info(f"Generated new OTP secret for user_id={user.id} ip={ip}")
 
-    if request.method == 'POST':
-        code = request.form.get('code', '').strip()
+    if form.validate_on_submit():
+        code = form.code.data.strip()
         counter = _matching_totp_counter(pending_secret, code)
         if counter is not None:
             user.otp_secret = pending_secret
