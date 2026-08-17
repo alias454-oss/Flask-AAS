@@ -1,3 +1,5 @@
+"""Tests for outbound mail configuration and lifecycle helpers."""
+
 import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -51,6 +53,26 @@ class MailerTests(unittest.TestCase):
         }
         values.update(overrides)
         return SimpleNamespace(**values)
+
+    def test_lifecycle_site_name_falls_back_to_config_without_persisted_name(self):
+        self.app.config["SITE_NAME"] = "Config Site"
+        with self.app.app_context(), patch(
+            "app.core.mailer.get_mail_env_settings",
+            return_value=SimpleNamespace(site_name=""),
+        ), patch(
+            "app.core.mailer.render_email",
+            return_value=("Text body", "<p>HTML body</p>"),
+        ), patch(
+            "app.core.mailer.send_email",
+            return_value="queued",
+        ) as mock_send:
+            status = send_password_changed_email(
+                "user@example.test",
+                "example-user",
+            )
+
+        self.assertEqual(status, "queued")
+        self.assertEqual(mock_send.call_args.args[0], "Password changed for Config Site")
 
     def test_missing_recipient_fails_before_policy_lookup(self):
         with self.app.app_context(), patch(
@@ -342,8 +364,11 @@ class MailerTests(unittest.TestCase):
         self.assertEqual(html, "<p>HTML</p>")
 
     def test_password_changed_wrapper_returns_dispatch_status(self):
-        self.app.config["SITE_NAME"] = "Example Site"
+        self.app.config["SITE_NAME"] = "Config Site"
         with self.app.app_context(), patch(
+            "app.core.mailer.get_mail_env_settings",
+            return_value=SimpleNamespace(site_name="Example Site"),
+        ), patch(
             "app.core.mailer.render_email",
             return_value=("Text body", "<p>HTML body</p>"),
         ) as mock_render, patch(
@@ -368,9 +393,13 @@ class MailerTests(unittest.TestCase):
         )
 
     def test_password_setup_wrapper_returns_dispatch_status(self):
-        self.app.config["SITE_NAME"] = "Example Site"
+        self.app.config["SITE_NAME"] = "Config Site"
         with (
             self.app.app_context(),
+            patch(
+                "app.core.mailer.get_mail_env_settings",
+                return_value=SimpleNamespace(site_name="Example Site"),
+            ),
             patch(
                 "app.core.mailer.url_for",
                 return_value="https://example.test/set-password/test-token",

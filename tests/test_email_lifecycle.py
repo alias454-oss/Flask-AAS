@@ -202,6 +202,19 @@ class EmailLifecycleRouteTests(unittest.TestCase):
             flashes = session.get("_flashes", [])
         return " ".join(message for _, message in flashes)
 
+    def test_registration_validation_uses_one_summary_flash(self):
+        with self._request_patches():
+            response = self.client.post("/register", data={}, follow_redirects=False)
+
+        self.assertEqual(response.status_code, 200)
+        with self.client.session_transaction() as session:
+            flashes = session.get("_flashes", [])
+
+        self.assertEqual(
+            flashes,
+            [("error", "Please correct the highlighted fields.")],
+        )
+
     def _save_user(self, email, *, activated=False):
         user = User(
             username=email.split("@", 1)[0],
@@ -217,7 +230,9 @@ class EmailLifecycleRouteTests(unittest.TestCase):
     def test_registration_rejects_password_below_policy_minimum(self):
         with self._request_patches(), patch(
             "app.routes.register.send_verification_email"
-        ) as send_verification:
+        ) as send_verification, patch(
+            "app.routes.register.render_template", return_value="register"
+        ) as register_template:
             response = self.client.post(
                 "/register",
                 data={
@@ -235,7 +250,13 @@ class EmailLifecycleRouteTests(unittest.TestCase):
         self.assertIsNone(
             User.query.filter_by(email="short-password-user@example.com").first()
         )
-        self.assertIn("at least 20 characters", self._flash_text())
+        rendered_form = register_template.call_args.kwargs["form"]
+        self.assertTrue(
+            any(
+                "at least 20 characters" in error
+                for error in rendered_form.password.errors
+            )
+        )
 
     def test_registration_queues_verification_using_registered_endpoint(self):
         response, send_verification = self._register("queued")
