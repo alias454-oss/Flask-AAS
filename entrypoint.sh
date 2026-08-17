@@ -1,10 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if [[ "${DEBUG:-}" == "yes" ]]; then
-    set -o xtrace
-fi
-
 # Use a short hash of the configured DB URI so SQLite and PostgreSQL
 # initialization state cannot collide.
 _db_key="$(

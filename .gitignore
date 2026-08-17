@@ -26,6 +26,8 @@ build/
 # Separately maintained application plugins
 /app/plugins/*/
 
+# Runtime-uploaded media
+/uploads/
 
 # Flask instance folder (if used)
 instance/

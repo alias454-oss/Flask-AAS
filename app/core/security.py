@@ -1,3 +1,5 @@
+"""Security helpers for authentication, tokens, lockout, and request identity."""
+
 # app/core/security.py
 import re
 import logging
@@ -68,13 +70,17 @@ def redact_email(email):
     return f"{user}@{domain}"
 
 def normalize_username(username: str) -> str:
+    """Normalize a username without silently changing overlong input.
+
+    Storage forms enforce their own database-backed length limits. Lookup paths
+    must not truncate an attacker-controlled username into a different valid
+    account identifier.
+
+    :param username: Raw username supplied by a user.
+    :return: Control-character-free, trimmed, lowercase username.
     """
-    Sanitize and normalize username input for queries and storage
-    """
-    username = re.sub(r'[\x00-\x1f\x7f]', '', username) # Remove control characters, newlines, etc.
-    username = username.strip()                                     # Trim whitespace
-    username = username.lower()                                     # Lowercase for normalization
-    return username[:60]                                            # Limit length to DB column max (e.g., 60)
+    normalized = re.sub(r"[\x00-\x1f\x7f]", "", username or "")
+    return normalized.strip().lower()
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     """Verify a password with the application's supported hash stack."""

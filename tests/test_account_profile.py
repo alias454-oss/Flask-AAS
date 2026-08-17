@@ -307,7 +307,7 @@ class AccountProfileRouteTests(unittest.TestCase):
     def test_user_storage_path_uses_complete_configured_directory(self):
         self.assertEqual(profile_image_root(), self.image_root.resolve())
 
-        self.settings.users_stored_path = 'static/images/users'
+        self.settings.users_stored_path = 'uploads/users'
         db.session.commit()
         EnvSettings._cached_instance = None
         if hasattr(g, '_env_settings'):
@@ -315,7 +315,7 @@ class AccountProfileRouteTests(unittest.TestCase):
 
         self.assertEqual(
             profile_image_root(),
-            (Path(self.app.root_path) / 'static/images/users').resolve(),
+            (Path(self.app.root_path).parent / 'uploads/users').resolve(),
         )
 
     def test_login_is_required(self):

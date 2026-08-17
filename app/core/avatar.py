@@ -52,7 +52,7 @@ def max_upload_request_bytes() -> int:
 def profile_image_root() -> Path:
     """Resolve the complete administrator-configured user storage directory.
 
-    Relative paths are resolved from the Flask application root. Absolute paths
+    Relative paths are resolved from the Flask-AAS project root. Absolute paths
     are used as configured. Flask-AAS does not append its own storage suffixes.
     """
 
@@ -65,7 +65,7 @@ def profile_image_root() -> Path:
 
     root = Path(configured).expanduser()
     if not root.is_absolute():
-        root = Path(current_app.root_path) / root
+        root = Path(current_app.root_path).parent / root
     return root.resolve()
 
 
