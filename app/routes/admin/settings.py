@@ -5,7 +5,7 @@ import logging
 import os
 
 from zoneinfo import available_timezones
-from flask import Blueprint, current_app, flash, redirect, render_template, request, url_for
+from flask import Blueprint, abort, current_app, flash, redirect, render_template, request, url_for
 from flask_login import current_user
 from flask_wtf import FlaskForm
 from wtforms import (
@@ -30,6 +30,7 @@ from wtforms.validators import (
 
 from app.core.auth import admin_required, login_required
 from app.core.cache import get_cached_env_settings
+from app.core.content import sanitize_page_html
 from app.core.decorators import log_view_action
 from app.core.extensions import db, limiter
 from app.core.mailer import (
@@ -66,6 +67,40 @@ SMTP_FIELD_NAMES = {
     "clear_smtp_override",
 }
 NON_MODEL_FIELD_NAMES = {"csrf_token", "submit", "clear_smtp_override"}
+
+
+PAGE_CONTENT_MAX_LENGTH = 65535
+PAGE_CONTENT_PAGES = {
+    "home": {
+        "label": "Homepage",
+        "field": "page_home_html",
+        "endpoint": "index.index",
+    },
+    "about": {
+        "label": "About",
+        "field": "page_about_html",
+        "endpoint": "about.about",
+    },
+    "privacy": {
+        "label": "Privacy Policy",
+        "field": "page_privacy_html",
+        "endpoint": "privacy.privacy",
+    },
+    "terms": {
+        "label": "Terms of Service",
+        "field": "page_terms_html",
+        "endpoint": "tos.tos",
+    },
+}
+
+
+class PageContentForm(FlaskForm):
+    content_html = TextAreaField(
+        "Page Content",
+        validators=[Optional(), Length(max=PAGE_CONTENT_MAX_LENGTH)],
+    )
+    submit = SubmitField("Save Changes")
+    reset = SubmitField("Reset to Theme Default")
 
 
 class AdminSettingsForm(FlaskForm):
@@ -427,6 +462,106 @@ def get_supported_languages():
 
 def get_timezones():
     return [(tz, tz) for tz in sorted(available_timezones())]
+
+
+@settings_bp.route("/page-content", methods=["GET"])
+@limiter.limit("10 per minute", key_func=get_client_ip)
+@log_view_action()
+@login_required
+@admin_required
+def page_content():
+    env = get_cached_env_settings()
+    pages = []
+
+    for page_key, page in PAGE_CONTENT_PAGES.items():
+        pages.append(
+            {
+                "key": page_key,
+                "label": page["label"],
+                "customized": bool(getattr(env, page["field"], None)),
+            }
+        )
+
+    return render_template(
+        "admin/page_content.html",
+        pages=pages,
+        quick_stats=get_admin_quick_stats(),
+        title="Page Content",
+    )
+
+
+@settings_bp.route("/page-content/<page_key>", methods=["GET", "POST"])
+@limiter.limit("10 per minute", key_func=get_client_ip)
+@log_view_action()
+@login_required
+@admin_required
+def page_content_manage(page_key):
+    page = PAGE_CONTENT_PAGES.get(page_key)
+    if page is None:
+        abort(404)
+
+    env = get_cached_env_settings()
+    field_name = page["field"]
+    current_value = getattr(env, field_name, None)
+    form = PageContentForm()
+
+    if request.method == "GET":
+        form.content_html.data = current_value or ""
+
+    if form.validate_on_submit():
+        if form.reset.data:
+            new_value = None
+            audit_action = "reset_page_content"
+        else:
+            submitted = form.content_html.data
+            cleaned = sanitize_page_html(submitted).strip() if submitted else ""
+            new_value = cleaned or None
+            audit_action = "update_page_content" if new_value else "reset_page_content"
+
+        if current_value != new_value:
+            try:
+                setattr(env, field_name, new_value)
+                db.session.add(env)
+                log_action(
+                    action=audit_action,
+                    user_id=current_user.id,
+                    target=f"/admin/settings/page-content/{page_key}",
+                    extra_data={
+                        "page": page["label"],
+                        "page_key": page_key,
+                        "ip": get_client_ip(),
+                        "user_agent": request.headers.get("User-Agent"),
+                    },
+                )
+                db.session.commit()
+                if new_value is None:
+                    flash(f"{page['label']} restored to the theme default.", "success")
+                else:
+                    flash(f"{page['label']} content updated.", "success")
+            except Exception:
+                db.session.rollback()
+                logger.exception("Failed to update page content")
+                flash("An error occurred while updating page content.", "error")
+        else:
+            flash("Page content is unchanged.", "info")
+
+        return redirect(url_for("settings.page_content_manage", page_key=page_key))
+
+    if request.method == "POST":
+        flash("Please correct the highlighted page content.", "error")
+
+    return render_template(
+        "admin/page_content_manage.html",
+        form=form,
+        page={
+            "key": page_key,
+            "label": page["label"],
+            "customized": bool(current_value),
+            "view_url": url_for(page["endpoint"]),
+        },
+        quick_stats=get_admin_quick_stats(),
+        title=f"Manage {page['label']}",
+    )
 
 
 @settings_bp.route("/", methods=["GET", "POST"])

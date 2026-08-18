@@ -1,0 +1,48 @@
+<!-- templates/admin/page_content.html -->
+{% if current_user.is_authenticated and current_user.is_admin %}
+{% extends "admin/includes/base.html" %}
+
+{% block header %}
+  {% include "admin/includes/header.html" %}
+{% endblock %}
+
+{% block content %}
+  <div class="content-page content-page--wide">
+    <h2>Page Content</h2>
+
+    <p>
+      Manage optional content overrides for the core public pages. Pages without an override
+      continue to use the current theme's built-in content.
+    </p>
+
+    <div class="table-wrap">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Page</th>
+            <th>Status</th>
+            <th>Manage</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for page in pages %}
+            <tr>
+              <td>{{ page.label }}</td>
+              <td>{{ "Customized" if page.customized else "Theme default" }}</td>
+              <td>
+                <a href="{{ url_for('settings.page_content_manage', page_key=page.key) }}">
+                  Manage
+                </a>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+{% endblock %}
+
+{% block footer %}
+  {% include "admin/includes/footer.html" %}
+{% endblock %}
+{% endif %}

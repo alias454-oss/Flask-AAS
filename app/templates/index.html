@@ -6,6 +6,10 @@
 {% endblock %}
 
 {% block content %}
+  <div data-page-content="home">
+  {% if env and env.page_home_html %}
+    {{ env.page_home_html | sanitize_page_html | safe }}
+  {% else %}
     <h2>Flask-Based Login & User Management System</h2>
     <p>This system started life as a basic PHP login utility, originally tied to the Open Auto Classifieds project.
       This system covers the basics and then some: authentication, roles, audit logging, password resets,
@@ -40,6 +44,8 @@
       and extra bells and whistles up to you. That way, it stays simple and lightweight out of the box, making it
       easier to adapt and build exactly what you need without wrestling with unnecessary complexity.
     </p>
+  {% endif %}
+  </div>
 {% endblock %}
 
 {% block footer %}

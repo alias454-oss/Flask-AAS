@@ -1,0 +1,71 @@
+<!-- templates/admin/page_content_manage.html -->
+{% if current_user.is_authenticated and current_user.is_admin %}
+{% extends "admin/includes/base.html" %}
+
+{% block header %}
+  {% include "admin/includes/header.html" %}
+{% endblock %}
+
+{% block content %}
+  <div class="content-page content-page--wide">
+    <h2>{{ title }}</h2>
+
+    <p>
+      {% if page.customized %}
+        This page currently uses saved custom content.
+      {% else %}
+        This page currently uses the theme's built-in content.
+      {% endif %}
+      <a href="{{ page.view_url }}" target="_blank" rel="noopener">View current page</a>.
+    </p>
+    <p class="form-help">
+      HTML is sanitized before it is stored. Scripts, embedded content, forms, styles,
+      and event attributes are removed.
+    </p>
+
+    <form method="POST" novalidate>
+      {{ form.hidden_tag() }}
+
+      <div class="form-group">
+        {{ form.content_html.label }}
+        <div id="page-content-load-status" class="form-help" aria-live="polite">
+          {% if page.customized %}
+            Checking that the current theme exposes this page for editing.
+          {% else %}
+            Loading the current theme content into the editor.
+          {% endif %}
+        </div>
+        {{ form.content_html(
+          class_="form-control page-content-editor",
+          rows="24",
+          spellcheck="false",
+          data_page_content_editor="true",
+          data_page_key=page.key,
+          data_source_url=page.view_url,
+          data_customized="true" if page.customized else "false",
+          data_has_errors="true" if form.content_html.errors else "false"
+        ) }}
+        {% for error in form.content_html.errors %}
+          <div class="form-error">{{ error }}</div>
+        {% endfor %}
+      </div>
+
+      <div class="actions">
+        {{ form.submit(class_="button", data_page_content_save="true") }}
+        {% if page.customized %}
+          {{ form.reset(class_="button button--secondary") }}
+        {% endif %}
+        <a href="{{ url_for('settings.page_content') }}">Back to Page Content</a>
+      </div>
+    </form>
+  </div>
+{% endblock %}
+
+{% block footer %}
+  {% include "admin/includes/footer.html" %}
+{% endblock %}
+
+{% block scripts %}
+  <script src="{{ url_for('static', filename='js/page_content.js') }}" defer></script>
+{% endblock %}
+{% endif %}
