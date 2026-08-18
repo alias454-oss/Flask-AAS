@@ -8,8 +8,14 @@
 {% set sidebar_position = 'right' %}  {# or 'left' #}
 
 {% block content %}
+  <div data-page-content="about">
+  {% if env and env.page_about_html %}
+    {{ env.page_about_html | sanitize_page_html | safe }}
+  {% else %}
   <h2>About</h2>
   <p>About {{ env.site_name }}</p>
+  {% endif %}
+  </div>
 {% endblock %}
 
 {% block footer %}

@@ -10,6 +10,7 @@ from sqlalchemy.exc import OperationalError, ProgrammingError
 import minify_html
 
 from app.core.cache import get_cached_env_settings
+from app.core.content import sanitize_page_html
 from app.core.extensions import db, migrate, csrf, cache, limiter, mail
 from app.routes import register_error_handlers, register_all_routes
 from app.core.config import settings
@@ -209,6 +210,7 @@ def create_app():
     # Plugins contribute navigation structurally, while visibility follows the
     # same current enabled/configured access state as plugin application routes.
     app.jinja_env.globals["plugin_navigation"] = visible_plugin_navigation
+    app.jinja_env.filters["sanitize_page_html"] = sanitize_page_html
 
     # User loader for Flask-Login
     @login_manager.user_loader

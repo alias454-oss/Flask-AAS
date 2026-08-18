@@ -8,6 +8,10 @@
 {% set sidebar_position = 'right' %}  {# or 'left' #}
 
 {% block content %}
+  <div data-page-content="privacy">
+  {% if env and env.page_privacy_html %}
+    {{ env.page_privacy_html | sanitize_page_html | safe }}
+  {% else %}
   <h2>Privacy Statement for {{ env.site_name }}</h2>
   <p>Your privacy on the Internet is of the utmost importance to us. Because we gather certain types of information
   about the users of {{ env.site_name }}'s sites and services, we believe you should understand {{ env.site_name }}'s
@@ -102,6 +106,8 @@
   <p>If you have any questions about this Privacy Statement, the practices of {{ env.site_name }}, or your
   interactions with this website, please contact us.
   </p>
+  {% endif %}
+  </div>
 {% endblock %}
 
 {% block footer %}

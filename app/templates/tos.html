@@ -6,6 +6,10 @@
 {% endblock %}
 
 {% block content %}
+  <div data-page-content="terms">
+  {% if env and env.page_terms_html %}
+    {{ env.page_terms_html | sanitize_page_html | safe }}
+  {% else %}
   <h2>Website User Agreement for {{ env.site_name }}</h2>
 
   <p><strong>
@@ -168,7 +172,9 @@
     data is collected, used, and protected. By continuing to use the site, you consent to the use of cookies and
     other tracking technologies as described therein.
   </p>
-  {% endblock %}
+    {% endif %}
+  </div>
+{% endblock %}
 
 {% block footer %}
   {% include tpl_path ~ "/footer.html" %}

@@ -63,6 +63,10 @@ class EnvSettings(db.Model):
 
     # Templating / Display
     template = db.Column(db.String(100), nullable=True)
+    page_home_html = db.Column(db.Text, nullable=True)
+    page_about_html = db.Column(db.Text, nullable=True)
+    page_privacy_html = db.Column(db.Text, nullable=True)
+    page_terms_html = db.Column(db.Text, nullable=True)
 
     # Email / SMTP Config
     # use_smtp is the application-level outbound email switch. Connection
