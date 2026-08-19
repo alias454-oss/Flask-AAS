@@ -11,7 +11,7 @@ class AuditLogin(db.Model):
     username = db.Column(db.String(60), nullable=False, index=True)
     user_agent = db.Column(db.String(255), nullable=True)
     referer = db.Column(db.String(255), nullable=True)
-    success = db.Column(db.Boolean, nullable=False, server_default=db.text('false'))
+    success = db.Column(db.Boolean, nullable=False, server_default=db.false())
     failure_reason = db.Column(db.String(32), nullable=True, index=True)
     timestamp = db.Column(db.DateTime(timezone=True), nullable=False, server_default=db.func.now(), index=True)
 
