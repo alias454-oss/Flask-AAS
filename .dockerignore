@@ -22,16 +22,13 @@ __pycache__/
 *.swp
 *.swo
 
-# Generated migration and database state
-migrations/
+# Database state
 *.db
 *.db-journal
 *.db-shm
 *.db-wal
 *.sqlite
 *.sqlite3
-.db_initialized
-.seeded
 
 # Runtime-uploaded media
 uploads/
