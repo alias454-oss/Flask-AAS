@@ -94,6 +94,7 @@ def seed_admin_user():
         "last_active": datetime.now(timezone.utc),  # Set initially
         "activated": True,
         "approved": True,
+        "must_change_password": current_app.config.get("FLASK_ENV", "production") == "production",
         "otp_secret": None,
         "mfa_enabled": False
     }

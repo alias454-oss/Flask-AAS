@@ -26,6 +26,32 @@ Every password-setting path should use the same active policy, including:
 
 Passwords are exact secret values. They must not be silently stripped or truncated.
 
+## Provisioned passwords
+
+Flask-AAS distinguishes between a password selected privately by the account owner and a password
+provisioned by the system or an administrator.
+
+System- or administrator-provisioned passwords set `User.must_change_password`. After normal
+password authentication and any required MFA complete, the authenticated user is confined to the
+password-change flow until they choose a different password. The forced flow asks only for the new
+password and confirmation because the provisioned credential has already been authenticated.
+
+The rule is deliberately simple:
+
+- administrator-selected password -> password change required;
+- production bootstrap password from `ADMIN_SECRET` -> password change required;
+- development/testing bootstrap password -> no forced change, avoiding repeated ceremony for clean
+  disposable development instances;
+- registration, setup-link, reset-link, or authenticated user-selected password -> no change required;
+- password-hash format upgrade only -> preserve the existing requirement state.
+
+The development/testing exception applies only to the bootstrap seeder. An administrator-created
+user still receives `must_change_password=True` in every environment.
+
+`ADMIN_SECRET` is needed only when the `admin` account does not yet exist and may be removed from a
+production deployment after the administrator has chosen a private password. Restarting or reseeding
+an existing administrator does not reset its credential or change the stored forced-change state.
+
 ## Password-check providers
 
 Password checking is optional and disabled by default.
@@ -162,6 +188,11 @@ A successful reset:
 6. requires a complete login.
 
 Authenticated password changes apply the same reset-token/session invalidation behavior.
+
+Outbound email is not required for administrator-created accounts. An administrator may create an
+account with a password, share that credential through an appropriate separate channel, and the
+user will be required to replace it after login. Leaving the password blank remains the
+email-dependent setup-link workflow.
 
 ## Email verification
 

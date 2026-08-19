@@ -214,6 +214,7 @@ def register():
             approved=False
         )
         user.set_password(raw_password)
+        user.must_change_password = bool(is_admin)
 
         default_role = None
         if env and env.default_role_id:
@@ -295,13 +296,15 @@ def register():
                         )
                     return redirect(url_for("register.register"))
 
-                mail_status = send_welcome_email(user.email, user.username)
-                if mail_status != "queued":
-                    logger.warning(
-                        "Welcome email dispatch status=%s for user_id=%s",
-                        mail_status,
-                        user.id,
-                    )
+                mail_state = get_mail_configuration_state(env)
+                if mail_state.enabled:
+                    mail_status = send_welcome_email(user.email, user.username)
+                    if mail_status != "queued":
+                        logger.warning(
+                            "Welcome email dispatch status=%s for user_id=%s",
+                            mail_status,
+                            user.id,
+                        )
 
                 flash(f"User {user.username} created successfully.", "success")
                 return redirect(url_for("register.register"))

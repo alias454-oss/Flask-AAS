@@ -3,7 +3,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 
 from flask import Blueprint, flash, redirect, render_template, request, session, url_for
-from flask_login import current_user, logout_user
+from flask_login import current_user, login_fresh, logout_user
 
 from app.core.auth import login_required
 from flask_wtf import FlaskForm
@@ -86,14 +86,7 @@ def _notify_password_changed(user, *, ip, source):
             source,
             ip,
         )
-    elif status == "disabled":
-        logger.warning(
-            "Password-change notification delivery disabled for %s after %s from IP %s",
-            redacted,
-            source,
-            ip,
-        )
-    else:
+    elif status != "disabled":
         logger.error(
             "Password-change notification could not be queued for %s after %s from IP %s",
             redacted,
@@ -207,6 +200,7 @@ def _password_token_form(token, *, purpose):
         )
 
     user.set_password(password)
+    user.must_change_password = False
     user.rotate_authentication_version()
     user.updated_at = changed_at
     PasswordResetToken.revoke_for_user(
@@ -335,7 +329,7 @@ def forgot_password():
                     )
 
                 if mail_status == "disabled":
-                    logger.warning(
+                    logger.info(
                         "Password reset email delivery disabled for %s from IP %s",
                         redacted,
                         ip,
@@ -359,30 +353,51 @@ def forgot_password():
 def change_password():
     meta = page_metadata.get("reset", {})
     ip = get_client_ip()
-    form = ChangePasswordForm()
+    required_change = bool(current_user.must_change_password)
+
+    if required_change and not login_fresh():
+        _force_full_login()
+        flash("Please log in again before choosing a new password.", "warning")
+        return redirect(url_for("login.login"))
+
+    form = ResetPasswordForm() if required_change else ChangePasswordForm()
+    if required_change:
+        form.submit.label.text = "Set Password"
+
+    render_kwargs = {
+        "form": form,
+        "required_change": required_change,
+        **meta,
+    }
+    if required_change:
+        render_kwargs.update(
+            password_heading="Choose Your Password",
+            password_legend="Set Password",
+        )
 
     if not form.validate_on_submit():
-        return render_template("reset.html", form=form, **meta)
+        return render_template("reset.html", **render_kwargs)
 
-    old_password = form.old_password.data
+    old_password = form.old_password.data if not required_change else None
     password = form.password.data
 
-    if not current_user.check_password(old_password):
+    if not required_change and not current_user.check_password(old_password):
         logger.info(
             "Incorrect current password for user %s from IP %s",
             current_user.id,
             ip,
         )
         flash("Current password is incorrect.", "danger")
-        return render_template("reset.html", form=form, **meta)
+        return render_template("reset.html", **render_kwargs)
 
     if old_password_match(current_user, password):
         flash("New password must be different from your current password.", "danger")
-        return render_template("reset.html", form=form, **meta)
+        return render_template("reset.html", **render_kwargs)
 
     user = current_user._get_current_object()
     changed_at = datetime.now(timezone.utc)
     user.set_password(password)
+    user.must_change_password = False
     user.rotate_authentication_version()
     user.last_active = changed_at
     user.ip_address = ip
@@ -394,7 +409,7 @@ def change_password():
             user_id=user.id,
             action="password_changed",
             target=request.path,
-            extra_data={"ip": ip},
+            extra_data={"ip": ip, "required": required_change},
         )
 
     try:
@@ -407,7 +422,7 @@ def change_password():
             ip,
         )
         flash("Your password could not be changed. Please try again.", "danger")
-        return render_template("reset.html", form=form, **meta)
+        return render_template("reset.html", **render_kwargs)
 
     _notify_password_changed(user, ip=ip, source="authenticated password change")
     _force_full_login()

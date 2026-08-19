@@ -26,6 +26,7 @@ low-friction development
 | Rate-limit/cache state | In-memory is acceptable for one process | Shared backend for multiple workers/instances |
 | Database | SQLite supported | PostgreSQL is the validated production backend |
 | Email | Optional | Configure when email-dependent features are enabled |
+| Bootstrap admin | Fresh seeded admin does not require forced password replacement | Fresh seeded admin must replace the provisioned password after complete authentication |
 | Media | Local directory | Durable storage appropriate to topology |
 | Plugins | Optional | Explicitly enabled and trusted |
 
@@ -111,6 +112,23 @@ Deployment `PASSWORD_*` values seed a clean database. Once `EnvSettings` exists,
 The default minimum length is 20 characters. Long passphrases and spaces are valid. Password
 generation and user-selected passwords use the same active policy.
 
+## Bootstrap administrator
+
+A newly seeded bootstrap administrator uses `ADMIN_SECRET` only when the `admin` account does not
+already exist.
+
+In production, the seeded credential is provisioned state: `must_change_password=True`. The
+administrator completes normal password authentication and any required MFA, then chooses a private
+replacement password before normal navigation is allowed.
+
+In development and testing, the bootstrap seeder sets `must_change_password=False` so repeatedly
+creating clean disposable instances does not require a password-change ceremony. This exception is
+limited to the bootstrap administrator; users created by an administrator with an explicit password
+still receive the normal forced-change requirement.
+
+Reseeding or restarting an existing database does not reset the bootstrap administrator password or
+forced-change state.
+
 ## Shared state
 
 In-memory caches, lockout state, and rate limits are acceptable for a single development process.
@@ -160,9 +178,29 @@ The Compose files are integration helpers, not a production hardening recipe.
 
 ## Migrations
 
-Core migrations currently support clean development/initial deployment. Until a durable core upgrade
-history is published, do not treat generated development revisions as a supported in-place upgrade
-contract.
+The repository now ships a durable core migration baseline. A clean checkout uses the shipped
+migration history:
+
+```bash
+python manage.py db upgrade
+python manage.py seed-db
+```
+
+Do not run `db init` or generate a new "initial" migration merely to bootstrap a normal checkout.
+
+Flask-AAS uses **rolled-up release checkpoints** for migration history. A released/supported
+checkpoint remains a durable upgrade origin. Development-only revisions created after the latest
+released checkpoint may be consolidated before the next release so the permanent history represents
+the net schema change between supported checkpoints rather than every intermediate development edit.
+
+For example, if v3 is the last released schema and v4/v5 development creates several provisional
+revisions, the v5 release may publish one reviewed migration from the v3 checkpoint to the v5 schema.
+The released v3 checkpoint remains intact; the unpublished intermediate revisions do not need to
+become permanent history.
+
+Before consolidating development-only history, back up the current database and migration tree.
+Rebuild the rolled-up migration, re-identify/stamp the known-equivalent development database at the
+new head, run the relevant regression suite, and remove the backups only after validation succeeds.
 
 Application plugins have an independent migration boundary. A plugin may declare a package-local
 migration environment in `plugin.toml`.
@@ -176,7 +214,9 @@ The host migration manager:
 - fails closed when plugin-owned tables exist without an expected version table;
 - never migrates plugin schema merely because the plugin was enabled.
 
-Published plugin migration history should be treated as durable.
+Released plugin migration checkpoints are durable upgrade origins. Unreleased plugin revisions after
+the latest released checkpoint may be rolled up before the next release using the same backup,
+re-identification, and regression-validation process.
 
 ## Profile-image storage
 
@@ -254,5 +294,6 @@ Before exposing Flask-AAS publicly, verify:
 - durable media storage;
 - shared security state when using multiple workers/instances;
 - working backups;
+- the production bootstrap administrator has replaced any provisioned bootstrap password;
 - outbound-mail configuration for enabled mail-dependent features;
 - full test suite plus a clean PostgreSQL/bootstrap smoke test.

@@ -125,7 +125,16 @@ python manage.py plugin run <plugin_id> db migrate -m "Describe change"
 python manage.py plugin run <plugin_id> db downgrade
 ```
 
-Published plugin migration history should be treated as a durable upgrade origin.
+Released plugin migration checkpoints are durable upgrade origins. Development-only revisions
+created after the latest released checkpoint may be consolidated before the next release so the
+permanent history represents the net schema change between supported checkpoints rather than every
+intermediate model edit.
+
+When consolidating unpublished plugin migration history, back up the current development database and
+migration tree, regenerate the rolled-up migration from the intended supported origin, re-identify or
+stamp the known-equivalent development database at the new head, run the plugin regression suite, and
+remove the backups only after validation succeeds. Do not rewrite a released checkpoint that real
+deployments may need as an upgrade origin.
 
 ## Configuration readiness
 

@@ -33,7 +33,7 @@ build/
 instance/
 
 # Flask-AAS generated core migrations only
-migrations/
+# migrations/
 
 # But ignore the compiled cache inside it
 **/__pycache__/

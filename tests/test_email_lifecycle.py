@@ -265,6 +265,7 @@ class EmailLifecycleRouteTests(unittest.TestCase):
         self.assertEqual(urlparse(response.location).path, "/login")
         user = User.query.filter_by(email="user-queued@example.com").one()
         self.assertFalse(user.activated)
+        self.assertFalse(user.must_change_password)
 
         send_verification.assert_called_once()
         verify_url = send_verification.call_args.args[2]
@@ -328,6 +329,7 @@ class EmailLifecycleRouteTests(unittest.TestCase):
         user = User.query.filter_by(email="admin-created-user@example.com").one()
         self.assertTrue(user.approved)
         self.assertFalse(user.activated)
+        self.assertTrue(user.must_change_password)
         send_welcome.assert_not_called()
         send_setup.assert_called_once()
         plaintext_token = send_setup.call_args.args[2]
@@ -370,12 +372,41 @@ class EmailLifecycleRouteTests(unittest.TestCase):
         self.assertEqual(response.status_code, 302)
         user = User.query.filter_by(email="admin-password-user@example.com").one()
         self.assertTrue(user.check_password("admin-selected-secure-password"))
+        self.assertTrue(user.must_change_password)
         self.assertEqual(
             PasswordResetToken.query.filter_by(user_id=user.id).count(),
             0,
         )
         send_welcome.assert_called_once_with(user.email, user.username)
         send_setup.assert_not_called()
+
+    def test_admin_explicit_password_does_not_require_outbound_email(self):
+        self.settings.use_smtp = False
+        self.settings.use_verify_email = False
+        db.session.commit()
+        EnvSettings._cached_instance = None
+        self._login_owner()
+
+        with self._request_patches(), patch(
+            "app.routes.register.send_welcome_email"
+        ) as send_welcome:
+            response = self.client.post(
+                "/register",
+                data={
+                    "username": "no-mail-admin-user",
+                    "email": "no-mail-admin-user@example.com",
+                    "password": "admin-shared-secure-password",
+                    "agree": "y",
+                    "nobot_check": "",
+                },
+                follow_redirects=False,
+            )
+
+        self.assertEqual(response.status_code, 302)
+        user = User.query.filter_by(email="no-mail-admin-user@example.com").one()
+        self.assertTrue(user.check_password("admin-shared-secure-password"))
+        self.assertTrue(user.must_change_password)
+        send_welcome.assert_not_called()
 
     def test_admin_setup_dispatch_failure_revokes_setup_token(self):
         self._login_owner()
@@ -462,6 +493,7 @@ class EmailLifecycleRouteTests(unittest.TestCase):
 
     def test_set_password_consumes_setup_token(self):
         user = self._save_user("setup-user@example.com")
+        user.must_change_password = True
         old_auth_version = user.auth_version
         token_record, plaintext_token = PasswordResetToken.issue_for_user(
             user,
@@ -486,6 +518,7 @@ class EmailLifecycleRouteTests(unittest.TestCase):
         stored_user = db.session.get(User, user.id)
         stored_token = db.session.get(PasswordResetToken, token_record.id)
         self.assertTrue(stored_user.check_password("new-secure-setup-password"))
+        self.assertFalse(stored_user.must_change_password)
         self.assertEqual(stored_user.auth_version, old_auth_version + 1)
         self.assertIsNotNone(stored_token.consumed_at)
 
@@ -569,7 +602,9 @@ class EmailLifecycleRouteTests(unittest.TestCase):
                     route_logger.info.assert_called_once()
                 elif status == "disabled":
                     self.assertIsNotNone(stored_token.revoked_at)
-                    route_logger.warning.assert_called_once()
+                    route_logger.info.assert_called_once()
+                    route_logger.warning.assert_not_called()
+                    route_logger.error.assert_not_called()
                 else:
                     self.assertIsNotNone(stored_token.revoked_at)
                     route_logger.error.assert_called_once()
@@ -645,6 +680,7 @@ class EmailLifecycleRouteTests(unittest.TestCase):
 
     def test_reset_token_is_single_use_and_rotates_session_identity(self):
         user = self._save_user("single-use-reset@example.com")
+        user.must_change_password = True
         old_session_id = user.get_id()
         token_record, plaintext_token = PasswordResetToken.issue_for_user(user)
         other_token, _ = PasswordResetToken.issue_for_user(user)
@@ -676,6 +712,7 @@ class EmailLifecycleRouteTests(unittest.TestCase):
         stored_token = db.session.get(PasswordResetToken, token_record.id)
         stored_other_token = db.session.get(PasswordResetToken, other_token.id)
         self.assertTrue(stored_user.check_password("new-secure-password-ok"))
+        self.assertFalse(stored_user.must_change_password)
         self.assertNotEqual(stored_user.get_id(), old_session_id)
         self.assertIsNone(User.load_from_session_id(old_session_id))
         self.assertIsNotNone(stored_token.consumed_at)

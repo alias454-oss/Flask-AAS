@@ -12,6 +12,7 @@ from flask import Blueprint, Flask
 from flask_login import LoginManager
 from sqlalchemy.exc import SQLAlchemyError
 
+from app.core.auth import enforce_required_password_change
 from app.core.extensions import cache, db, limiter
 from app.models import (
     AuditActivity,
@@ -92,6 +93,7 @@ class LoginAuditRouteTests(unittest.TestCase):
         cls.app.register_blueprint(reset_bp)
         cls.app.register_blueprint(admin_bp)
         cls.app.register_blueprint(dashboard_bp)
+        cls.app.before_request(enforce_required_password_change)
 
     @classmethod
     def tearDownClass(cls):
@@ -321,6 +323,46 @@ class LoginAuditRouteTests(unittest.TestCase):
             self.assertNotIn('_user_id', login_session)
         self.assertIsNone(self.client.get_cookie(remember_cookie_name))
 
+    def test_required_password_change_redirects_login_and_blocks_navigation(self):
+        user = self._save_user(username='required-change-user')
+        user.must_change_password = True
+        db.session.commit()
+
+        response = self._post_login('required-change-user', 'correct-password')
+
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(response.location.endswith('/change-password'))
+
+        blocked = self.client.get('/dashboard', follow_redirects=False)
+        self.assertEqual(blocked.status_code, 303)
+        self.assertTrue(blocked.location.endswith('/change-password'))
+
+    def test_required_password_change_does_not_require_current_password_again(self):
+        user = self._save_user(username='required-change-complete-user')
+        user.must_change_password = True
+        old_auth_version = user.auth_version
+        db.session.commit()
+
+        self._post_login('required-change-complete-user', 'correct-password')
+
+        with self._request_patches():
+            response = self.client.post(
+                '/change-password',
+                data={
+                    'password': 'new-private-password-for-user',
+                    'confirm': 'new-private-password-for-user',
+                },
+                follow_redirects=False,
+            )
+
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(response.location.endswith('/login'))
+        db.session.expire_all()
+        stored_user = db.session.get(User, user.id)
+        self.assertFalse(stored_user.must_change_password)
+        self.assertTrue(stored_user.check_password('new-private-password-for-user'))
+        self.assertEqual(stored_user.auth_version, old_auth_version + 1)
+
     def test_change_password_commit_failure_preserves_session_and_token(self):
         user = self._save_user(username='password-change-rollback-user')
         reset_token, _ = PasswordResetToken.issue_for_user(user)
@@ -404,6 +446,21 @@ class LoginAuditRouteTests(unittest.TestCase):
         stored_user = db.session.get(User, user.id)
         self.assertTrue(stored_user.hashed_password.startswith('$argon2id$'))
         self.assertTrue(stored_user.check_password(LEGACY_PASSWORD))
+
+    def test_legacy_bcrypt_rehash_preserves_required_password_change(self):
+        user = self._save_user(username='legacy-required-change-user')
+        user.hashed_password = LEGACY_FLASK_BCRYPT_HASH
+        user.must_change_password = True
+        db.session.commit()
+
+        response = self._post_login('legacy-required-change-user', LEGACY_PASSWORD)
+
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(response.location.endswith('/change-password'))
+        db.session.expire_all()
+        stored_user = db.session.get(User, user.id)
+        self.assertTrue(stored_user.hashed_password.startswith('$argon2id$'))
+        self.assertTrue(stored_user.must_change_password)
 
     def test_legacy_bcrypt_hash_upgrade_persists_before_mfa_redirect(self):
         secret = pyotp.random_base32()
@@ -749,6 +806,37 @@ class LoginAuditRouteTests(unittest.TestCase):
         with self.client.session_transaction() as login_session:
             self.assertIsInstance(login_session.get('last_activity_at'), float)
             self.assertEqual(len(login_session['_user_id'].split(':', 2)), 3)
+
+    def test_required_password_change_occurs_after_mfa_succeeds(self):
+        secret = pyotp.random_base32()
+        self.settings.use_mfa = True
+        db.session.commit()
+        EnvSettings._cached_instance = None
+        user = self._save_user(
+            username='mfa-required-change-user',
+            mfa_enabled=True,
+            otp_secret=secret,
+        )
+        user.must_change_password = True
+        db.session.commit()
+
+        login_response = self._post_login(
+            'mfa-required-change-user',
+            'correct-password',
+        )
+        self.assertEqual(login_response.status_code, 302)
+        self.assertTrue(login_response.location.endswith('/mfa/verify'))
+
+        with self._request_patches():
+            verify_response = self.client.post(
+                '/mfa/verify',
+                data={'code': pyotp.TOTP(secret).now()},
+                headers={'User-Agent': 'login-audit-test-agent'},
+                follow_redirects=False,
+            )
+
+        self.assertEqual(verify_response.status_code, 302)
+        self.assertTrue(verify_response.location.endswith('/change-password'))
 
     def test_mfa_rechecks_unverified_account_before_authentication(self):
         secret = pyotp.random_base32()

@@ -113,6 +113,29 @@ Do not force-stamp them.
 For disposable development data, rebuild deliberately. For data that must be preserved, create a
 reviewed migration/adoption procedure.
 
+## Development migration consolidation
+
+Unreleased plugin migration revisions are development state, not permanent history merely because
+they were generated. Flask-AAS plugins use rolled-up release checkpoints.
+
+If the current development database already matches the intended new checkpoint:
+
+1. back up the database and current migration directory;
+2. remove only the unpublished/provisional migration history being consolidated;
+3. recreate or regenerate the rolled-up migration from the last released checkpoint (or a new initial
+   baseline before the first release);
+4. re-identify/stamp the known-equivalent development database at the new head;
+5. verify `db current` and run the complete plugin regression suite;
+6. remove the backups only after validation succeeds.
+
+A release checkpoint that real deployments may need to upgrade from is durable and must remain in the
+history. Intermediate development revisions after that checkpoint may be replaced by one migration
+representing the net schema change to the next release.
+
+Direct version-table edits or equivalent stamping are development/release-engineering operations for
+a schema already known to be equivalent. They are not a recovery technique for ambiguous,
+unversioned, or unknown production tables.
+
 ## Renamed or removed plugin source
 
 `PluginRegistration` is durable host state. Renaming:

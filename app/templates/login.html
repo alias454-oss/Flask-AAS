@@ -54,7 +54,9 @@
           {% endif %}
 
           <div class="form-group">{{ form.submit(class_="btn btn-primary") }}
-            <a href="{{ url_for('reset.forgot_password') }}">Forgot Password</a>
+            {% if env and env.use_smtp %}
+              <a href="{{ url_for('reset.forgot_password') }}">Forgot Password</a>
+            {% endif %}
           </div>
       </fieldset>
     </form>

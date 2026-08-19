@@ -3,6 +3,28 @@ from functools import wraps
 from flask import redirect, url_for, flash, request
 from flask_login import current_user
 
+
+REQUIRED_PASSWORD_CHANGE_EXEMPT_ENDPOINTS = {
+    "favicon.favicon",
+    "logout.logout",
+    "reset.change_password",
+    "static",
+}
+
+
+def enforce_required_password_change():
+    """Confine authenticated temporary-credential sessions to password setup."""
+    if not current_user.is_authenticated:
+        return None
+
+    if not getattr(current_user, "must_change_password", False):
+        return None
+
+    if request.endpoint in REQUIRED_PASSWORD_CHANGE_EXEMPT_ENDPOINTS:
+        return None
+
+    return redirect(url_for("reset.change_password"), code=303)
+
 def login_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):

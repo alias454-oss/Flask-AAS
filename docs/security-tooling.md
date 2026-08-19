@@ -89,6 +89,12 @@ state, transaction ownership, token replay resistance, authorization, or deploym
 - Remembered inactivity downgrades to non-fresh authentication and stops the boundary-crossing
   mutation.
 - Password changes invalidate earlier session identities and outstanding reset links.
+- Administrator-selected credentials require owner replacement after complete authentication/MFA.
+- Production bootstrap credentials set `must_change_password`; development/testing bootstrap avoids
+  that ceremony without weakening administrator-created-user behavior.
+- User-selected passwords clear provisioned-credential state, while hash-format-only upgrades preserve
+  it.
+- Forced password-change state cannot be bypassed through unrelated authenticated routes.
 - Password-reset tokens are hashed at rest and accepted only once.
 
 ### Audit and secrets
@@ -107,6 +113,8 @@ state, transaction ownership, token replay resistance, authorization, or deploym
 - Proxy trust is disabled unless explicitly configured.
 - Clean empty databases reach bootstrap without querying missing persisted-settings tables.
 - SQLite and PostgreSQL clean-bootstrap paths remain viable.
+- Shipped migration checkpoints can construct clean databases without generating migration history at
+  deployment time.
 - HSTS/secure-cookie behavior matches the external HTTP/HTTPS boundary.
 
 ### Email
