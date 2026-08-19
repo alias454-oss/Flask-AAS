@@ -290,6 +290,9 @@ def login():
     mark_session_activity()
     logger.info(f"User '{username}' logged in successfully from {ip}")
 
+    if user.must_change_password:
+        return redirect(url_for('reset.change_password'))
+
     if user.is_admin:
         return redirect(url_for('admin.admin_home'))
     return redirect(url_for('dashboard.dashboard'))

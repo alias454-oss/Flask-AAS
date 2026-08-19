@@ -613,6 +613,8 @@ def mfa_verify():
 
             logger.info(f"MFA verification succeeded for user_id={user.id} ip={ip}")
             flash("2FA verification successful", "success")
+            if user.must_change_password:
+                return redirect(url_for('reset.change_password'))
             return redirect(url_for('dashboard.dashboard'))
 
         db.session.rollback()

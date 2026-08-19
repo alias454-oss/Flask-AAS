@@ -18,6 +18,12 @@ class User(db.Model):
         default=0,
         server_default="0",
     )
+    must_change_password = db.Column(
+        db.Boolean,
+        nullable=False,
+        default=False,
+        server_default=db.false(),
+    )
 
     company_name = db.Column(db.String(255), nullable=True)
     first_name = db.Column(db.String(100), nullable=True)

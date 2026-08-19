@@ -37,6 +37,9 @@ The project favors:
 - Durable active-session tracking and explicit session revocation.
 - Sliding authenticated-session inactivity controls.
 - Single-user lockdown mode.
+- Explicit provisioned-password state: administrator-selected credentials require owner replacement
+  after complete authentication/MFA, while development/testing bootstrap avoids repeated clean-instance
+  ceremony.
 - Global CSRF protection.
 - Shared ISO country and subdivision reference data for host and plugin use.
 
@@ -155,7 +158,7 @@ See [`docs/plugins.md`](docs/plugins.md) and
 The currently validated runtime is Python 3.13.13.
 
 ```bash
-git clone https://github.com/alias454/flask-aas.git
+git clone https://github.com/alias454-oss/Flask-AAS.git
 cd flask-aas
 
 python3.13 -m venv .venv
@@ -179,27 +182,32 @@ Regenerate the lock from a clean Python 3.13 environment with:
 
 ## Database setup and migrations
 
-Flask-AAS uses SQLAlchemy and Flask-Migrate/Alembic.
+Flask-AAS uses SQLAlchemy and Flask-Migrate/Alembic and ships its migration history.
 
 For a clean local database:
 
 ```bash
-python manage.py db init
-python manage.py db migrate -m "Initial migration"
 python manage.py db upgrade
 python manage.py seed-db
 ```
 
-After local model changes:
+Do not run `db init` or generate a replacement initial migration for a normal checkout.
+
+After a model change during development:
 
 ```bash
 python manage.py db migrate -m "Describe change"
 python manage.py db upgrade
 ```
 
-The current core migration workflow supports clean development and initial deployment. Core
-migration history is not yet a supported in-place upgrade contract across arbitrary unpublished
-development states.
+Migration history is released as **rolled-up checkpoints**. A released/supported checkpoint is a
+durable upgrade origin. Development-only revisions after the latest released checkpoint may be
+consolidated before the next release so the permanent history records the net schema change between
+supported checkpoints instead of every intermediate edit.
+
+Before consolidating unpublished revisions, back up the development database and migration tree,
+regenerate the rolled-up migration, re-identify/stamp the known-equivalent development database at the
+new head, run the regression suite, and remove the backups only after validation succeeds.
 
 Application plugins have a separate migration boundary. Plugins that declare migrations receive
 host-managed commands such as:
@@ -210,10 +218,25 @@ python manage.py plugin run <plugin_id> db upgrade
 ```
 
 Plugin authors may additionally use `db init`, `db migrate`, and `db downgrade` while developing
-their own schema history.
+their own schema history. Released plugin migration checkpoints are durable; unpublished revisions
+after the latest released checkpoint may be rolled up before the next release.
 
-Published plugin migration history should be treated as durable and should not be casually
-rewritten.
+## Bootstrap administrator
+
+`python manage.py seed-db` creates the bootstrap `admin` only when that account does not already
+exist. `ADMIN_SECRET` is therefore a bootstrap credential, not a recurring password-reset mechanism.
+
+In production, a newly seeded administrator is marked `must_change_password=True`. Normal password
+authentication and any required MFA complete first, then the administrator must choose a private
+replacement password before normal authenticated navigation continues.
+
+Development and testing deliberately skip the forced-change ceremony for the freshly seeded bootstrap
+administrator so disposable clean instances remain low-friction. This exception does not apply to
+ordinary administrator-created users: an administrator-selected password still requires replacement
+in every environment.
+
+Reseeding or restarting an existing database does not reset the administrator password or
+forced-change state.
 
 ## Docker
 
@@ -456,6 +479,9 @@ Important project boundaries include:
 - passwords, tokens, cookies, SMTP credentials, and plugin-managed secrets are not intended for logs;
 - disabled plugins remain inert during ordinary startup;
 - plugin enablement and plugin schema migration are separate privileged operations;
+- provisioned administrator credentials cannot bypass their required owner-selected replacement;
+- released migration checkpoints remain stable upgrade origins while unpublished development churn may
+  be rolled up before the next checkpoint;
 - process-local security state is not treated as authoritative across multiple workers/instances.
 
 See:

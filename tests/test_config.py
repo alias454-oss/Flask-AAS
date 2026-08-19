@@ -67,6 +67,19 @@ def test_admin_email_is_available_as_explicit_deployment_config():
     assert settings.ADMIN_EMAIL == "bootstrap@example.test"
 
 
+def test_admin_secret_is_optional_after_bootstrap(monkeypatch):
+    monkeypatch.delenv("ADMIN_SECRET", raising=False)
+
+    settings = Settings(
+        _env_file=None,
+        SECRET_KEY="test-secret-key",
+        SQLALCHEMY_DATABASE_URI="sqlite:///:memory:",
+        FLASK_ENV="testing",
+    )
+
+    assert settings.ADMIN_SECRET is None
+
+
 def test_entrypoint_debug_does_not_enable_shell_xtrace():
     entrypoint = (Path(__file__).resolve().parents[1] / "entrypoint.sh").read_text()
 

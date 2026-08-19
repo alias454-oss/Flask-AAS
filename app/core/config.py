@@ -20,7 +20,7 @@ class Settings(BaseSettings):
 
     # Security
     SECRET_KEY: str = secrets.token_hex(32)  # Fallback if not in .env
-    ADMIN_SECRET: str
+    ADMIN_SECRET: Optional[str] = None
     ADMIN_EMAIL: str = "admin@yoursite.com"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     ALGORITHM: str = "HS256"

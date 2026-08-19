@@ -11,6 +11,10 @@ substitute for tests or threat modeling.
 - Does the database query enforce ownership or role scope?
 - Are inactive, unapproved, or unverified users handled consistently?
 - Does the action require fresh authentication or MFA reauthentication?
+- If the current password was provisioned by the system/administrator, is forced replacement enforced
+  only after complete password authentication and required MFA?
+- Can `must_change_password` confinement be bypassed by direct navigation to unrelated authenticated
+  routes?
 - For plugin routes, is effective plugin state enforced?
 - Is route authorization explicit: public, authenticated, host-role-gated, or plugin-domain-gated?
 
@@ -22,6 +26,9 @@ administrative resets, and security-setting changes.
 - Is input parsed through one defined schema/form?
 - Are length, type, range, and normalization rules explicit?
 - Do password-setting paths use the canonical password policy/provider workflow?
+- Does a user-selected password clear provisioned-credential state while an administrator-selected
+  password sets it?
+- Does a hash-format-only password upgrade preserve existing `must_change_password` state?
 - Are passwords treated as exact secret values without stripping or truncation?
 - Are identifier lookups resistant to ownership bypass?
 - Are retries and duplicate submissions safe?

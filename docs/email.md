@@ -14,6 +14,11 @@ When the switch is off, messages are not queued, including when debug delivery i
 Features that require email, such as required account verification or the public contact form, must
 also have an effective mail transport.
 
+Disabling outbound email does not disable administrator-created accounts. An administrator can
+create a user with a password and deliver that credential through a separate channel. Flask-AAS
+marks administrator-selected passwords for replacement and requires the user to choose a private
+password after login. The registration form continues to label the field simply **Password**.
+
 ## Transport precedence
 
 The effective transport is resolved for each dispatch in this order:
@@ -112,6 +117,11 @@ Password reset and password-change mail follow the same transport resolution.
 
 Password-reset secrets are not stored or logged in plaintext. Password-change notification is
 queued only after the password transaction commits.
+
+When outbound email is disabled, the normal login page hides the **Forgot Password** link and
+password-change notifications are treated as intentionally unavailable rather than operational
+failures. Administrator account creation with an explicit password remains available. The
+blank-password account-creation path still requires email because it issues a setup link.
 
 ## Contact form
 

@@ -11,6 +11,7 @@ import minify_html
 
 from app.core.cache import get_cached_env_settings
 from app.core.content import sanitize_page_html
+from app.core.auth import enforce_required_password_change
 from app.core.extensions import db, migrate, csrf, cache, limiter, mail
 from app.routes import register_error_handlers, register_all_routes
 from app.core.config import settings
@@ -132,12 +133,6 @@ def create_app():
         initialize_plugins(app)
         update_log_level()
 
-    # Plugin routes are structural startup state, but current enablement and
-    # configuration are persisted state. Gate plugin application surfaces before
-    # ordinary request processing so disable/configuration changes take effect
-    # without mutating Flask's live route map.
-    app.before_request(enforce_plugin_access)
-
     # Apply a sliding inactivity window to authenticated browser sessions.
     # Pre-authentication MFA state remains governed by its own expiry controls.
     app.before_request(enforce_inactivity_timeout)
@@ -184,6 +179,19 @@ def create_app():
             if env.use_mfa and current_user.mfa_enabled:
                 if not session.get("mfa_verified", False):
                     return redirect(url_for('mfa.mfa_verify'))
+
+    # A system- or administrator-provisioned password is only a bootstrap
+    # credential. Once full authentication (including MFA when required) has
+    # completed, confine the session to choosing a private password or logging
+    # out. Register this before plugin access so plugin lifecycle responses
+    # cannot bypass the credential-state guard.
+    app.before_request(enforce_required_password_change)
+
+    # Plugin routes are structural startup state, but current enablement and
+    # configuration are persisted state. Gate plugin application surfaces after
+    # authentication credential-state checks so temporary credentials remain
+    # globally constrained.
+    app.before_request(enforce_plugin_access)
 
     @app.context_processor
     def inject_tpl_path():

@@ -54,7 +54,11 @@
 
     <div class="form-group">
       {{ form.submit(class_="btn btn-primary") }}
-      <a href="{{ url_for('login.login') }}">Back to Login</a>
+      {% if required_change %}
+        <a href="{{ url_for('logout.logout') }}">Logout</a>
+      {% else %}
+        <a href="{{ url_for('login.login') }}">Back to Login</a>
+      {% endif %}
 
       {% if token %}
         <input type="hidden" name="token" value="{{ token }}">
