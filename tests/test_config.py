@@ -85,3 +85,13 @@ def test_entrypoint_debug_does_not_enable_shell_xtrace():
 
     assert "set -o xtrace" not in entrypoint
     assert "set -x" not in entrypoint
+
+
+def test_registration_authority_is_persisted_site_mode_only():
+    assert "REGISTRATION_ENABLED" not in Settings.model_fields
+
+    seeder = (
+        Path(__file__).resolve().parents[1] / "app" / "core" / "seeder.py"
+    ).read_text(encoding="utf-8")
+    assert '"site_mode": 1' in seeder
+    assert "REGISTRATION_ENABLED" not in seeder

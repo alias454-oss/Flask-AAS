@@ -65,3 +65,28 @@ def test_admin_audit_failure_metadata_does_not_persist_exception_text():
 
     assert metadata == {"outcome": "failed", "error_type": "RuntimeError"}
     assert "do-not-store" not in repr(metadata)
+
+
+def test_admin_user_form_exposes_activation_and_approval_independently():
+    app = Flask(__name__)
+    app.config.update(SECRET_KEY="admin-user-form-test", WTF_CSRF_ENABLED=False)
+
+    for verify_email, user_approval in (
+        (False, False),
+        (True, False),
+        (False, True),
+        (True, True),
+    ):
+        env = SimpleNamespace(
+            use_user_approval=user_approval,
+            use_verify_email=verify_email,
+            use_user_location=False,
+        )
+        with app.test_request_context(), patch(
+            "app.routes.admin.users.get_cached_env_settings",
+            return_value=env,
+        ):
+            form = AdminUserForm()
+
+        assert ("activated" in form._fields) is verify_email
+        assert ("approved" in form._fields) is user_approval

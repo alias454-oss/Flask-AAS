@@ -703,7 +703,33 @@ class LoginAuditRouteTests(unittest.TestCase):
             self.assertNotIn('_user_id', login_session)
         self.assertIsNone(self.client.get_cookie(remember_cookie_name))
 
+    def test_mfa_routes_fail_closed_when_feature_disabled(self):
+        self.settings.use_mfa = False
+        db.session.commit()
+        EnvSettings._cached_instance = None
+
+        for method, path in (
+            ("GET", "/mfa/setup"),
+            ("POST", "/mfa/setup"),
+            ("GET", "/mfa/verify"),
+            ("POST", "/mfa/verify"),
+            ("GET", "/mfa/reauth"),
+            ("POST", "/mfa/reauth"),
+            ("GET", "/mfa/replace"),
+            ("POST", "/mfa/replace"),
+            ("GET", "/mfa/recovery-codes"),
+            ("POST", "/mfa/recovery-codes"),
+            ("GET", "/mfa/disable"),
+            ("POST", "/mfa/disable"),
+        ):
+            with self.subTest(method=method, path=path), self._request_patches():
+                response = self.client.open(path, method=method, follow_redirects=False)
+            self.assertEqual(response.status_code, 404)
+
     def test_mfa_setup_marks_current_session_verified(self):
+        self.settings.use_mfa = True
+        db.session.commit()
+        EnvSettings._cached_instance = None
         user = self._save_user(username='mfa-setup-user')
 
         login_response = self._post_login('mfa-setup-user', 'correct-password')
@@ -744,6 +770,9 @@ class LoginAuditRouteTests(unittest.TestCase):
             self.assertNotIn('mfa_recovery_codes', login_session)
 
     def test_mfa_setup_rejects_non_numeric_code_before_totp_validation(self):
+        self.settings.use_mfa = True
+        db.session.commit()
+        EnvSettings._cached_instance = None
         user = self._save_user(username='mfa-setup-invalid-user')
         self._post_login('mfa-setup-invalid-user', 'correct-password')
 
@@ -1082,6 +1111,9 @@ class LoginAuditRouteTests(unittest.TestCase):
         db.session.commit()
 
         self._post_login('mfa-regenerate-user', 'correct-password')
+        self.settings.use_mfa = True
+        db.session.commit()
+        EnvSettings._cached_instance = None
         with self.client.session_transaction() as login_session:
             login_session['mfa_verified'] = True
             login_session['mfa_verified_at'] = __import__('time').time()
@@ -1152,6 +1184,9 @@ class LoginAuditRouteTests(unittest.TestCase):
             otp_secret=secret,
         )
         self._post_login('mfa-replace-user', 'correct-password')
+        self.settings.use_mfa = True
+        db.session.commit()
+        EnvSettings._cached_instance = None
 
         with self.client.session_transaction() as login_session:
             login_session['mfa_verified'] = True
@@ -1199,6 +1234,9 @@ class LoginAuditRouteTests(unittest.TestCase):
         self.assertEqual(MfaRecoveryCode.query.filter_by(user_id=user.id).count(), 10)
 
     def test_nonfresh_session_cannot_enable_mfa(self):
+        self.settings.use_mfa = True
+        db.session.commit()
+        EnvSettings._cached_instance = None
         self._save_user(username='mfa-nonfresh-setup-user')
         self._post_login('mfa-nonfresh-setup-user', 'correct-password', remember=True)
         remember_cookie_name = self.app.config.get(
@@ -1227,6 +1265,9 @@ class LoginAuditRouteTests(unittest.TestCase):
             otp_secret=secret,
         )
         self._post_login('mfa-remembered-user', 'correct-password', remember=True)
+        self.settings.use_mfa = True
+        db.session.commit()
+        EnvSettings._cached_instance = None
 
         with self.client.session_transaction() as login_session:
             login_session['_fresh'] = False
@@ -1394,6 +1435,9 @@ class LoginAuditRouteTests(unittest.TestCase):
             otp_secret=secret,
         )
         self._post_login('mfa-reauth-lockout-user', 'correct-password', remember=True)
+        self.settings.use_mfa = True
+        db.session.commit()
+        EnvSettings._cached_instance = None
         remember_cookie_name = self.app.config.get(
             'REMEMBER_COOKIE_NAME',
             'remember_token',
@@ -1434,6 +1478,9 @@ class LoginAuditRouteTests(unittest.TestCase):
             otp_secret=secret,
         )
         self._post_login('mfa-disable-lockout-user', 'correct-password', remember=True)
+        self.settings.use_mfa = True
+        db.session.commit()
+        EnvSettings._cached_instance = None
         remember_cookie_name = self.app.config.get(
             'REMEMBER_COOKIE_NAME',
             'remember_token',
@@ -1465,6 +1512,9 @@ class LoginAuditRouteTests(unittest.TestCase):
         self.assertIsNone(self.client.get_cookie(remember_cookie_name))
 
     def test_pending_authenticator_secret_expires(self):
+        self.settings.use_mfa = True
+        db.session.commit()
+        EnvSettings._cached_instance = None
         old_secret = pyotp.random_base32()
         user = self._save_user(username='mfa-expired-setup-secret-user')
         user.pending_otp_secret = old_secret
@@ -1501,6 +1551,9 @@ class LoginAuditRouteTests(unittest.TestCase):
             otp_secret=secret,
         )
         self._post_login('mfa-future-freshness-user', 'correct-password')
+        self.settings.use_mfa = True
+        db.session.commit()
+        EnvSettings._cached_instance = None
 
         with self.client.session_transaction() as login_session:
             login_session['mfa_verified'] = True
@@ -1520,6 +1573,9 @@ class LoginAuditRouteTests(unittest.TestCase):
             otp_secret=secret,
         )
         self._post_login('mfa-expired-disable-action-user', 'correct-password')
+        self.settings.use_mfa = True
+        db.session.commit()
+        EnvSettings._cached_instance = None
 
         with self.client.session_transaction() as login_session:
             login_session['mfa_verified'] = False
