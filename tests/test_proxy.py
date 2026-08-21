@@ -9,11 +9,15 @@ from app.core.security import get_client_ip
 
 
 class TrustedProxyTests(unittest.TestCase):
-    def _app(self):
+    def _app(self, trusted_proxies=None):
         app = Flask(__name__)
         app.config.update(
             PROXY_HOPS=1,
-            TRUSTED_PROXIES=['10.0.0.0/8'],
+            TRUSTED_PROXIES=(
+                trusted_proxies
+                if trusted_proxies is not None
+                else ['10.0.0.0/8']
+            ),
         )
 
         @app.get('/')
@@ -39,6 +43,7 @@ class TrustedProxyTests(unittest.TestCase):
             base_url='http://internal.test',
             headers={
                 'X-Forwarded-For': '198.51.100.25',
+                'X-Real-IP': '203.0.113.44',
                 'X-Forwarded-Host': 'public.example',
                 'X-Forwarded-Proto': 'https',
             },
@@ -99,15 +104,44 @@ class TrustedProxyTests(unittest.TestCase):
 
         self.assertEqual(response.get_json()['client_ip'], '198.51.100.25')
 
-    def test_client_ip_uses_x_real_ip_as_trusted_fallback(self):
+    def test_client_ip_prefers_x_real_ip_from_trusted_peer(self):
         app = self._app()
         response = app.test_client().get(
             '/',
-            headers={'X-Real-IP': '198.51.100.44'},
+            headers={
+                'X-Real-IP': '198.51.100.44',
+                'X-Forwarded-For': '198.51.100.99, 203.0.113.10',
+            },
             environ_overrides={'REMOTE_ADDR': '10.0.0.3'},
         )
 
         self.assertEqual(response.get_json()['client_ip'], '198.51.100.44')
+
+    def test_client_ip_prefers_railway_x_real_ip_over_cdn_hop(self):
+        app = self._app(trusted_proxies=['100.0.0.0/8'])
+        response = app.test_client().get(
+            '/',
+            headers={
+                'X-Real-IP': '73.210.23.125',
+                'X-Forwarded-For': '73.210.23.125, 152.233.40.1',
+            },
+            environ_overrides={'REMOTE_ADDR': '100.64.0.7'},
+        )
+
+        self.assertEqual(response.get_json()['client_ip'], '73.210.23.125')
+
+    def test_invalid_x_real_ip_falls_back_to_forwarded_chain(self):
+        app = self._app()
+        response = app.test_client().get(
+            '/',
+            headers={
+                'X-Real-IP': 'not-an-ip',
+                'X-Forwarded-For': '198.51.100.25, 10.0.0.2',
+            },
+            environ_overrides={'REMOTE_ADDR': '10.0.0.3'},
+        )
+
+        self.assertEqual(response.get_json()['client_ip'], '198.51.100.25')
 
     def test_default_limiter_key_uses_effective_client_ip(self):
         app = Flask(__name__)
@@ -118,10 +152,13 @@ class TrustedProxyTests(unittest.TestCase):
 
         with app.test_request_context(
             '/',
-            headers={'X-Forwarded-For': '198.51.100.25, 10.0.0.2'},
+            headers={
+                'X-Real-IP': '198.51.100.44',
+                'X-Forwarded-For': '198.51.100.25, 10.0.0.2',
+            },
             environ_base={'REMOTE_ADDR': '10.0.0.3'},
         ):
-            self.assertEqual(_client_ip_key(), '198.51.100.25')
+            self.assertEqual(_client_ip_key(), '198.51.100.44')
 
 
 if __name__ == '__main__':
