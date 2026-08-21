@@ -11,7 +11,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from wtforms import PasswordField, StringField, SubmitField
 from wtforms.validators import DataRequired, Email, EqualTo
 
-from app.core.decorators import log_view_action, nocache
+from app.core.decorators import log_view_action
 from app.core.extensions import db, limiter
 from app.core.logger import redact_route_values
 from app.core.mailer import send_password_changed_email, send_password_reset_email
@@ -96,7 +96,6 @@ def _notify_password_changed(user, *, ip, source):
 
 
 @reset_bp.route("/reset-password/<token>", methods=["GET", "POST"])
-@nocache
 @limiter.limit("10 per hour", key_func=get_client_ip)
 @log_view_action(redact_params={"token"})
 def reset_password(token):
@@ -104,7 +103,6 @@ def reset_password(token):
 
 
 @reset_bp.route("/set-password/<token>", methods=["GET", "POST"])
-@nocache
 @limiter.limit("10 per hour", key_func=get_client_ip)
 @log_view_action(redact_params={"token"})
 def set_password(token):
@@ -255,7 +253,6 @@ def _password_token_form(token, *, purpose):
 
 
 @reset_bp.route("/forgot-password", methods=["GET", "POST"])
-@nocache
 @limiter.limit("5 per minute", key_func=get_client_ip)
 @log_view_action()
 def forgot_password():
@@ -347,7 +344,6 @@ def forgot_password():
 
 
 @reset_bp.route("/change-password", methods=["GET", "POST"])
-@nocache
 @log_view_action()
 @login_required
 def change_password():

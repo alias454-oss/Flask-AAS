@@ -266,10 +266,36 @@ def create_app():
 
     @app.after_request
     def add_cache_headers(response):
-        # Apply cache control globally to admin and captcha paths
-        ignored_paths=("/admin", "/account", "/member", "/dashboard", "/captcha", "/internal", "/debug", "/test")
-        path = request.path
-        if path.startswith(ignored_paths):
+        # Static assets are not user/session-specific and remain cacheable.
+        endpoint = request.endpoint or ""
+        if endpoint == "static" or endpoint.endswith(".static"):
+            return response
+
+        # Apply cache control globally to sensitive routes
+        sensitive_paths = (
+            "/admin",
+            "/account",
+            "/member",
+            "/dashboard",
+            "/login",
+            "/logout",
+            "/register",
+            "/change-password",
+            "/forgot-password",
+            "/reset-password",
+            "/set-password",
+            "/email",
+            "/mfa",
+            "/captcha",
+            "/internal",
+            "/debug",
+            "/test",
+        )
+
+        # This protects otherwise public pages whose rendered content includes
+        # authenticated navigation, flash state, CSRF state, or other
+        # session-specific content.
+        if bool(session) or current_user.is_authenticated or request.path.startswith(sensitive_paths):
             response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, private"
             response.headers["Pragma"] = "no-cache"
             response.headers["Expires"] = "0"
