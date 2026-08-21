@@ -16,6 +16,8 @@ substitute for tests or threat modeling.
 - Can `must_change_password` confinement be bypassed by direct navigation to unrelated authenticated
   routes?
 - For plugin routes, is effective plugin state enforced?
+- If an optional feature is disabled, does direct route/service access fail closed rather than relying only
+  on hidden navigation or form controls?
 - Is route authorization explicit: public, authenticated, host-role-gated, or plugin-domain-gated?
 
 High-risk examples include password/email changes, MFA changes, role changes, account lock/unlock,
