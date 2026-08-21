@@ -81,10 +81,10 @@ When a trusted reverse proxy is used:
 - keep Host validation independent from client-IP trust.
 
 Flask-AAS applies forwarded host/protocol/prefix values only when the immediate network peer is in
-`TRUSTED_PROXIES`. Effective client identity is resolved separately from the trusted
-`X-Forwarded-For` chain (with `X-Real-IP` as a single-value fallback), and the same identity is used
-for audit metadata, authentication lockout/rate-limit keys, and the global Flask-Limiter key.
-Untrusted peers cannot opt into proxy behavior by supplying forwarding headers.
+`TRUSTED_PROXIES`. Effective client identity is resolved separately: a valid `X-Real-IP` from a
+trusted immediate peer is preferred, with the sanitized `X-Forwarded-For` chain used as a fallback.
+The same identity is used for audit metadata, authentication lockout/rate-limit keys, and the global
+Flask-Limiter key. Untrusted peers cannot opt into proxy behavior by supplying forwarding headers.
 
 Do not enable proxy trust generically just because the application is deployed.
 

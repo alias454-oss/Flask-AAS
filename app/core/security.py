@@ -155,15 +155,21 @@ def get_client_ip():
     if not proxy_hops or not address_is_trusted(peer, trusted_proxies):
         return str(peer)
 
-    # X-Forwarded-For is the canonical chain. X-Real-IP is a single-value
-    # fallback for trusted proxies that do not emit X-Forwarded-For. Other
-    # client-controlled forwarding header families are intentionally ignored.
+    # A trusted immediate proxy may provide the effective client directly in
+    # X-Real-IP. Prefer that single, validated value when present. This avoids
+    # treating an intermediate CDN hop in X-Forwarded-For as the client.
+    real_ip = normalize_ip(request.headers.get('X-Real-IP'))
+    if real_ip is not None:
+        return str(real_ip)
+
+    # Fall back to the trusted X-Forwarded-For chain when X-Real-IP is absent
+    # or malformed. Other forwarding header families are intentionally ignored.
     forwarded = request.headers.get('X-Forwarded-For')
-    if forwarded:
-        forwarded_values = [item.strip() for item in forwarded.split(',')]
-    else:
-        real_ip = request.headers.get('X-Real-IP')
-        forwarded_values = [real_ip.strip()] if real_ip else []
+    forwarded_values = (
+        [item.strip() for item in forwarded.split(',')]
+        if forwarded
+        else []
+    )
 
     chain = [
         parsed
