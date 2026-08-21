@@ -5,7 +5,6 @@ import base64
 import time
 from flask import Flask, g, current_app, request, session, redirect, url_for
 from flask_login import LoginManager, current_user
-from werkzeug.middleware.proxy_fix import ProxyFix
 from sqlalchemy.exc import OperationalError, ProgrammingError
 import minify_html
 
@@ -16,6 +15,7 @@ from app.core.extensions import db, migrate, csrf, cache, limiter, mail
 from app.routes import register_error_handlers, register_all_routes
 from app.core.config import settings
 from app.core.inactivity import enforce_inactivity_timeout
+from app.core.proxy import TrustedProxyFix
 from app.core.sessions import touch_current_session
 from app.core.schema import table_exists
 from app.core.site import (
@@ -75,12 +75,10 @@ def create_app():
 
     proxy_hops = app.config.get('PROXY_HOPS', 0)
     if proxy_hops:
-        app.wsgi_app = ProxyFix(
+        app.wsgi_app = TrustedProxyFix(
             app.wsgi_app,
-            x_for=proxy_hops,
-            x_proto=proxy_hops,
-            x_host=proxy_hops,
-            x_prefix=proxy_hops,
+            trusted_proxies=app.config.get('TRUSTED_PROXIES', []),
+            proxy_hops=proxy_hops,
         )
 
     # Set the session lifetime from your settings

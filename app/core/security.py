@@ -4,7 +4,6 @@
 import re
 import logging
 import hashlib
-import ipaddress
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
@@ -16,6 +15,11 @@ from app.core.cache import get_cached_env_settings
 from app.core.config import settings
 from app.core.extensions import cache
 from app.core.password_hashing import verify_password_hash
+from app.core.proxy import (
+    address_is_trusted,
+    normalize_ip,
+    parse_trusted_proxy_networks,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -121,15 +125,9 @@ def create_access_token(
 
 
 def _load_trusted_proxies():
-    raw = current_app.config.get('TRUSTED_PROXIES', [])
-    trusted = []
-    for net in raw:
-        try:
-            trusted.append(ipaddress.ip_network(net, strict=False))
-        except ValueError:
-            logger.warning(f"Malformed trusted proxy network entry skipped: {net}")
-            continue
-    return trusted
+    return parse_trusted_proxy_networks(
+        current_app.config.get('TRUSTED_PROXIES', [])
+    )
 
 
 def get_trusted_proxies():
@@ -138,42 +136,11 @@ def get_trusted_proxies():
     return current_app._trusted_proxies_cache
 
 
-def _parse_forwarded_header(value):
-    parts = []
-    for segment in value.split(','):
-        for item in segment.split(';'):
-            key, separator, raw_value = item.strip().partition('=')
-            if separator and key.lower() == 'for':
-                parts.append(raw_value.strip().strip('"'))
-    return parts
-
-
-def _normalize_forwarded_ip(value):
-    candidate = value.strip().split('%', 1)[0]
-    if not candidate or candidate.lower() == 'unknown' or candidate.startswith('_'):
-        return None
-
-    if candidate.startswith('['):
-        closing = candidate.find(']')
-        if closing == -1:
-            return None
-        candidate = candidate[1:closing]
-    elif candidate.count(':') == 1:
-        host, port = candidate.rsplit(':', 1)
-        if port.isdigit():
-            candidate = host
-
-    try:
-        return ipaddress.ip_address(candidate)
-    except ValueError:
-        return None
-
-
 def _original_peer_address():
     original = request.environ.get('werkzeug.proxy_fix.orig', {})
     peer = original.get('REMOTE_ADDR') if isinstance(original, dict) else None
     peer = peer or request.remote_addr
-    return _normalize_forwarded_ip(peer) if peer else None
+    return normalize_ip(peer)
 
 
 def get_client_ip():
@@ -183,37 +150,33 @@ def get_client_ip():
 
     proxy_hops = current_app.config.get('PROXY_HOPS', 0)
     trusted_proxies = get_trusted_proxies()
-    peer_is_trusted = any(peer in network for network in trusted_proxies)
 
-    # Direct deployments must ignore all client-supplied forwarding headers.
-    if not proxy_hops or not peer_is_trusted:
+    # Direct/untrusted peers must never influence client identity with headers.
+    if not proxy_hops or not address_is_trusted(peer, trusted_proxies):
         return str(peer)
 
-    forwarded_values = []
-    forwarded_header = request.headers.get('Forwarded')
-    if forwarded_header:
-        forwarded_values = _parse_forwarded_header(forwarded_header)
+    # X-Forwarded-For is the canonical chain. X-Real-IP is a single-value
+    # fallback for trusted proxies that do not emit X-Forwarded-For. Other
+    # client-controlled forwarding header families are intentionally ignored.
+    forwarded = request.headers.get('X-Forwarded-For')
+    if forwarded:
+        forwarded_values = [item.strip() for item in forwarded.split(',')]
     else:
-        for header in (
-            'X-Forwarded-For',
-            'X-Real-IP',
-            'CF-Connecting-IP',
-            'True-Client-IP',
-        ):
-            value = request.headers.get(header)
-            if value:
-                forwarded_values = [item.strip() for item in value.split(',')]
-                break
+        real_ip = request.headers.get('X-Real-IP')
+        forwarded_values = [real_ip.strip()] if real_ip else []
 
     chain = [
         parsed
-        for parsed in (_normalize_forwarded_ip(value) for value in forwarded_values)
+        for parsed in (normalize_ip(value) for value in forwarded_values)
         if parsed is not None
     ]
     chain.append(peer)
 
+    # Walk from the application back toward the client and return the nearest
+    # untrusted address. This tolerates multiple trusted proxy hops without
+    # accepting a spoofed value placed farther left in the chain.
     for candidate in reversed(chain):
-        if any(candidate in network for network in trusted_proxies):
+        if address_is_trusted(candidate, trusted_proxies):
             continue
         return str(candidate)
 

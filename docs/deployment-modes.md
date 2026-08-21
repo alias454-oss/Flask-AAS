@@ -74,12 +74,19 @@ client identity.
 
 When a trusted reverse proxy is used:
 
-- set `PROXY_HOPS` to the actual forwarding hop count;
-- configure `TRUSTED_PROXIES` for the immediate trusted peer;
-- prevent untrusted direct access to a Gunicorn port that accepts trusted forwarding headers;
+- set `PROXY_HOPS` to the actual forwarded origin-header hop count;
+- configure `TRUSTED_PROXIES` for the immediate trusted peer or narrowly scoped proxy networks;
+- configure the proxy to overwrite/sanitize `X-Forwarded-For` and `X-Real-IP`;
+- prevent untrusted direct access to the Gunicorn port as defense in depth;
 - keep Host validation independent from client-IP trust.
 
-Do not enable `ProxyFix` generically just because the application is deployed.
+Flask-AAS applies forwarded host/protocol/prefix values only when the immediate network peer is in
+`TRUSTED_PROXIES`. Effective client identity is resolved separately from the trusted
+`X-Forwarded-For` chain (with `X-Real-IP` as a single-value fallback), and the same identity is used
+for audit metadata, authentication lockout/rate-limit keys, and the global Flask-Limiter key.
+Untrusted peers cannot opt into proxy behavior by supplying forwarding headers.
+
+Do not enable proxy trust generically just because the application is deployed.
 
 ## Cookies and HSTS
 
