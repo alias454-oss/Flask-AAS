@@ -48,9 +48,6 @@ class Settings(BaseSettings):
             return "postgresql+psycopg://" + value[len(legacy_prefix):]
         return value
 
-    # Registration control
-    REGISTRATION_ENABLED: bool = True
-
     # Public application origin. This seeds EnvSettings.site_url on a fresh
     # database; persisted Site Settings becomes authoritative on later starts.
     SITE_URL: str = DEFAULT_SITE_URL

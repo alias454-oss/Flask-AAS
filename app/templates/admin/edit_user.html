@@ -41,10 +41,14 @@
           {% endif %}
         </div>
 
-        {% if env.use_user_approval %}
+        {% if env.use_verify_email or env.use_user_approval %}
         <div class="form-group">
+          {% if env.use_verify_email %}
           <label>{{ form.activated() }} {{ form.activated.label.text }}</label>
+          {% endif %}
+          {% if env.use_user_approval %}
           <label>{{ form.approved() }} {{ form.approved.label.text }}</label>
+          {% endif %}
         </div>
         {% endif %}
     </fieldset>

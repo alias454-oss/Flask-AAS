@@ -187,3 +187,17 @@ def test_validated_registration_and_admin_role_fields_render_errors_inline():
 
     assert "form.company_name.errors" in register
     assert "form.roles.errors" in edit_user
+
+
+def test_user_activation_and_approval_admin_controls_are_independent():
+    edit_user = _read(ADMIN_TEMPLATES / "edit_user.html")
+    list_users = _read(ADMIN_TEMPLATES / "list_users.html")
+
+    assert "{% if env.use_verify_email or env.use_user_approval %}" in edit_user
+    assert "{% if env.use_verify_email %}" in edit_user
+    assert "{% if env.use_user_approval %}" in edit_user
+
+    assert "{% if env.use_verify_email or env.use_user_approval %}" in list_users
+    assert "{% if env.use_verify_email %}" in list_users
+    assert "{% if env.use_user_approval %}" in list_users
+    assert "{% if env.use_verify_email and env.use_user_approval %} | {% endif %}" in list_users

@@ -8,7 +8,7 @@ import time
 import logging
 from datetime import datetime, timezone
 
-from flask import Blueprint, render_template, current_app, request, flash, redirect, url_for, session
+from flask import Blueprint, abort, render_template, current_app, request, flash, redirect, url_for, session
 from flask_login import confirm_login, login_fresh, login_user, logout_user, current_user
 
 from app.core.auth import login_required
@@ -46,6 +46,14 @@ mfa_bp = Blueprint('mfa', __name__)
 MFA_FRESH_SECONDS = 300
 MFA_SETUP_SECONDS = 600
 MFA_MAX_ATTEMPTS = 5
+
+
+@mfa_bp.before_request
+def require_mfa_feature_enabled():
+    """Fail closed when the persisted global MFA feature is disabled."""
+    env = get_cached_env_settings()
+    if env is None or not env.use_mfa:
+        abort(404)
 
 
 def _pending_login_identity(user=None):

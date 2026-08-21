@@ -37,17 +37,22 @@
           <strong>{{ user.first_name }} {{ user.last_name }}</strong><br />
           <strong>Last Active:</strong> {{ user.last_active.strftime('%Y-%m-%d %H:%M') }}<br />
 
-          {% if env.use_user_approval %}
+          {% if env.use_verify_email or env.use_user_approval %}
             <strong>Status:</strong>
-          {% if user.activated %}
-            <span class="status activated">Activated</span>
-          {% else %}
-            <span class="status pending">Not Activated</span>
-          {% endif %} |
-          {% if user.approved %}
-            <span class="status activated">Approved</span>
-          {% else %}
-            <span class="status pending">Not Approved</span>
+          {% if env.use_verify_email %}
+            {% if user.activated %}
+              <span class="status activated">Activated</span>
+            {% else %}
+              <span class="status pending">Not Activated</span>
+            {% endif %}
+          {% endif %}
+          {% if env.use_verify_email and env.use_user_approval %} | {% endif %}
+          {% if env.use_user_approval %}
+            {% if user.approved %}
+              <span class="status activated">Approved</span>
+            {% else %}
+              <span class="status pending">Not Approved</span>
+            {% endif %}
           {% endif %}
           {% endif %}
         </p>
