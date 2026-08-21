@@ -32,7 +32,8 @@ The project favors:
 - Transparent verification and login-time upgrade of legacy Flask-Bcrypt hashes.
 - Configurable password policy with a passphrase-friendly 20-character default minimum.
 - Optional password-check providers, including a built-in local common-password blocklist.
-- Registration, account activation, optional administrator approval, and role-based access control.
+- Registration with persisted single-user/public-registration policy, account activation, independent optional
+  administrator approval, and role-based access control.
 - Self-service account profile editing.
 - Durable active-session tracking and explicit session revocation.
 - Sliding authenticated-session inactivity controls.
@@ -48,6 +49,8 @@ session behavior.
 
 ### Multi-factor authentication
 
+- Optional global MFA policy; when disabled, MFA management endpoints fail closed rather than remaining
+  reachable through direct URLs.
 - TOTP enrollment and authenticator replacement.
 - Fresh reauthentication before sensitive MFA changes.
 - Hashed, display-once, single-use recovery codes.
@@ -364,7 +367,10 @@ python manage.py plugin run <plugin_id> db upgrade
 ## Core routes
 
 The table below lists Flask-AAS host/core routes. Application-plugin routes are intentionally omitted
-because their structural registration depends on plugin state at worker startup.
+because their structural registration depends on plugin state at worker startup. Optional core routes may
+still be registered structurally while failing closed when their feature is disabled; for example, `/mfa/*`
+returns 404 when MFA is globally disabled, and public registration is unavailable in single-user lockdown
+mode.
 
 | Endpoint | Methods | Rule |
 |---|---|---|

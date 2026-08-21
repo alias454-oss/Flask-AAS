@@ -84,6 +84,10 @@ state, transaction ownership, token replay resistance, authorization, or deploym
 - Every submitted login produces exactly one final `AuditLogin` outcome.
 - Successful login audit rows are written only after authentication succeeds.
 - Sensitive MFA changes require appropriate reauthentication.
+- Globally disabled MFA denies direct access to MFA management endpoints rather than relying on hidden UI.
+- Public registration lockdown denies both direct GET and POST registration attempts while preserving the
+  separate administrator account-creation workflow.
+- Email activation and administrator approval remain independently enforceable eligibility controls.
 - Forced full-login paths clear remembered authentication state.
 - Accepted TOTP counters cannot be replayed.
 - Remembered inactivity downgrades to non-fresh authentication and stops the boundary-crossing

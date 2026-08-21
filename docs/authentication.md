@@ -76,6 +76,16 @@ records contain a normalized reason useful to operators.
 Successful authentication establishes the Flask-Login identity and the corresponding durable session
 state before success is treated as complete.
 
+## Registration and account eligibility
+
+Public registration is controlled by persisted `EnvSettings.site_mode` in Site Settings. Single-user lockdown
+means the public registration workflow is unavailable on both direct GET and POST requests; administrator
+account creation remains a separate privileged workflow.
+
+Email activation and administrator approval are independent account-eligibility controls. A deployment may
+require either, both, or neither. Administrative user controls and status presentation follow each enabled
+policy independently rather than treating approval as a side effect of email verification.
+
 ## Session tracking and revocation
 
 Flask-AAS keeps durable `UserSession` state in addition to browser-session state.
@@ -141,7 +151,11 @@ Remember-cookie restoration does not satisfy a fresh-login requirement.
 
 ## TOTP MFA
 
-Flask-AAS supports TOTP enrollment and authenticator replacement.
+MFA is controlled by persisted `EnvSettings.use_mfa`. When MFA is disabled, MFA is not required during
+login and the `/mfa/*` management endpoints return 404 even when requested directly. Hiding MFA controls
+in templates is not the enforcement boundary.
+
+Flask-AAS supports TOTP enrollment and authenticator replacement when MFA is enabled.
 
 Temporary MFA state is bounded by timestamps and attempt limits. Terminal MFA failure returns the
 user to a complete login and removes remembered authentication state.

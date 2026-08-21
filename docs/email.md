@@ -98,7 +98,9 @@ than being silently treated as success.
 
 ## Email verification
 
-Required email verification uses the persisted account activation state.
+Required email verification uses the persisted account activation state. Email activation is independent
+from optional administrator approval; deployments may require either control, both controls, or neither.
+Administrative Activated and Approved state is therefore presented and edited independently.
 
 It can be enabled only when:
 
