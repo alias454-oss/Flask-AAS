@@ -6,7 +6,7 @@ from flask import Blueprint, flash, redirect, request, url_for
 from itsdangerous import BadSignature, SignatureExpired
 from sqlalchemy.exc import SQLAlchemyError
 
-from app.core.decorators import log_view_action, nocache
+from app.core.decorators import log_view_action
 from app.core.extensions import db, limiter
 from app.core.logger import redact_route_values
 from app.core.security import confirm_token, get_client_ip, redact_email
@@ -22,7 +22,6 @@ EMAIL_VERIFY_SALT = "app.tokens.email.verify"
 
 
 @verify_bp.route("/email/<token>")
-@nocache
 @limiter.limit("10 per hour", key_func=get_client_ip)
 @log_view_action(redact_params={"token"})
 def verify_email_token(token):

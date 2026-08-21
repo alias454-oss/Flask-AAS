@@ -5,6 +5,7 @@ from flask_login import current_user
 from app.core.logger import extract_request_metadata
 from app.core.trackers import current_route, log_action_isolated, audit_activity_enabled
 
+
 def log_view_action(action="view", redact_params=None):
     def decorator(f):
         @wraps(f)
@@ -27,13 +28,3 @@ def log_view_action(action="view", redact_params=None):
             return response
         return wrapper
     return decorator
-
-def nocache(view):
-    @wraps(view)
-    def no_cache_wrapper(*args, **kwargs):
-        response = make_response(view(*args, **kwargs))
-        response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, private"
-        response.headers["Pragma"] = "no-cache"
-        response.headers["Expires"] = "0"
-        return response
-    return no_cache_wrapper

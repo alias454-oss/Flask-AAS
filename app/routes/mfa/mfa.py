@@ -25,7 +25,7 @@ from app.core.meta import page_metadata
 from app.core.inactivity import mark_session_activity
 from app.core.sessions import close_current_session, create_login_session
 from app.core.mailer import send_mfa_change_email
-from app.core.decorators import nocache, log_view_action
+from app.core.decorators import log_view_action
 from app.core.trackers import (
     LOGIN_FAILURE_MFA_EXPIRED,
     LOGIN_FAILURE_MFA_FAILED,
@@ -336,7 +336,6 @@ class RecoveryCodeForm(FlaskForm):
     submit = SubmitField("Generate New Recovery Codes")
 
 @mfa_bp.route('/mfa/setup', methods=['GET', 'POST'])
-@nocache
 @limiter.limit("10 per minute", key_func=get_client_ip)
 @log_view_action()
 @login_required
@@ -417,7 +416,6 @@ def mfa_setup():
 
 
 @mfa_bp.route('/mfa/verify', methods=['GET', 'POST'])
-@nocache
 @limiter.limit("10 per minute; 50 per 30 minutes", key_func=get_client_ip)
 @log_view_action()
 def mfa_verify():
@@ -651,7 +649,6 @@ def mfa_verify():
 
 
 @mfa_bp.route('/mfa/reauth', methods=['GET', 'POST'])
-@nocache
 @limiter.limit("10 per minute", key_func=get_client_ip)
 @log_view_action()
 @login_required
@@ -748,7 +745,6 @@ def mfa_reauth():
 
 
 @mfa_bp.route('/mfa/replace', methods=['GET', 'POST'])
-@nocache
 @limiter.limit("10 per minute", key_func=get_client_ip)
 @log_view_action()
 @login_required
@@ -811,7 +807,6 @@ def mfa_replace():
 
 
 @mfa_bp.route('/mfa/recovery-codes', methods=['GET', 'POST'])
-@nocache
 @limiter.limit("10 per minute", key_func=get_client_ip)
 @log_view_action()
 @login_required
@@ -851,7 +846,6 @@ def mfa_recovery_codes():
 
 
 @mfa_bp.route('/mfa/disable', methods=['GET', 'POST'])
-@nocache
 @limiter.limit("10 per minute", key_func=get_client_ip)
 @log_view_action()
 @login_required
