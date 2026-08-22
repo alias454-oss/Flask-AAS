@@ -64,6 +64,10 @@ Audit helpers must not silently own business transaction boundaries.
 
 - Is session state rotated or cleared at the correct point?
 - Can a remembered/non-fresh session perform this action?
+- Does this request represent interactive user activity, or is it an automatic/resource request that
+  should not extend the inactivity window?
+- If a route is classified as non-activity, does it still enforce normal authentication/session
+  validity and timeout behavior?
 - Are one-time tokens actually single-use?
 - Can the request or token be replayed?
 - Do password/MFA changes invalidate older authentication state?
@@ -100,6 +104,8 @@ For security-relevant actions, define:
 - outcome;
 - normalized failure reason;
 - timestamp;
+- whether an authenticated read/action needs explicit audit attribution rather than being inferred
+  from mutable session-activity state;
 - trusted client address where available;
 - request/correlation identifier where useful;
 - before/after state for privileged changes.

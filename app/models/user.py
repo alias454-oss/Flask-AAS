@@ -118,16 +118,25 @@ class User(db.Model):
         self.auth_version = (self.auth_version or 0) + 1
         return self.auth_version
 
-    def bind_session_identity(self, token, record_id=None, *, remembered=False):
+    def bind_session_identity(
+        self,
+        token,
+        record_id=None,
+        *,
+        remembered=False,
+        last_active_at=None,
+    ):
         """Attach browser-session identity metadata to this in-memory user."""
         self._session_token = token
         self._session_record_id = record_id
         self._session_remembered = bool(remembered)
+        self._session_last_active_at = last_active_at
 
     def clear_session_identity(self):
         self._session_token = None
         self._session_record_id = None
         self._session_remembered = False
+        self._session_last_active_at = None
 
     @property
     def session_record_id(self):
@@ -136,6 +145,10 @@ class User(db.Model):
     @property
     def session_remembered(self):
         return bool(getattr(self, '_session_remembered', False))
+
+    @property
+    def session_last_active_at(self):
+        return getattr(self, '_session_last_active_at', None)
 
     @classmethod
     def load_from_session_id(cls, session_id, *, require_session_record=True):
@@ -174,6 +187,7 @@ class User(db.Model):
             token,
             record.id,
             remembered=record.remembered,
+            last_active_at=record.last_active_at,
         )
         return user
 

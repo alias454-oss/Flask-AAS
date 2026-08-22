@@ -92,6 +92,10 @@ state, transaction ownership, token replay resistance, authorization, or deploym
 - Accepted TOTP counters cannot be replayed.
 - Remembered inactivity downgrades to non-fresh authentication and stops the boundary-crossing
   mutation.
+- Static and explicitly non-activity authenticated requests do not extend the inactivity window while
+  still enforcing normal authentication/session validity and timeout behavior.
+- Durable session-activity persistence may be coalesced without changing the browser inactivity
+  boundary; mutable `UserSession.last_active_at` is not used as a substitute for exact audit events.
 - Password changes invalidate earlier session identities and outstanding reset links.
 - Administrator-selected credentials require owner replacement after complete authentication/MFA.
 - Production bootstrap credentials set `must_change_password`; development/testing bootstrap avoids

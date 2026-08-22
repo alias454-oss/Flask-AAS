@@ -7,7 +7,7 @@ import time
 from flask import current_app, flash, redirect, request, session, url_for
 from flask_login import current_user, logout_user
 
-from app.core.sessions import close_current_session
+from app.core.sessions import close_current_session, request_advances_session_activity
 
 logger = logging.getLogger(__name__)
 
@@ -73,6 +73,8 @@ def enforce_inactivity_timeout():
     # treated as an authenticated session or receive an inactivity timestamp.
     if not current_user.is_authenticated:
         return None
+
+    advances_activity = request_advances_session_activity()
 
     timeout = current_app.config.get('SESSION_INACTIVITY_TIMEOUT_SECONDS')
     try:
@@ -145,5 +147,6 @@ def enforce_inactivity_timeout():
         )
         return redirect(url_for('login.login'))
 
-    mark_session_activity(now)
+    if advances_activity:
+        mark_session_activity(now)
     return None

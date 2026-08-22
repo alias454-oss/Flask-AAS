@@ -21,8 +21,8 @@ def normalize_zone_code(value):
 
 
 def country_choices():
-    rows = db.session.scalars(
-        select(Country)
+    rows = db.session.execute(
+        select(Country.iso_code_2, Country.name)
         .where(Country.active.is_(True))
         .order_by(Country.name.asc(), Country.iso_code_2.asc())
     ).all()
@@ -36,8 +36,15 @@ def _zone_rows(country_code):
     if not normalized:
         return []
 
-    return db.session.scalars(
-        select(Zone)
+    return db.session.execute(
+        select(
+            Zone.zone_id,
+            Zone.country_id,
+            Zone.code,
+            Zone.name,
+            Zone.type,
+            Zone.parent_zone_id,
+        )
         .join(Country, Zone.country_id == Country.country_id)
         .where(
             Country.iso_code_2 == normalized,
@@ -108,13 +115,15 @@ def country_name(country_code):
     normalized = normalize_country_code(country_code)
     if not normalized:
         return None
-    country = db.session.scalar(select(Country).where(Country.iso_code_2 == normalized))
-    return country.name if country is not None else normalized
+    name = db.session.scalar(
+        select(Country.name).where(Country.iso_code_2 == normalized)
+    )
+    return name if name is not None else normalized
 
 
 def zone_name(zone_code):
     normalized = normalize_zone_code(zone_code)
     if not normalized:
         return None
-    zone = db.session.scalar(select(Zone).where(Zone.code == normalized))
-    return zone.name if zone is not None else normalized
+    name = db.session.scalar(select(Zone.name).where(Zone.code == normalized))
+    return name if name is not None else normalized
