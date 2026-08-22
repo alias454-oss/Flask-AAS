@@ -18,6 +18,7 @@ from app.core.inactivity import (
     enforce_inactivity_timeout,
     mark_session_activity,
 )
+from app.core.sessions import session_activity_exempt
 
 
 class _SessionUser(UserMixin):
@@ -75,6 +76,12 @@ class InactivityTimeoutTests(unittest.TestCase):
         @self.app.route('/public')
         def public():
             return 'public'
+
+        @self.app.route('/asset')
+        @session_activity_exempt
+        @login_required
+        def asset():
+            return 'asset'
 
         @self.app.route('/mutate', methods=['POST'])
         @login_required
@@ -273,6 +280,27 @@ class InactivityTimeoutTests(unittest.TestCase):
             self.assertEqual(login_session['pre_2fa_user_id'], 42)
             self.assertEqual(login_session['pre_2fa_time'], 100.0)
             self.assertNotIn(SESSION_ACTIVITY_KEY, login_session)
+
+    def test_activity_exempt_request_does_not_refresh_activity(self):
+        self._login(timestamp=100.0)
+
+        asset_response = self._request_at(105.0, path='/asset')
+
+        self.assertEqual(asset_response.status_code, 200)
+        with self.client.session_transaction() as login_session:
+            self.assertEqual(login_session[SESSION_ACTIVITY_KEY], 100.0)
+
+        expired = self._request_at(110.0)
+        self.assertEqual(expired.status_code, 302)
+        self.assertTrue(expired.location.endswith('/login'))
+
+    def test_activity_exempt_request_still_enforces_timeout(self):
+        self._login(timestamp=100.0)
+
+        expired = self._request_at(110.0, path='/asset')
+
+        self.assertEqual(expired.status_code, 302)
+        self.assertTrue(expired.location.endswith('/login'))
 
     def test_static_requests_do_not_refresh_activity(self):
         self._login(timestamp=100.0)

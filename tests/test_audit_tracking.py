@@ -205,6 +205,25 @@ class AuditTrackingTests(unittest.TestCase):
         self.assertEqual(User.query.count(), 0)
         self.assertEqual(AuditActivity.query.count(), 1)
 
+    def test_standalone_activity_preserves_fractional_timestamp(self):
+        exact_time = datetime(2026, 8, 22, 11, 42, 17, 384123, tzinfo=timezone.utc)
+
+        with self.app.test_request_context(
+            '/asset/read',
+            environ_base={'REMOTE_ADDR': '192.0.2.13'},
+        ), patch('app.core.trackers.datetime') as clock:
+            clock.now.return_value = exact_time
+            self.assertTrue(
+                log_action_isolated(
+                    user_id=None,
+                    action='asset_read',
+                    target='asset:1',
+                )
+            )
+
+        event = AuditActivity.query.one()
+        self.assertEqual(event.timestamp.microsecond, 384123)
+
     def test_login_audit_does_not_commit_pending_business_data(self):
         with self.app.test_request_context('/login', environ_base={'REMOTE_ADDR': '192.0.2.12'}):
             db.session.add(self._new_user())

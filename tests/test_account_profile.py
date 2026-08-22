@@ -15,6 +15,7 @@ from PIL import Image
 
 from app.core.avatar import profile_image_data_uri, profile_image_root
 from app.core.extensions import csrf, db, limiter
+from app.core.sessions import touch_current_session
 from app.models import AuditActivity, Country, EnvSettings, User, UserSession, Zone
 from app.routes.account.account import account_bp
 from app.routes.locations import locations_bp
@@ -820,6 +821,91 @@ class AccountProfileRouteTests(unittest.TestCase):
             AuditActivity.query.filter_by(action='profile_updated').count(),
             0,
         )
+
+    def test_loaded_user_carries_durable_session_activity_timestamp(self):
+        activity_time = datetime(2026, 8, 22, 10, 0, tzinfo=timezone.utc)
+        record = self._login(now=activity_time)
+        record_id = record.id
+
+        with self.client.session_transaction() as login_session:
+            identity = login_session['_user_id']
+
+        db.session.remove()
+        loaded_user = User.load_from_session_id(identity)
+
+        self.assertIsNotNone(loaded_user)
+        loaded_activity = loaded_user.session_last_active_at
+        if loaded_activity.tzinfo is None:
+            loaded_activity = loaded_activity.replace(tzinfo=timezone.utc)
+        self.assertEqual(loaded_activity, activity_time)
+        self.assertEqual(loaded_user.session_record_id, record_id)
+
+    def test_durable_session_touch_is_throttled_within_ten_seconds(self):
+        now = datetime(2026, 8, 22, 10, 0, 9, tzinfo=timezone.utc)
+        user = db.session.get(User, self.user_id)
+        user.bind_session_identity(
+            'session-token',
+            123,
+            last_active_at=now - timedelta(seconds=9),
+        )
+
+        with self.app.test_request_context('/account'), patch(
+            'app.core.sessions.current_user',
+            user,
+        ), patch(
+            'app.core.sessions._utc_now',
+            return_value=now,
+        ), patch(
+            'app.core.sessions.UserSession.touch_isolated',
+        ) as touch:
+            touch_current_session()
+
+        touch.assert_not_called()
+
+    def test_durable_session_touch_runs_at_ten_seconds(self):
+        now = datetime(2026, 8, 22, 10, 0, 10, tzinfo=timezone.utc)
+        user = db.session.get(User, self.user_id)
+        user.bind_session_identity(
+            'session-token',
+            123,
+            last_active_at=now - timedelta(seconds=10),
+        )
+
+        with self.app.test_request_context('/account'), patch(
+            'app.core.sessions.current_user',
+            user,
+        ), patch(
+            'app.core.sessions._utc_now',
+            return_value=now,
+        ), patch(
+            'app.core.sessions.UserSession.touch_isolated',
+            return_value=True,
+        ) as touch:
+            touch_current_session()
+
+        touch.assert_called_once_with(123, self.user_id, now=now)
+
+    def test_durable_session_touch_skips_non_activity_request(self):
+        now = datetime(2026, 8, 22, 10, 0, 10, tzinfo=timezone.utc)
+        user = db.session.get(User, self.user_id)
+        user.bind_session_identity(
+            'session-token',
+            123,
+            last_active_at=now - timedelta(seconds=30),
+        )
+
+        with self.app.test_request_context('/account'), patch(
+            'app.core.sessions.current_user',
+            user,
+        ), patch(
+            'app.core.sessions.request_advances_session_activity',
+            return_value=False,
+        ), patch(
+            'app.core.sessions.UserSession.touch_isolated',
+        ) as touch:
+            touch_current_session()
+
+        touch.assert_not_called()
 
     def test_previous_login_is_relative_to_the_current_session(self):
         previous_time = datetime(2026, 8, 6, 14, 0, tzinfo=timezone.utc)

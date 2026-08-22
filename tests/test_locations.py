@@ -4,9 +4,16 @@ import unittest
 from pathlib import Path
 
 from flask import Flask
+from sqlalchemy import event
 
 from app.core.extensions import db, limiter
-from app.core.locations import country_choices, zone_choices, zone_records
+from app.core.locations import (
+    country_choices,
+    country_name,
+    zone_choices,
+    zone_name,
+    zone_records,
+)
 from app.core.seeder import seed_countries, seed_zones
 from app.models import Country, Zone
 from app.routes.locations import locations_bp
@@ -75,6 +82,27 @@ class LocationReferenceTests(unittest.TestCase):
         self.assertEqual(countries["US"], "United States")
         self.assertEqual(canada["CA-ON"], "Ontario")
         self.assertEqual(united_kingdom["GB-WIL"], "England — Wiltshire")
+
+
+    def test_reference_display_helpers_do_not_materialize_orm_rows(self):
+        db.session.remove()
+        session = db.session()
+        loaded = []
+
+        def record_reference_load(_session, instance):
+            if isinstance(instance, (Country, Zone)):
+                loaded.append(type(instance).__name__)
+
+        event.listen(session, "loaded_as_persistent", record_reference_load)
+        try:
+            self.assertIn(("US", "United States"), country_choices())
+            self.assertTrue(zone_records("US"))
+            self.assertEqual(country_name("US"), "United States")
+            self.assertEqual(zone_name("US-IL"), "Illinois")
+        finally:
+            event.remove(session, "loaded_as_persistent", record_reference_load)
+
+        self.assertEqual(loaded, [])
 
     def test_public_zone_endpoint_returns_generic_reference_data(self):
         response = self.client.get("/reference/zones?country=CA")

@@ -95,6 +95,7 @@ class UserSession(db.Model):
             token,
             record.id,
             remembered=record.remembered,
+            last_active_at=record.last_active_at,
         )
         return record
 
