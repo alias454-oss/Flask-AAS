@@ -108,8 +108,16 @@ When the boundary is crossed:
 - the boundary-crossing request is stopped with HTTP `303`, preventing a stale state-changing
   request from continuing.
 
-Static requests do not extend the inactivity window. Password changes, session revocation, MFA, and
-fresh-login requirements remain separate controls.
+Static requests and application routes explicitly classified as non-activity do not extend the
+inactivity window. Those requests still pass normal authentication/session validation and can trigger
+timeout enforcement; they simply cannot keep an otherwise idle login alive.
+
+The browser inactivity timestamp is refreshed on each qualifying activity request. Durable
+`UserSession.last_active_at` persistence is separately coalesced within a 10-second interval to avoid a
+database write on every request. The durable timestamp is session-security state rather than an exact
+audit history; audit events retain their own event timestamps.
+
+Password changes, session revocation, MFA, and fresh-login requirements remain separate controls.
 
 ## Password policy
 

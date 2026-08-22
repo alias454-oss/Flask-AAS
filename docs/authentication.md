@@ -107,8 +107,18 @@ cookies are invalidated across clients.
 
 The default is 900 seconds. Set it to `0` to disable the inactivity control.
 
-The timer is sliding and refreshes on authenticated application requests. Static asset requests do
-not extend the window.
+The timer is sliding and advances only on authenticated requests classified as user activity.
+Flask static requests and application routes explicitly marked as non-activity do not extend the
+window. Non-activity requests still pass normal authentication/session validation and can trigger
+inactivity enforcement; the exemption means only that an automatic/resource request cannot keep an
+otherwise idle login alive.
+
+Browser-session inactivity tracking and durable `UserSession.last_active_at` serve different purposes.
+Qualifying activity refreshes the browser inactivity timestamp on each request, while durable
+`last_active_at` writes are coalesced within a 10-second interval to avoid a database write on every
+request. When a durable touch is written it uses the current timestamp; it is not rounded to the
+coalescing interval. `last_active_at` is session-security state, not an append-only audit timeline.
+Audit events keep their own event timestamps.
 
 ### Normal sessions
 
