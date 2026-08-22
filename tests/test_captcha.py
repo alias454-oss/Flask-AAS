@@ -5,7 +5,8 @@ from unittest.mock import patch
 from flask import Flask, jsonify, request
 
 from app.core.extensions import cache, limiter
-from app.routes import captcha as captcha_module
+from app.routes import captcha as captcha_route
+from app.services import captcha as captcha_service
 
 
 class CaptchaStateTests(unittest.TestCase):
@@ -20,18 +21,18 @@ class CaptchaStateTests(unittest.TestCase):
         )
         cache.init_app(self.app)
         limiter.init_app(self.app)
-        self.app.register_blueprint(captcha_module.captcha_bp)
+        self.app.register_blueprint(captcha_route.captcha_bp)
 
         @self.app.post("/test-captcha-validation")
         def test_captcha_validation():
-            valid, message = captcha_module.validate_captcha(
+            valid, message = captcha_service.validate_captcha(
                 request.form.get("answer")
             )
             return jsonify(valid=valid, message=message)
 
         self.client = self.app.test_client()
         self.enabled_patch = patch.object(
-            captcha_module,
+            captcha_service,
             "is_captcha_enabled",
             return_value=True,
         )
@@ -51,12 +52,12 @@ class CaptchaStateTests(unittest.TestCase):
     def _generate(self, answer="AbC234", timestamp=100.0):
         with (
             patch.object(
-                captcha_module,
+                captcha_service,
                 "generate_captcha_text",
                 return_value=answer,
             ),
             patch.object(
-                captcha_module,
+                captcha_service,
                 "_current_timestamp",
                 return_value=timestamp,
             ),
@@ -74,16 +75,16 @@ class CaptchaStateTests(unittest.TestCase):
 
     def _challenge_id(self):
         with self.client.session_transaction() as captcha_session:
-            return captcha_session.get(captcha_module.CAPTCHA_SESSION_KEY)
+            return captcha_session.get(captcha_service.CAPTCHA_SESSION_KEY)
 
     def _challenge(self, challenge_id=None):
         challenge_id = challenge_id or self._challenge_id()
         with self.app.app_context():
-            return cache.get(captcha_module._captcha_cache_key(challenge_id))
+            return cache.get(captcha_service._captcha_cache_key(challenge_id))
 
     def _validate(self, answer, timestamp=101.0):
         with patch.object(
-            captcha_module,
+            captcha_service,
             "_current_timestamp",
             return_value=timestamp,
         ):
@@ -104,13 +105,13 @@ class CaptchaStateTests(unittest.TestCase):
 
         payload = self._session_payload()
 
-        self.assertIn(captcha_module.CAPTCHA_SESSION_KEY, payload)
+        self.assertIn(captcha_service.CAPTCHA_SESSION_KEY, payload)
         self.assertNotIn("captcha_code", payload)
         self.assertNotIn("captcha_expiry", payload)
         self.assertNotIn("captcha_attempts", payload)
         self.assertNotIn(answer, repr(payload))
 
-        challenge = self._challenge(payload[captcha_module.CAPTCHA_SESSION_KEY])
+        challenge = self._challenge(payload[captcha_service.CAPTCHA_SESSION_KEY])
         self.assertIsInstance(challenge, dict)
         self.assertNotEqual(challenge["answer_hash"], answer)
         self.assertNotIn(answer, repr(challenge))
@@ -160,7 +161,7 @@ class CaptchaStateTests(unittest.TestCase):
 
     def test_reloading_replaces_and_deletes_previous_challenge(self):
         with patch.object(
-            captcha_module.secrets,
+            captcha_service.secrets,
             "token_urlsafe",
             side_effect=("first-challenge", "second-challenge"),
         ):
@@ -176,7 +177,7 @@ class CaptchaStateTests(unittest.TestCase):
 
     def test_disabled_captcha_creates_no_state(self):
         with patch.object(
-            captcha_module,
+            captcha_service,
             "is_captcha_enabled",
             return_value=False,
         ):
@@ -188,16 +189,16 @@ class CaptchaStateTests(unittest.TestCase):
     def test_cache_write_failure_does_not_issue_challenge(self):
         with (
             patch.object(
-                captcha_module,
+                captcha_service,
                 "generate_captcha_text",
                 return_value="AbC234",
             ),
             patch.object(
-                captcha_module,
+                captcha_route,
                 "generate_captcha_image",
                 return_value=b"png",
             ),
-            patch.object(captcha_module.cache, "set", return_value=False),
+            patch.object(captcha_service.cache, "set", return_value=False),
         ):
             response = self.client.get("/captcha_image")
 

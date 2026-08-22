@@ -5,7 +5,6 @@ from wtforms.validators import DataRequired, Email, Length, Optional
 from app.core.cache import get_cached_env_settings
 from app.forms.captcha import CaptchaForm
 from app.forms.profile import configure_profile_location_fields
-from app.routes.captcha import CaptchaRequired
 from app.services.passwords import password_policy
 
 
@@ -23,7 +22,6 @@ class RegisterForm(CaptchaForm):
     zone_code = SelectField('Region / Subdivision', choices=[], validators=[Optional()])
     postal_code = StringField('Postal Code', validators=[Optional(), Length(max=20)])
     agree = BooleanField('I agree to the terms of service', validators=[DataRequired()])
-    captcha = StringField("Enter CAPTCHA", validators=[CaptchaRequired()])
     nobot_check = StringField('Leave empty')  # hidden in template
     submit = SubmitField('Register')
 

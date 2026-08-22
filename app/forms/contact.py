@@ -3,7 +3,6 @@ from wtforms import StringField, SubmitField, TextAreaField
 from wtforms.validators import DataRequired, Email, Length
 
 from app.forms.captcha import CaptchaForm
-from app.routes.captcha import CaptchaRequired
 
 
 class ContactForm(CaptchaForm):
@@ -17,6 +16,5 @@ class ContactForm(CaptchaForm):
         "Message",
         validators=[DataRequired(), Length(max=2000)],
     )
-    captcha = StringField("Enter CAPTCHA", validators=[CaptchaRequired()])
     nobot_check = StringField("Leave empty")  # hidden in template
     submit = SubmitField("Send Message")
