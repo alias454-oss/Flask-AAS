@@ -12,9 +12,6 @@ from flask import Blueprint, abort, render_template, current_app, request, flash
 from flask_login import confirm_login, login_fresh, login_user, logout_user, current_user
 
 from app.core.decorators import login_required
-from flask_wtf import FlaskForm
-from wtforms import StringField, SubmitField
-from wtforms.validators import DataRequired, Length, Regexp
 from sqlalchemy import or_
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -40,6 +37,7 @@ from app.services.trackers import (
     log_action_isolated,
     audit_login_attempt,
 )
+from app.forms.mfa import DisableMfaForm, MFASetupForm, RecoveryCodeForm, TwoFactorForm
 from app.models import MfaRecoveryCode, User
 
 logger = logging.getLogger(__name__)
@@ -331,54 +329,6 @@ def generate_qr_image(secret, username, issuer='FlaskApp'):
     buf.seek(0)
 
     return base64.b64encode(buf.read()).decode('utf-8')
-
-class MFASetupForm(FlaskForm):
-    """
-    Used ONLY during setup.
-    Strictly enforces 6-digit numeric TOTP.
-    """
-    code = StringField(
-        "Enter the code from your authenticator app:",
-        validators=[
-            DataRequired(message="Please enter the code."),
-            Regexp(r"^[0-9]{6}$", message="The code must be 6 digits."),
-        ],
-        render_kw={
-            "placeholder": "123456",
-            "required": True,
-            "autofocus": True,
-            "id": "code",
-            "type": "text"        }
-    )
-    submit = SubmitField("Verify")
-
-class TwoFactorForm(FlaskForm):
-    """
-    Used during login.
-    Accepts TOTP (6 digits) OR Recovery Codes (8+ chars).
-    """
-    code = StringField(
-        "Authentication Code",
-        validators=[
-            DataRequired(),
-            # range matches 6 (TOTP) to 8/10 (Recovery Codes)
-            Length(min=6, max=24, message="Enter a valid authentication code.")
-        ],
-        render_kw={"placeholder": "Code or Recovery Key", "autofocus": True, "autocomplete": "one-time-code"}
-    )
-    submit = SubmitField("Verify")
-
-class DisableMfaForm(FlaskForm):
-    code = StringField(
-        "Current authentication code",
-        validators=[DataRequired(), Length(min=6, max=24)],
-        render_kw={"placeholder": "Code or Recovery Key", "autocomplete": "one-time-code"}
-    )
-    submit = SubmitField("Disable MFA")
-
-
-class RecoveryCodeForm(FlaskForm):
-    submit = SubmitField("Generate New Recovery Codes")
 
 
 def _render_recovery_codes(recovery_codes, *, form=None):

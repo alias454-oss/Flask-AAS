@@ -3,28 +3,14 @@
 import logging
 from flask import Blueprint, render_template, redirect, request, url_for, flash
 from flask_login import current_user
-from wtforms import (
-    BooleanField,
-    SelectMultipleField,
-    StringField,
-    SubmitField,
-    TextAreaField,
-)
-from wtforms.widgets import ListWidget, CheckboxInput
-from wtforms.validators import DataRequired, Email, Length, Optional
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.services.avatar import delete_profile_image, profile_image_data_uri
 from app.core.cache import get_cached_env_settings, get_cached_roles
 from app.core.extensions import db, limiter
-from app.core.profile import (
-    PROFILE_FIELD_NAMES,
-    ProfileFieldsForm,
-    apply_form_fields,
-    configure_profile_location_fields,
-    normalize_optional_text,
-)
-from app.core.security import get_client_ip, normalize_email, normalize_username
+from app.forms.profile import PROFILE_FIELD_NAMES, apply_form_fields
+from app.forms.users import AdminUserForm
+from app.core.security import get_client_ip
 from app.core.decorators import login_required, admin_required
 from app.core.meta import page_metadata
 from app.core.decorators import log_view_action
@@ -49,48 +35,6 @@ ADMIN_EDITABLE_FIELD_NAMES = (
     "notes",
     "admin_notes",
 )
-
-
-class AdminUserForm(ProfileFieldsForm):
-    """Validate and canonicalize administrator-managed user profile fields."""
-
-    username = StringField(
-        'Username',
-        validators=[DataRequired(), Length(max=60)],
-        filters=[normalize_username],
-    )
-    email = StringField(
-        'Email',
-        validators=[DataRequired(), Email(), Length(max=255)],
-        filters=[normalize_email],
-    )
-    # Preserve the historical administrator-facing label.
-    alt_phone = StringField(
-        'Alt Phone',
-        validators=[Optional(), Length(max=50)],
-        filters=[normalize_optional_text],
-    )
-    roles = SelectMultipleField(
-        "Assigned Roles",
-        choices=[],
-        coerce=int,
-        option_widget=CheckboxInput(),
-        widget=ListWidget(prefix_label=False),
-    )
-    activated = BooleanField('Activated')
-    approved = BooleanField('Approved')
-    notes = TextAreaField('User Notes')
-    admin_notes = TextAreaField('Admin Notes')
-    submit = SubmitField('Update')
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        env = get_cached_env_settings()
-        if not env.use_user_approval:
-            del self.approved
-        if not env.use_verify_email:
-            del self.activated
-        configure_profile_location_fields(self, env)
 
 
 def _render_edit_user(form, user, meta):

@@ -4,7 +4,7 @@ from flask_wtf import FlaskForm
 from wtforms import SelectField, StringField
 from wtforms.validators import Length, Optional
 
-from app.services.geo import configure_location_choices
+from app.services.geo import country_choices, zone_choices
 
 PROFILE_FIELD_NAMES = (
     "company_name",
@@ -75,7 +75,8 @@ def configure_profile_location_fields(form, env) -> None:
         for field_name in LOCATION_FIELD_NAMES:
             del form[field_name]
         return
-    configure_location_choices(form)
+    form.country_code.choices = country_choices()
+    form.zone_code.choices = zone_choices(form.country_code.data)
 
 
 class ProfileFieldsForm(FlaskForm):
@@ -88,7 +89,7 @@ class ProfileFieldsForm(FlaskForm):
     )
     first_name = StringField(
         "First Name",
-        validators=[Optional(), Length(max=100)],
+        validators=[Optional(), Length(max=50)],
         filters=[normalize_optional_text],
     )
     last_name = StringField(
@@ -98,7 +99,7 @@ class ProfileFieldsForm(FlaskForm):
     )
     phone = StringField(
         "Phone",
-        validators=[Optional(), Length(max=50)],
+        validators=[Optional(), Length(max=20)],
         filters=[normalize_optional_text],
     )
     alt_phone = StringField(
