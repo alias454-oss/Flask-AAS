@@ -2,10 +2,10 @@
 import logging
 from datetime import datetime, timedelta, timezone
 
-from flask import Blueprint, flash, redirect, render_template, request, session, url_for
+from flask import Blueprint, flash, redirect, render_template, request, url_for
 from flask_login import current_user, login_fresh, logout_user
 
-from app.core.auth import login_required
+from app.core.decorators import login_required
 from flask_wtf import FlaskForm
 from sqlalchemy.exc import SQLAlchemyError
 from wtforms import PasswordField, StringField, SubmitField
@@ -13,10 +13,10 @@ from wtforms.validators import DataRequired, Email, EqualTo
 
 from app.core.decorators import log_view_action
 from app.core.extensions import db, limiter
-from app.core.logger import redact_route_values
-from app.core.mailer import send_password_changed_email, send_password_reset_email
+from app.core.security import redact_route_values
+from app.services.mailer import send_password_changed_email, send_password_reset_email
 from app.core.meta import page_metadata
-from app.core.passwords import password_policy
+from app.services.passwords import password_policy
 from app.core.security import (
     get_client_ip,
     is_locked_out,
@@ -26,7 +26,8 @@ from app.core.security import (
     reset_lockout_attempts,
     track_lockout_attempts,
 )
-from app.core.trackers import audit_activity_enabled, log_action, log_action_isolated
+from app.services.sessions import clear_browser_session
+from app.services.trackers import audit_activity_enabled, log_action, log_action_isolated
 from app.models import PasswordResetToken, User, UserSession
 from app.models.password_reset_token import TOKEN_PURPOSE_RESET, TOKEN_PURPOSE_SETUP
 
@@ -42,29 +43,26 @@ class ForgotPasswordForm(FlaskForm):
     submit = SubmitField("Email Password")
 
 
-class ResetPasswordForm(FlaskForm):
+class NewPasswordForm(FlaskForm):
     password = PasswordField("New Password", validators=[DataRequired(), password_policy])
     confirm = PasswordField(
         "Confirm New Password",
         validators=[DataRequired(), EqualTo("password")],
     )
+
+
+class ResetPasswordForm(NewPasswordForm):
     submit = SubmitField("Reset Password")
 
 
-class ChangePasswordForm(FlaskForm):
+class ChangePasswordForm(NewPasswordForm):
     old_password = PasswordField("Current Password", validators=[DataRequired()])
-    password = PasswordField("New Password", validators=[DataRequired(), password_policy])
-    confirm = PasswordField(
-        "Confirm New Password",
-        validators=[DataRequired(), EqualTo("password")],
-    )
     submit = SubmitField("Update Password")
 
 
 def _force_full_login():
     logout_user()
-    session.clear()
-    session["_remember"] = "clear"
+    clear_browser_session()
 
 
 def _notify_password_changed(user, *, ip, source):
@@ -93,6 +91,49 @@ def _notify_password_changed(user, *, ip, source):
             source,
             ip,
         )
+
+
+def _password_token_redirect(is_setup):
+    flash(
+        "The password setup link is invalid or has expired."
+        if is_setup
+        else "The password reset link is invalid or has expired.",
+        "danger",
+    )
+    return redirect(
+        url_for("login.login" if is_setup else "reset.forgot_password")
+    )
+
+
+def _render_password_token_form(form, plaintext_token, meta, *, is_setup):
+    return render_template(
+        "reset.html",
+        form=form,
+        reset=True,
+        password_heading="Set Your Password" if is_setup else None,
+        password_legend="Set Password" if is_setup else None,
+        token=plaintext_token,
+        **meta,
+    )
+
+
+def _replace_password_credentials(
+    user,
+    password,
+    *,
+    changed_at,
+    exclude_token_id=None,
+):
+    """Replace password state and invalidate outstanding authentication capabilities."""
+    user.set_password(password)
+    user.must_change_password = False
+    user.rotate_authentication_version()
+    PasswordResetToken.revoke_for_user(
+        user.id,
+        revoked_at=changed_at,
+        exclude_id=exclude_token_id,
+    )
+    UserSession.revoke_for_user(user.id, revoked_at=changed_at)
 
 
 @reset_bp.route("/reset-password/<token>", methods=["GET", "POST"])
@@ -132,15 +173,7 @@ def _password_token_form(token, *, purpose):
             "password setup" if is_setup else "password reset",
             ip,
         )
-        flash(
-            "The password setup link is invalid or has expired."
-            if is_setup
-            else "The password reset link is invalid or has expired.",
-            "danger",
-        )
-        return redirect(
-            url_for("login.login" if is_setup else "reset.forgot_password")
-        )
+        return _password_token_redirect(is_setup)
 
     email = user.email
     if is_locked_out(email, ip):
@@ -150,29 +183,13 @@ def _password_token_form(token, *, purpose):
         )
 
     if not form.validate_on_submit():
-        return render_template(
-            "reset.html",
-            form=form,
-            reset=True,
-            password_heading="Set Your Password" if is_setup else None,
-            password_legend="Set Password" if is_setup else None,
-            token=plaintext_token,
-            **meta,
-        )
+        return _render_password_token_form(form, plaintext_token, meta, is_setup=is_setup)
 
     password = form.password.data
     if old_password_match(user, password):
         flash("New password cannot be the same as your old password.", "danger")
         track_lockout_attempts(email, ip)
-        return render_template(
-            "reset.html",
-            form=form,
-            reset=True,
-            password_heading="Set Your Password" if is_setup else None,
-            password_legend="Set Password" if is_setup else None,
-            token=plaintext_token,
-            **meta,
-        )
+        return _render_password_token_form(form, plaintext_token, meta, is_setup=is_setup)
 
     changed_at = datetime.now(timezone.utc)
     consumed_token = PasswordResetToken.consume(
@@ -187,26 +204,15 @@ def _password_token_form(token, *, purpose):
             "Password setup" if is_setup else "Password reset",
             ip,
         )
-        flash(
-            "The password setup link is invalid or has expired."
-            if is_setup
-            else "The password reset link is invalid or has expired.",
-            "danger",
-        )
-        return redirect(
-            url_for("login.login" if is_setup else "reset.forgot_password")
-        )
+        return _password_token_redirect(is_setup)
 
-    user.set_password(password)
-    user.must_change_password = False
-    user.rotate_authentication_version()
-    user.updated_at = changed_at
-    PasswordResetToken.revoke_for_user(
-        user.id,
-        revoked_at=changed_at,
-        exclude_id=consumed_token.id,
+    _replace_password_credentials(
+        user,
+        password,
+        changed_at=changed_at,
+        exclude_token_id=consumed_token.id,
     )
-    UserSession.revoke_for_user(user.id, revoked_at=changed_at)
+    user.updated_at = changed_at
 
     if audit_activity_enabled():
         log_action(
@@ -392,13 +398,9 @@ def change_password():
 
     user = current_user._get_current_object()
     changed_at = datetime.now(timezone.utc)
-    user.set_password(password)
-    user.must_change_password = False
-    user.rotate_authentication_version()
+    _replace_password_credentials(user, password, changed_at=changed_at)
     user.last_active = changed_at
     user.ip_address = ip
-    PasswordResetToken.revoke_for_user(user.id, revoked_at=changed_at)
-    UserSession.revoke_for_user(user.id, revoked_at=changed_at)
 
     if audit_activity_enabled():
         log_action(

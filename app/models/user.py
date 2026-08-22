@@ -2,7 +2,7 @@
 from ipaddress import ip_address
 from app.models.env_settings import EnvSettings
 from app.core.extensions import db
-from app.core.password_hashing import hash_password, verify_password_hash
+from app.core.hash import hash_password, verify_password_hash
 
 class User(db.Model):
     __tablename__ = "users"

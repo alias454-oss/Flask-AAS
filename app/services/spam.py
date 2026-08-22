@@ -1,4 +1,4 @@
-# app/core/spam.py
+# app/services/spam.py
 import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass

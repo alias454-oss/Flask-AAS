@@ -580,6 +580,16 @@ def render_email(template_name: str, **context) -> tuple[str, str]:
 
 
 # === Business Logic Senders ===
+def _send_template_email(
+    mail_subject: str,
+    to_email: str,
+    template_name: str,
+    **context,
+) -> MailStatus:
+    text, html = render_email(template_name, **context)
+    return send_email(mail_subject, to_email, text, html)
+
+
 def send_contact_email(
     name: str,
     email: str,
@@ -610,14 +620,15 @@ def send_contact_email(
     submitted_subject = submitted_subject or "General inquiry"
     mail_subject = f"Contact Form: {submitted_subject}"
 
-    text, html = render_email(
+    return _send_template_email(
+        mail_subject,
+        recipient,
         "contact",
         name=name,
         email=email,
         subject=submitted_subject,
         message=message,
     )
-    return send_email(mail_subject, recipient, text, html)
 
 
 def send_welcome_email(
@@ -633,12 +644,9 @@ def send_welcome_email(
         _scheme=current_app.config["PREFERRED_URL_SCHEME"],
     )
 
-    text, html = render_email(
-        "welcome",
-        username=username,
-        invite_link=invite_link,
+    return _send_template_email(
+        subject, to_email, "welcome", username=username, invite_link=invite_link
     )
-    return send_email(subject, to_email, text, html)
 
 
 def send_verification_email(
@@ -649,12 +657,9 @@ def send_verification_email(
     site_name = get_mail_site_name()
     subject = f"Verify your email for {site_name}"
 
-    text, html = render_email(
-        "verify_email",
-        username=username,
-        verify_url=verify_url,
+    return _send_template_email(
+        subject, to_email, "verify_email", username=username, verify_url=verify_url
     )
-    return send_email(subject, to_email, text, html)
 
 
 def send_password_setup_email(
@@ -671,12 +676,9 @@ def send_password_setup_email(
     )
     subject = f"Set your password for {site_name}"
 
-    text, html = render_email(
-        "set_password",
-        username=username,
-        setup_url=setup_url,
+    return _send_template_email(
+        subject, to_email, "set_password", username=username, setup_url=setup_url
     )
-    return send_email(subject, to_email, text, html)
 
 
 def send_password_reset_email(to_email: str, token: str) -> MailStatus:
@@ -688,11 +690,9 @@ def send_password_reset_email(to_email: str, token: str) -> MailStatus:
     )
     subject = "Password Reset Request"
 
-    text, html = render_email(
-        "reset_password",
-        reset_url=reset_url,
+    return _send_template_email(
+        subject, to_email, "reset_password", reset_url=reset_url
     )
-    return send_email(subject, to_email, text, html)
 
 
 def send_password_changed_email(
@@ -702,11 +702,9 @@ def send_password_changed_email(
     site_name = get_mail_site_name()
     subject = f"Password changed for {site_name}"
 
-    text, html = render_email(
-        "password_changed",
-        username=username,
+    return _send_template_email(
+        subject, to_email, "password_changed", username=username
     )
-    return send_email(subject, to_email, text, html)
 
 
 def send_mfa_change_email(
@@ -717,9 +715,6 @@ def send_mfa_change_email(
     site_name = get_mail_site_name()
     subject = f"MFA security change for {site_name}"
 
-    text, html = render_email(
-        "mfa_changed",
-        username=username,
-        action=action,
+    return _send_template_email(
+        subject, to_email, "mfa_changed", username=username, action=action
     )
-    return send_email(subject, to_email, text, html)

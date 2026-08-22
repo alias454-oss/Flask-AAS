@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from flask import Blueprint, abort, render_template, current_app, request, flash, redirect, url_for, session
 from flask_login import confirm_login, login_fresh, login_user, logout_user, current_user
 
-from app.core.auth import login_required
+from app.core.decorators import login_required
 from flask_wtf import FlaskForm
 from wtforms import StringField, SubmitField
 from wtforms.validators import DataRequired, Length, Regexp
@@ -22,20 +22,23 @@ from app.core.cache import get_cached_env_settings
 from app.core.extensions import db, limiter
 from app.core.security import get_client_ip, reset_lockout_attempts
 from app.core.meta import page_metadata
-from app.core.inactivity import mark_session_activity
-from app.core.sessions import close_current_session, create_login_session
-from app.core.mailer import send_mfa_change_email
+from app.services.sessions import mark_session_activity
+from app.services.sessions import (
+    clear_browser_session,
+    close_current_session,
+    create_login_session,
+)
+from app.services.mailer import send_mfa_change_email
 from app.core.decorators import log_view_action
-from app.core.trackers import (
+from app.services.trackers import (
     LOGIN_FAILURE_MFA_EXPIRED,
     LOGIN_FAILURE_MFA_FAILED,
     LOGIN_FAILURE_REJECTED,
     audit_activity_enabled,
-    audit_login_enabled,
     current_route,
     log_action,
     log_action_isolated,
-    log_login,
+    audit_login_attempt,
 )
 from app.models import MfaRecoveryCode, User
 
@@ -67,14 +70,9 @@ def _pending_login_identity(user=None):
 
 def _log_pending_mfa_login(success, failure_reason=None, user=None):
     username, ip = _pending_login_identity(user)
-    if not username or not audit_login_enabled():
-        return
-
-    log_login(
-        username=username,
-        ip=ip,
-        user_agent=request.headers.get('User-Agent'),
-        referer=request.referrer,
+    audit_login_attempt(
+        username,
+        ip,
         success=success,
         failure_reason=failure_reason,
     )
@@ -188,8 +186,7 @@ def _clear_pending_mfa_state():
 def _force_full_login(message):
     close_current_session()
     logout_user()
-    session.clear()
-    session['_remember'] = 'clear'
+    clear_browser_session()
     flash(message, "danger")
     return redirect(url_for('login.login'))
 
@@ -198,6 +195,46 @@ def _record_failed_attempt(session_key):
     fail_count = session.get(session_key, 0) + 1
     session[session_key] = fail_count
     return fail_count
+
+
+def _log_recovery_code_event(user, action, ip):
+    log_action_isolated(
+        user_id=user.id,
+        action=action,
+        target=current_route(),
+        extra_data={"ip": ip},
+    )
+
+
+def _record_invalid_mfa_code(user, code, ip, session_key):
+    db.session.rollback()
+    if _looks_like_recovery_code(code) and audit_activity_enabled():
+        _log_recovery_code_event(user, "mfa_recovery_code_failed", ip)
+    return _record_failed_attempt(session_key)
+
+
+def _reject_excessive_mfa_failures(user, user_id, ip):
+    _log_pending_mfa_login(
+        success=False,
+        failure_reason=LOGIN_FAILURE_MFA_FAILED,
+        user=user,
+    )
+    logger.warning(f"Too many MFA failures for user_id={user_id} ip={ip}")
+    session.clear()
+    flash("Too many invalid attempts. Please log in again.", "danger")
+    return redirect(url_for('login.login'))
+
+
+def _reject_ineligible_pending_login(user, failure_reason, ip):
+    _log_pending_mfa_login(
+        success=False,
+        failure_reason=failure_reason,
+        user=user,
+    )
+    logger.warning(f"MFA login rejected for user_id={user.id} ip={ip}")
+    session.clear()
+    flash("This account is not currently available for sign-in.", "warning")
+    return redirect(url_for('login.login'))
 
 
 def _notify_mfa_change(user, action):
@@ -343,6 +380,70 @@ class DisableMfaForm(FlaskForm):
 class RecoveryCodeForm(FlaskForm):
     submit = SubmitField("Generate New Recovery Codes")
 
+
+def _render_recovery_codes(recovery_codes, *, form=None):
+    return render_template(
+        "mfa/recovery_codes.html",
+        form=form or RecoveryCodeForm(),
+        recovery_codes=recovery_codes,
+    )
+
+
+def _render_authenticator_form(form, secret, user, **context):
+    env = get_cached_env_settings()
+    site_name = env.site_name if env.site_name else current_app.config.get(
+        "SITE_NAME", "YourApp"
+    )
+    return render_template(
+        "mfa/setup.html",
+        form=form,
+        qr_base64=generate_qr_image(secret, user.username, site_name),
+        **context,
+    )
+
+
+def _commit_authenticator_change(
+    user,
+    secret,
+    counter,
+    *,
+    change_action,
+    recovery_action,
+    notification_action,
+    enable=False,
+    include_roles=False,
+):
+    ip = get_client_ip()
+    user.otp_secret = secret
+    user.pending_otp_secret = None
+    user.pending_otp_created_at = None
+    user.last_totp_counter = counter
+    if enable:
+        user.mfa_enabled = True
+
+    recovery_codes = MfaRecoveryCode.generate_for_user(user)
+    if audit_activity_enabled():
+        extra_data = {"ip": ip}
+        if include_roles:
+            extra_data["user_roles"] = [role.name for role in user.roles]
+        log_action(
+            user_id=user.id,
+            action=change_action,
+            target=current_route(),
+            extra_data=extra_data,
+        )
+        log_action(
+            user_id=user.id,
+            action=recovery_action,
+            target=current_route(),
+            extra_data={"ip": ip},
+        )
+
+    db.session.commit()
+    _mark_mfa_verified()
+    _notify_mfa_change(user, notification_action)
+    return recovery_codes
+
 @mfa_bp.route('/mfa/setup', methods=['GET', 'POST'])
 @limiter.limit("10 per minute", key_func=get_client_ip)
 @log_view_action()
@@ -357,8 +458,7 @@ def mfa_setup():
         logger.warning(f"Non-fresh MFA setup attempt for user_id={user.id} ip={ip}")
         close_current_session()
         logout_user()
-        session.clear()
-        session['_remember'] = 'clear'
+        clear_browser_session()
         flash("Please log in again before enabling MFA.", "warning")
         return redirect(url_for('login.login'))
 
@@ -376,51 +476,24 @@ def mfa_setup():
         code = form.code.data.strip()
         counter = _matching_totp_counter(pending_secret, code)
         if counter is not None:
-            user.otp_secret = pending_secret
-            user.pending_otp_secret = None
-            user.pending_otp_created_at = None
-            user.last_totp_counter = counter
-            user.mfa_enabled = True
-
-            if audit_activity_enabled():
-                log_action(
-                    user_id=user.id,
-                    action="mfa_enabled",
-                    target=current_route(),
-                    extra_data={
-                        "ip": ip,
-                        "user_roles": [role.name for role in user.roles]
-                    }
-                )
-
-            recovery_codes = MfaRecoveryCode.generate_for_user(user)
-            if audit_activity_enabled():
-                log_action(
-                    user_id=user.id,
-                    action="mfa_recovery_codes_generated",
-                    target=current_route(),
-                    extra_data={"ip": ip},
-                )
-            db.session.commit()
-            _mark_mfa_verified()
-            _notify_mfa_change(user, 'enabled')
-            logger.info(f"2FA setup completed successfully for user_id={user.id} ip={ip}")
-
-            flash("2FA successfully enabled.", "success")
-            recovery_form = RecoveryCodeForm()
-            return render_template(
-                'mfa/recovery_codes.html',
-                form=recovery_form,
-                recovery_codes=recovery_codes,
+            recovery_codes = _commit_authenticator_change(
+                user,
+                pending_secret,
+                counter,
+                change_action="mfa_enabled",
+                recovery_action="mfa_recovery_codes_generated",
+                notification_action="enabled",
+                enable=True,
+                include_roles=True,
             )
+            logger.info(f"2FA setup completed successfully for user_id={user.id} ip={ip}")
+            flash("2FA successfully enabled.", "success")
+            return _render_recovery_codes(recovery_codes)
 
         logger.warning(f"Invalid 2FA setup code attempt for user_id={user.id} ip={ip}")
         flash("Invalid code. Try again.", "danger")
 
-    env = get_cached_env_settings()
-    site_name = env.site_name if env.site_name else current_app.config.get('SITE_NAME', 'YourApp')
-    qr_base64 = generate_qr_image(pending_secret, user.username, site_name)
-    return render_template('mfa/setup.html', form=form, qr_base64=qr_base64, **meta)
+    return _render_authenticator_form(form, pending_secret, user, **meta)
 
 
 @mfa_bp.route('/mfa/verify', methods=['GET', 'POST'])
@@ -458,30 +531,14 @@ def mfa_verify():
 
     failure_reason = user.login_eligibility_failure
     if failure_reason:
-        _log_pending_mfa_login(
-            success=False,
-            failure_reason=failure_reason,
-            user=user,
-        )
-        logger.warning(f"MFA login rejected for user_id={user_id} ip={ip}")
         logout_user()
-        session.clear()
-        flash("This account is not currently available for sign-in.", "warning")
-        return redirect(url_for('login.login'))
+        return _reject_ineligible_pending_login(user, failure_reason, ip)
 
     form = TwoFactorForm()
 
     fail_count = session.get('mfa_fail_count', 0)
     if fail_count >= MFA_MAX_ATTEMPTS:
-        _log_pending_mfa_login(
-            success=False,
-            failure_reason=LOGIN_FAILURE_MFA_FAILED,
-            user=user,
-        )
-        logger.warning(f"Too many MFA failures for user_id={user_id} ip={ip}")
-        session.clear()
-        flash("Too many invalid attempts. Please log in again.", "danger")
-        return redirect(url_for('login.login'))
+        return _reject_excessive_mfa_failures(user, user_id, ip)
 
     if form.validate_on_submit():
         code = form.code.data.strip()
@@ -490,17 +547,9 @@ def mfa_verify():
             db.session.refresh(user)
             failure_reason = user.login_eligibility_failure
             if failure_reason:
-                _log_pending_mfa_login(
-                    success=False,
-                    failure_reason=failure_reason,
-                    user=user,
-                )
-                logger.warning(f"MFA login rejected for user_id={user_id} ip={ip}")
                 db.session.rollback()
                 logout_user()
-                session.clear()
-                flash("This account is not currently available for sign-in.", "warning")
-                return redirect(url_for('login.login'))
+                return _reject_ineligible_pending_login(user, failure_reason, ip)
 
             remember = bool(session.get('remember_me', False))
             username, login_ip = _pending_login_identity(user)
@@ -524,15 +573,7 @@ def mfa_verify():
             db.session.refresh(user)
             failure_reason = user.login_eligibility_failure
             if failure_reason:
-                _log_pending_mfa_login(
-                    success=False,
-                    failure_reason=failure_reason,
-                    user=user,
-                )
-                logger.warning(f"MFA login rejected for user_id={user_id} ip={ip}")
-                session.clear()
-                flash("This account is not currently available for sign-in.", "warning")
-                return redirect(url_for('login.login'))
+                return _reject_ineligible_pending_login(user, failure_reason, ip)
 
             try:
                 create_login_session(
@@ -577,8 +618,7 @@ def mfa_verify():
             except SQLAlchemyError:
                 db.session.rollback()
                 logout_user()
-                session.clear()
-                session['_remember'] = 'clear'
+                clear_browser_session()
                 user.clear_session_identity()
                 _log_pending_mfa_login(
                     success=False,
@@ -610,12 +650,7 @@ def mfa_verify():
             mark_session_activity()
 
             if verification_method == 'recovery' and audit_activity_enabled():
-                log_action_isolated(
-                    user_id=user.id,
-                    action="mfa_recovery_code_used",
-                    target=current_route(),
-                    extra_data={"ip": ip},
-                )
+                _log_recovery_code_event(user, "mfa_recovery_code_used", ip)
 
             logger.info(f"MFA verification succeeded for user_id={user.id} ip={ip}")
             flash("2FA verification successful", "success")
@@ -625,24 +660,11 @@ def mfa_verify():
 
         db.session.rollback()
         if _looks_like_recovery_code(code) and audit_activity_enabled():
-            log_action_isolated(
-                user_id=user.id,
-                action="mfa_recovery_code_failed",
-                target=current_route(),
-                extra_data={"ip": ip},
-            )
+            _log_recovery_code_event(user, "mfa_recovery_code_failed", ip)
 
         fail_count += 1
         if fail_count >= MFA_MAX_ATTEMPTS:
-            _log_pending_mfa_login(
-                success=False,
-                failure_reason=LOGIN_FAILURE_MFA_FAILED,
-                user=user,
-            )
-            logger.warning(f"Too many MFA failures for user_id={user_id} ip={ip}")
-            session.clear()
-            flash("Too many invalid attempts. Please log in again.", "danger")
-            return redirect(url_for('login.login'))
+            return _reject_excessive_mfa_failures(user, user_id, ip)
 
         session['mfa_fail_count'] = fail_count
         logger.warning(f"Invalid MFA code attempt {fail_count} for user_id={user_id} ip={ip}")
@@ -703,11 +725,8 @@ def mfa_reauth():
                     extra_data={"ip": get_client_ip()},
                 )
                 if verification_method == 'recovery':
-                    log_action_isolated(
-                        user_id=current_user.id,
-                        action="mfa_recovery_code_used",
-                        target=current_route(),
-                        extra_data={"ip": get_client_ip()},
+                    _log_recovery_code_event(
+                        current_user, "mfa_recovery_code_used", get_client_ip()
                     )
 
             action = session.pop('mfa_reauth_action', None)
@@ -731,19 +750,13 @@ def mfa_reauth():
             flash("MFA verification successful.", "success")
             return redirect(url_for(endpoint))
 
-        db.session.rollback()
-        if _looks_like_recovery_code(code) and audit_activity_enabled():
-            log_action_isolated(
-                user_id=current_user.id,
-                action="mfa_recovery_code_failed",
-                target=current_route(),
-                extra_data={"ip": get_client_ip()},
-            )
-
-        fail_count = _record_failed_attempt('mfa_reauth_fail_count')
+        ip = get_client_ip()
+        fail_count = _record_invalid_mfa_code(
+            current_user, code, ip, 'mfa_reauth_fail_count'
+        )
         logger.warning(
             f"Invalid MFA reauthentication attempt {fail_count} for "
-            f"user_id={current_user.id} ip={get_client_ip()}"
+            f"user_id={current_user.id} ip={ip}"
         )
         if fail_count >= MFA_MAX_ATTEMPTS:
             return _force_full_login("Too many invalid attempts. Please log in again.")
@@ -768,46 +781,23 @@ def mfa_replace():
     if form.validate_on_submit():
         counter = _matching_totp_counter(pending_secret, form.code.data.strip())
         if counter is not None:
-            current_user.otp_secret = pending_secret
-            current_user.pending_otp_secret = None
-            current_user.pending_otp_created_at = None
-            current_user.last_totp_counter = counter
-            recovery_codes = MfaRecoveryCode.generate_for_user(current_user)
-
-            if audit_activity_enabled():
-                log_action(
-                    user_id=current_user.id,
-                    action="mfa_replaced",
-                    target=current_route(),
-                    extra_data={"ip": get_client_ip()},
-                )
-                log_action(
-                    user_id=current_user.id,
-                    action="mfa_recovery_codes_regenerated",
-                    target=current_route(),
-                    extra_data={"ip": get_client_ip()},
-                )
-
-            db.session.commit()
-            _mark_mfa_verified()
-            _notify_mfa_change(current_user, 'replaced')
-            flash("Authenticator replaced successfully.", "success")
-            recovery_form = RecoveryCodeForm()
-            return render_template(
-                'mfa/recovery_codes.html',
-                form=recovery_form,
-                recovery_codes=recovery_codes,
+            recovery_codes = _commit_authenticator_change(
+                current_user,
+                pending_secret,
+                counter,
+                change_action="mfa_replaced",
+                recovery_action="mfa_recovery_codes_regenerated",
+                notification_action="replaced",
             )
+            flash("Authenticator replaced successfully.", "success")
+            return _render_recovery_codes(recovery_codes)
 
         flash("Invalid code. Try again.", "danger")
 
-    env = get_cached_env_settings()
-    site_name = env.site_name if env.site_name else current_app.config.get('SITE_NAME', 'YourApp')
-    qr_base64 = generate_qr_image(pending_secret, current_user.username, site_name)
-    return render_template(
-        'mfa/setup.html',
-        form=form,
-        qr_base64=qr_base64,
+    return _render_authenticator_form(
+        form,
+        pending_secret,
+        current_user,
         form_action=url_for('mfa.mfa_replace'),
         heading="Replace Two-Factor Authentication",
         legend="Replace MFA Token",
@@ -839,18 +829,9 @@ def mfa_recovery_codes():
         db.session.commit()
         _notify_mfa_change(current_user, 'recovery_codes_regenerated')
         flash("New recovery codes generated. Previous codes are no longer valid.", "success")
-        return render_template(
-            'mfa/recovery_codes.html',
-            form=form,
-            recovery_codes=recovery_codes,
-        )
+        return _render_recovery_codes(recovery_codes, form=form)
 
-    recovery_codes = None
-    return render_template(
-        'mfa/recovery_codes.html',
-        form=form,
-        recovery_codes=recovery_codes,
-    )
+    return _render_recovery_codes(None, form=form)
 
 
 @mfa_bp.route('/mfa/disable', methods=['GET', 'POST'])
@@ -876,16 +857,9 @@ def mfa_disable():
         ip = get_client_ip()
         verification_method = _verify_mfa_code(current_user, form.code.data.strip())
         if not verification_method:
-            db.session.rollback()
-            if _looks_like_recovery_code(form.code.data) and audit_activity_enabled():
-                log_action_isolated(
-                    user_id=current_user.id,
-                    action="mfa_recovery_code_failed",
-                    target=current_route(),
-                    extra_data={"ip": ip},
-                )
-
-            fail_count = _record_failed_attempt('mfa_disable_fail_count')
+            fail_count = _record_invalid_mfa_code(
+                current_user, form.code.data, ip, 'mfa_disable_fail_count'
+            )
             logger.warning(
                 f"Invalid MFA disable code attempt {fail_count} for "
                 f"user_id={current_user.id} ip={ip}"

@@ -3,10 +3,10 @@ import logging
 from flask import Blueprint, render_template
 from flask_login import current_user
 
-from app.core.auth import login_required
+from app.core.decorators import login_required
 
 from app.core.extensions import limiter
-from app.core.locations import country_name, zone_name
+from app.services.geo import country_name, zone_name
 from app.core.meta import page_metadata
 from app.core.decorators import log_view_action
 

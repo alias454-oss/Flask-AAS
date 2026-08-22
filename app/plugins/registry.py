@@ -100,16 +100,39 @@ def register_plugin(
     return registration
 
 
+def validate_registered_plugin(
+    registration: PluginRegistration,
+    plugin: ApplicationPlugin,
+) -> ApplicationPlugin:
+    """Validate the Plugin API contract and persisted registration identity."""
+    validate_plugin_contract(plugin)
+    if registration.plugin_id != plugin.plugin_id:
+        raise PluginRegistrationError(
+            f"Registration {registration.plugin_id!r} does not match "
+            f"plugin {plugin.plugin_id!r}"
+        )
+    return plugin
+
+
 def refresh_configuration(
     registration: PluginRegistration,
     plugin: ApplicationPlugin,
 ) -> PluginConfiguration:
     """Refresh the persisted configured status from current plugin reality."""
 
-    _require_matching_plugin(registration, plugin)
+    validate_registered_plugin(registration, plugin)
     configuration = _configuration(plugin)
     registration.configured = configuration.configured
     return configuration
+
+
+def _schema_current(plugin: ApplicationPlugin) -> bool:
+    manifest = getattr(plugin, "manifest", None)
+    return (
+        manifest is None
+        or manifest.migrations is None
+        or PluginMigrationManager(manifest).schema_current()
+    )
 
 
 def enable_plugin(
@@ -118,25 +141,21 @@ def enable_plugin(
 ) -> PluginConfiguration:
     """Request plugin activation while preserving independent config status."""
 
-    validate_plugin_contract(plugin)
-    _require_matching_plugin(registration, plugin)
+    validate_registered_plugin(registration, plugin)
 
     # Enabling is the explicit trust/code-execution boundary, but it is not a
     # schema-upgrade operation. A plugin with declared migrations remains enabled
     # but unavailable until its own operator CLI advances that schema to head.
-    manifest = getattr(plugin, "manifest", None)
-    if manifest is not None and manifest.migrations is not None:
-        manager = PluginMigrationManager(manifest)
-        if not manager.schema_current():
-            registration.enabled = True
-            registration.configured = False
-            return PluginConfiguration(
-                configured=False,
-                reason=(
-                    f"Plugin schema is not current. Run 'python manage.py plugin run "
-                    f"{plugin.plugin_id} db upgrade', then use Reload App Config."
-                ),
-            )
+    if not _schema_current(plugin):
+        registration.enabled = True
+        registration.configured = False
+        return PluginConfiguration(
+            configured=False,
+            reason=(
+                f"Plugin schema is not current. Run 'python manage.py plugin run "
+                f"{plugin.plugin_id} db upgrade', then use Reload App Config."
+            ),
+        )
 
     plugin.prepare_enable()
     configuration = refresh_configuration(registration, plugin)
@@ -155,8 +174,7 @@ def disable_plugin(
     deletion and the enabled-state change can commit or roll back together.
     """
 
-    validate_plugin_contract(plugin)
-    _require_matching_plugin(registration, plugin)
+    validate_registered_plugin(registration, plugin)
 
     # Clear secrets before changing activation state. If cleanup fails, callers
     # can roll back without recording a successful disable operation. Plugins
@@ -164,28 +182,14 @@ def disable_plugin(
     # exist yet.
     plugin.clear_secrets()
 
-    manifest = getattr(plugin, "manifest", None)
-    if manifest is not None and manifest.migrations is not None:
-        manager = PluginMigrationManager(manifest)
-        if not manager.schema_current():
-            registration.configured = False
-            registration.enabled = False
-            return PluginConfiguration(
-                configured=False,
-                reason="Plugin schema is not current.",
-            )
+    if not _schema_current(plugin):
+        registration.configured = False
+        registration.enabled = False
+        return PluginConfiguration(
+            configured=False,
+            reason="Plugin schema is not current.",
+        )
 
     configuration = refresh_configuration(registration, plugin)
     registration.enabled = False
     return configuration
-
-
-def _require_matching_plugin(
-    registration: PluginRegistration,
-    plugin: ApplicationPlugin,
-) -> None:
-    if registration.plugin_id != plugin.plugin_id:
-        raise PluginRegistrationError(
-            f"Registration {registration.plugin_id!r} does not match "
-            f"plugin {plugin.plugin_id!r}"
-        )

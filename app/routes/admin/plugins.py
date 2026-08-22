@@ -8,17 +8,21 @@ import logging
 from flask import Blueprint, abort, current_app, flash, redirect, render_template, request, url_for
 from flask_login import current_user
 
-from app.core.auth import admin_required, login_required
+from app.core.decorators import admin_required, login_required
 from app.core.decorators import log_view_action
 from app.core.extensions import db, limiter
 from app.core.meta import page_metadata
 from app.core.security import get_client_ip
-from app.core.trackers import get_admin_quick_stats, log_action
+from app.services.trackers import (
+    audit_failure_metadata,
+    get_admin_quick_stats,
+    log_action,
+    log_action_isolated,
+)
 from app.models import EnvSettings, PluginRegistration
 from app.plugins.interface import (
     PluginDataset,
     validate_dataset_action_result,
-    validate_plugin_contract,
     validate_plugin_datasets,
 )
 from app.plugins.loader import (
@@ -30,7 +34,11 @@ from app.plugins.loader import (
     resolve_plugin,
 )
 from app.plugins.migrations import PluginMigrationManager
-from app.plugins.registry import disable_plugin, enable_plugin
+from app.plugins.registry import (
+    disable_plugin,
+    enable_plugin,
+    validate_registered_plugin,
+)
 from app.plugins.reload import AppConfigReloadUnavailable, reload_app_config
 
 logger = logging.getLogger(__name__)
@@ -54,6 +62,21 @@ class PluginAdminRow:
     dataset_error: str | None
 
 
+def _request_audit_metadata():
+    return {
+        "ip": get_client_ip(),
+        "user_agent": request.headers.get("User-Agent"),
+    }
+
+
+def _plugin_audit_metadata(registration, **extra_data):
+    return {
+        "plugin_id": registration.plugin_id,
+        **extra_data,
+        **_request_audit_metadata(),
+    }
+
+
 def _schema_upgrade_required(registration, state):
     if (
         not registration.enabled
@@ -64,7 +87,6 @@ def _schema_upgrade_required(registration, state):
 
     try:
         plugin = _registered_plugin(registration)
-        validate_plugin_contract(plugin)
         manifest = getattr(plugin, "manifest", None)
         if manifest is None or manifest.migrations is None:
             return True
@@ -92,12 +114,7 @@ def _admin_datasets(registration, state, runtime):
         plugin = runtime.instance_for(registration.plugin_id)
         if plugin is None:
             return (), None
-        validate_plugin_contract(plugin)
-        if plugin.plugin_id != registration.plugin_id:
-            raise ValueError(
-                f"Registered plugin ID {registration.plugin_id!r} does not match "
-                f"loaded plugin ID {plugin.plugin_id!r}"
-            )
+        validate_registered_plugin(registration, plugin)
         return validate_plugin_datasets(plugin), None
     except Exception:
         logger.exception(
@@ -113,38 +130,16 @@ def _admin_rows(registrations, env, runtime):
 
     for registration in registrations:
         state = runtime.state_for(registration.plugin_id)
-        if state is None:
-            runtime_status = "NOT_LOADED"
-            runtime_reason = None
-            runtime_name = None
-            runtime_version = None
-        else:
-            runtime_status = state.status
-            runtime_reason = state.reason
-            runtime_name = state.name
-            runtime_version = state.version
-
-        access_capable_runtime = (
-            state is not None
-            and state.status in {STATUS_ACTIVE, STATUS_NEEDS_CONFIGURATION}
-        )
-        loaded_at_startup = state is not None and state.status != STATUS_DISABLED
+        status = state.status if state is not None else None
+        runtime_configuration_mismatch = (
+            status == STATUS_NEEDS_CONFIGURATION and registration.configured
+        ) or (status == STATUS_ACTIVE and not registration.configured)
+        loaded_at_startup = status not in {None, STATUS_DISABLED}
         registration_restart_required = (
             registration.enabled != loaded_at_startup
             or (
                 registration.enabled
-                and state is not None
-                and (
-                    state.status == STATUS_NEEDS_MIGRATION
-                    or (
-                        state.status == STATUS_NEEDS_CONFIGURATION
-                        and registration.configured
-                    )
-                    or (
-                        state.status == STATUS_ACTIVE
-                        and not registration.configured
-                    )
-                )
+                and (status == STATUS_NEEDS_MIGRATION or runtime_configuration_mismatch)
             )
         )
 
@@ -153,8 +148,7 @@ def _admin_rows(registrations, env, runtime):
             reload_blocker = "Upgrade the database schema first."
         elif (
             registration.enabled
-            and state is not None
-            and state.status == STATUS_NEEDS_CONFIGURATION
+            and status == STATUS_NEEDS_CONFIGURATION
             and not registration.configured
         ):
             reload_blocker = "Complete required plugin configuration first."
@@ -163,11 +157,11 @@ def _admin_rows(registrations, env, runtime):
 
         if not runtime.system_enabled:
             access_status = "Unavailable"
-        elif state is not None and state.status == STATUS_NEEDS_MIGRATION:
+        elif status == STATUS_NEEDS_MIGRATION:
             access_status = "Needs migration"
-        elif state is not None and state.status == STATUS_NEEDS_CONFIGURATION:
+        elif status == STATUS_NEEDS_CONFIGURATION:
             access_status = "Needs configuration"
-        elif not access_capable_runtime:
+        elif status != STATUS_ACTIVE:
             access_status = "Unavailable"
         elif not registration.enabled:
             access_status = "Disabled"
@@ -180,16 +174,14 @@ def _admin_rows(registrations, env, runtime):
         rows.append(
             PluginAdminRow(
                 registration=registration,
-                runtime_status=runtime_status,
-                runtime_reason=runtime_reason,
-                runtime_name=runtime_name,
-                runtime_version=runtime_version,
+                runtime_status=status or "NOT_LOADED",
+                runtime_reason=state.reason if state is not None else None,
+                runtime_name=state.name if state is not None else None,
+                runtime_version=state.version if state is not None else None,
                 access_status=access_status,
                 can_upgrade_schema=schema_upgrade_required,
                 reload_blocker=reload_blocker,
-                restart_required=(
-                    global_restart_required or registration_restart_required
-                ),
+                restart_required=global_restart_required or registration_restart_required,
                 configuration_endpoint=(
                     state.configuration_endpoint if state is not None else None
                 ),
@@ -202,21 +194,55 @@ def _admin_rows(registrations, env, runtime):
 
 
 def _registered_plugin(registration):
-    plugin = resolve_plugin(registration.import_path)
-    return plugin
+    return validate_registered_plugin(
+        registration,
+        resolve_plugin(registration.import_path),
+    )
+
+
+def _persist_plugin_activation(registration, *, enabled):
+    plugin = _registered_plugin(registration)
+    if enabled:
+        configuration = enable_plugin(registration, plugin)
+        action = "enable_plugin"
+        audit_state = {"configured": configuration.configured}
+        log_message = (
+            "Admin user=%s enabled plugin=%s configured=%s "
+            "app_config_reload_required=True"
+        )
+    else:
+        configuration = disable_plugin(registration, plugin)
+        action = "disable_plugin"
+        audit_state = {"configured_after_cleanup": configuration.configured}
+        log_message = (
+            "Admin user=%s disabled plugin=%s configured=%s "
+            "secrets_cleared=True app_config_reload_required=True"
+        )
+
+    log_action(
+        action=action,
+        user_id=current_user.id,
+        target=f"/admin/plugins/{registration.id}",
+        extra_data=_plugin_audit_metadata(registration, **audit_state),
+    )
+    db.session.commit()
+    logger.info(
+        log_message,
+        current_user.username,
+        registration.plugin_id,
+        configuration.configured,
+    )
+    return configuration
 
 
 def _app_reload_required(env, runtime, rows):
     plugin_system_requested = bool(env and env.enable_plugins)
-
     if plugin_system_requested != runtime.system_enabled:
-        if not plugin_system_requested:
-            return True
-        return any(row.registration.enabled for row in rows)
-
-    return plugin_system_requested and (
-        any(row.restart_required for row in rows)
-        or any(row.reload_blocker for row in rows)
+        return not plugin_system_requested or any(
+            row.registration.enabled for row in rows
+        )
+    return plugin_system_requested and any(
+        row.restart_required or row.reload_blocker for row in rows
     )
 
 
@@ -250,50 +276,41 @@ def list_plugins():
     )
 
 
-@plugins_bp.route("/<int:registration_id>/enable", methods=["POST"])
-@limiter.limit("10 per minute", key_func=get_client_ip)
-@login_required
-@admin_required
-def enable(registration_id):
+def _change_plugin_activation(registration_id, *, enabled):
     registration = db.session.get(PluginRegistration, registration_id)
     if registration is None:
         return "Plugin registration not found", 404
 
-    if registration.enabled:
-        flash(f"Plugin {registration.plugin_id} is already enabled.", "warning")
+    verb = "enable" if enabled else "disable"
+    if registration.enabled == enabled:
+        flash(
+            f"Plugin {registration.plugin_id} is already {verb}d.",
+            "warning",
+        )
         return redirect(url_for("plugins.list_plugins"))
 
     try:
-        plugin = _registered_plugin(registration)
-        configuration = enable_plugin(registration, plugin)
-        log_action(
-            action="enable_plugin",
-            user_id=current_user.id,
-            target=f"/admin/plugins/{registration.id}",
-            extra_data={
-                "plugin_id": registration.plugin_id,
-                "configured": configuration.configured,
-                "ip": get_client_ip(),
-                "user_agent": request.headers.get("User-Agent"),
-            },
-        )
-        db.session.commit()
-        logger.info(
-            "Admin user=%s enabled plugin=%s configured=%s app_config_reload_required=True",
-            current_user.username,
-            registration.plugin_id,
-            configuration.configured,
-        )
+        configuration = _persist_plugin_activation(registration, enabled=enabled)
     except Exception:
         db.session.rollback()
-        logger.exception("Failed to enable plugin %s", registration.plugin_id)
-        flash(
-            f"Plugin {registration.plugin_id} could not be enabled. Check the logs.",
-            "error",
+        logger.exception("Failed to %s plugin %s", verb, registration.plugin_id)
+        message = (
+            f"Plugin {registration.plugin_id} could not be enabled. Check the logs."
+            if enabled
+            else f"Plugin {registration.plugin_id} could not be disabled. "
+            "Managed-secret cleanup did not complete."
         )
+        flash(message, "error")
         return redirect(url_for("plugins.list_plugins"))
 
-    if configuration.configured:
+    if not enabled:
+        flash(
+            f"Plugin {registration.plugin_id} disabled; application access is blocked "
+            "immediately and plugin-managed secrets were cleared. Use Reload App Config "
+            "once after finishing application changes to unload its runtime surfaces.",
+            "success",
+        )
+    elif configuration.configured:
         flash(
             f"Plugin {registration.plugin_id} enabled. Finish selecting applications, "
             "then use Reload App Config once to activate the requested runtime state.",
@@ -307,6 +324,14 @@ def enable(registration_id):
         )
 
     return redirect(url_for("plugins.list_plugins"))
+
+
+@plugins_bp.route("/<int:registration_id>/enable", methods=["POST"])
+@limiter.limit("10 per minute", key_func=get_client_ip)
+@login_required
+@admin_required
+def enable(registration_id):
+    return _change_plugin_activation(registration_id, enabled=True)
 
 
 @plugins_bp.post("/<int:registration_id>/datasets/<string:dataset_key>/run")
@@ -348,12 +373,7 @@ def run_dataset_action(registration_id, dataset_key):
         return redirect(url_for("plugins.list_plugins"))
 
     try:
-        validate_plugin_contract(plugin)
-        if plugin.plugin_id != registration.plugin_id:
-            raise ValueError(
-                f"Registered plugin ID {registration.plugin_id!r} does not match "
-                f"loaded plugin ID {plugin.plugin_id!r}"
-            )
+        validate_registered_plugin(registration, plugin)
         datasets = validate_plugin_datasets(plugin)
     except Exception:
         logger.exception(
@@ -382,13 +402,11 @@ def run_dataset_action(registration_id, dataset_key):
             action="run_plugin_dataset_action",
             user_id=current_user.id,
             target=f"/admin/plugins/{registration.id}/datasets/{dataset_key}",
-            extra_data={
-                "plugin_id": registration.plugin_id,
-                "dataset_key": dataset_key,
-                "outcome": "success",
-                "ip": get_client_ip(),
-                "user_agent": request.headers.get("User-Agent"),
-            },
+            extra_data=_plugin_audit_metadata(
+                registration,
+                dataset_key=dataset_key,
+                outcome="success",
+            ),
         )
         db.session.commit()
     except Exception as exc:
@@ -399,28 +417,15 @@ def run_dataset_action(registration_id, dataset_key):
             registration.plugin_id,
             dataset_key,
         )
-        try:
-            log_action(
-                action="run_plugin_dataset_action",
-                user_id=current_user.id,
-                target=f"/admin/plugins/{registration.id}/datasets/{dataset_key}",
-                extra_data={
-                    "plugin_id": registration.plugin_id,
-                    "dataset_key": dataset_key,
-                    "outcome": "failed",
-                    "error_type": type(exc).__name__,
-                    "ip": get_client_ip(),
-                    "user_agent": request.headers.get("User-Agent"),
-                },
-            )
-            db.session.commit()
-        except Exception:
-            db.session.rollback()
-            logger.exception(
-                "Failed to persist plugin dataset-action failure audit plugin=%s dataset=%s",
-                registration.plugin_id,
-                dataset_key,
-            )
+        log_action_isolated(
+            action="run_plugin_dataset_action",
+            user_id=current_user.id,
+            target=f"/admin/plugins/{registration.id}/datasets/{dataset_key}",
+            extra_data=audit_failure_metadata(
+                exc,
+                **_plugin_audit_metadata(registration, dataset_key=dataset_key),
+            ),
+        )
         flash(
             f"Plugin {registration.plugin_id} application-data action failed. "
             "Check the application logs.",
@@ -443,53 +448,7 @@ def run_dataset_action(registration_id, dataset_key):
 @login_required
 @admin_required
 def disable(registration_id):
-    registration = db.session.get(PluginRegistration, registration_id)
-    if registration is None:
-        return "Plugin registration not found", 404
-
-    if not registration.enabled:
-        flash(f"Plugin {registration.plugin_id} is already disabled.", "warning")
-        return redirect(url_for("plugins.list_plugins"))
-
-    try:
-        plugin = _registered_plugin(registration)
-        configuration = disable_plugin(registration, plugin)
-        log_action(
-            action="disable_plugin",
-            user_id=current_user.id,
-            target=f"/admin/plugins/{registration.id}",
-            extra_data={
-                "plugin_id": registration.plugin_id,
-                "configured_after_cleanup": configuration.configured,
-                "ip": get_client_ip(),
-                "user_agent": request.headers.get("User-Agent"),
-            },
-        )
-        db.session.commit()
-        logger.info(
-            "Admin user=%s disabled plugin=%s configured=%s "
-            "secrets_cleared=True app_config_reload_required=True",
-            current_user.username,
-            registration.plugin_id,
-            configuration.configured,
-        )
-    except Exception:
-        db.session.rollback()
-        logger.exception("Failed to disable plugin %s", registration.plugin_id)
-        flash(
-            f"Plugin {registration.plugin_id} could not be disabled. "
-            "Managed-secret cleanup did not complete.",
-            "error",
-        )
-        return redirect(url_for("plugins.list_plugins"))
-
-    flash(
-        f"Plugin {registration.plugin_id} disabled; application access is blocked "
-        "immediately and plugin-managed secrets were cleared. Use Reload App Config "
-        "once after finishing application changes to unload its runtime surfaces.",
-        "success",
-    )
-    return redirect(url_for("plugins.list_plugins"))
+    return _change_plugin_activation(registration_id, enabled=False)
 
 
 @plugins_bp.route("/<int:registration_id>/upgrade-schema", methods=["POST"])
@@ -512,12 +471,6 @@ def upgrade_schema(registration_id):
     target_revision = None
     try:
         plugin = _registered_plugin(registration)
-        validate_plugin_contract(plugin)
-        if plugin.plugin_id != registration.plugin_id:
-            raise ValueError(
-                f"Registered plugin ID {registration.plugin_id!r} does not match "
-                f"loaded plugin ID {plugin.plugin_id!r}"
-            )
 
         manifest = getattr(plugin, "manifest", None)
         if manifest is None or manifest.migrations is None:
@@ -551,28 +504,19 @@ def upgrade_schema(registration_id):
             current_user.username,
             registration.plugin_id,
         )
-        try:
-            log_action(
-                action="upgrade_plugin_schema",
-                user_id=current_user.id,
-                target=f"/admin/plugins/{registration.id}",
-                extra_data={
-                    "plugin_id": registration.plugin_id,
-                    "outcome": "failed",
-                    "previous_revision": previous_revision,
-                    "target_revision": target_revision,
-                    "error_type": type(exc).__name__,
-                    "ip": get_client_ip(),
-                    "user_agent": request.headers.get("User-Agent"),
-                },
-            )
-            db.session.commit()
-        except Exception:
-            db.session.rollback()
-            logger.exception(
-                "Failed to persist plugin schema-upgrade failure audit for plugin=%s",
-                registration.plugin_id,
-            )
+        log_action_isolated(
+            action="upgrade_plugin_schema",
+            user_id=current_user.id,
+            target=f"/admin/plugins/{registration.id}",
+            extra_data=audit_failure_metadata(
+                exc,
+                **_plugin_audit_metadata(
+                    registration,
+                    previous_revision=previous_revision,
+                    target_revision=target_revision,
+                ),
+            ),
+        )
         flash(
             f"Plugin {registration.plugin_id} database schema upgrade failed. "
             "Check the application logs.",
@@ -586,15 +530,13 @@ def upgrade_schema(registration_id):
             action="upgrade_plugin_schema",
             user_id=current_user.id,
             target=f"/admin/plugins/{registration.id}",
-            extra_data={
-                "plugin_id": registration.plugin_id,
-                "outcome": "success",
-                "previous_revision": previous_revision,
-                "target_revision": target_revision,
-                "resulting_revision": resulting_revision,
-                "ip": get_client_ip(),
-                "user_agent": request.headers.get("User-Agent"),
-            },
+            extra_data=_plugin_audit_metadata(
+                registration,
+                outcome="success",
+                previous_revision=previous_revision,
+                target_revision=target_revision,
+                resulting_revision=resulting_revision,
+            ),
         )
         db.session.commit()
     except Exception:
@@ -663,8 +605,7 @@ def reload_config():
                     for registration in registrations
                     if registration.enabled
                 ],
-                "ip": get_client_ip(),
-                "user_agent": request.headers.get("User-Agent"),
+                **_request_audit_metadata(),
             },
         )
         db.session.commit()

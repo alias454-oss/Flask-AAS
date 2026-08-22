@@ -2,7 +2,7 @@
 from flask import Blueprint, jsonify, request
 
 from app.core.extensions import limiter
-from app.core.locations import normalize_country_code, zone_records
+from app.services.geo import normalize_country_code, zone_records
 from app.core.security import get_client_ip
 
 locations_bp = Blueprint("locations", __name__, url_prefix="/reference")

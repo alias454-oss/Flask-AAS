@@ -28,12 +28,12 @@ from wtforms.validators import (
     ValidationError,
 )
 
-from app.core.auth import admin_required, login_required
+from app.core.decorators import admin_required, login_required
 from app.core.cache import get_cached_env_settings
 from app.core.content import sanitize_page_html
 from app.core.decorators import log_view_action
 from app.core.extensions import db, limiter
-from app.core.mailer import (
+from app.services.mailer import (
     MailConfigurationError,
     contact_form_available,
     database_mail_override_present,
@@ -46,11 +46,11 @@ from app.core.mailer import (
     validate_mail_override_fields,
 )
 from app.core.meta import page_metadata
-from app.core.pwcheck import password_check_provider_choices
+from app.services.passwords import password_check_provider_choices
 from app.core.security import get_client_ip
 from app.core.site import normalize_site_url
-from app.core.spam import spam_check_provider_choices
-from app.core.trackers import get_admin_quick_stats, log_action
+from app.services.spam import spam_check_provider_choices
+from app.services.trackers import get_admin_quick_stats, log_action
 from app.models import Role
 
 logger = logging.getLogger(__name__)

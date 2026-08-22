@@ -1,6 +1,7 @@
 # plugins/loader.py
 from __future__ import annotations
 
+from collections import Counter
 from dataclasses import dataclass, field
 import importlib
 import logging
@@ -11,16 +12,12 @@ from flask_login import current_user
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.extensions import db
-from app.core.schema import table_exists
+from app.core.extensions import table_exists
 from app.models.env_settings import EnvSettings
 from app.models.plugin import PluginRegistration
-from app.plugins.interface import (
-    ApplicationPlugin,
-    PluginCompatibilityError,
-    validate_plugin_contract,
-)
+from app.plugins.interface import ApplicationPlugin, PluginCompatibilityError
 from app.plugins.migrations import PluginMigrationManager
-from app.plugins.registry import refresh_configuration
+from app.plugins.registry import refresh_configuration, validate_registered_plugin
 
 logger = logging.getLogger(__name__)
 
@@ -66,6 +63,25 @@ class PluginRuntime:
         if endpoint is None:
             return None
         return self.endpoints.get(endpoint)
+
+    def set_state(
+        self,
+        registration: PluginRegistration,
+        status: str,
+        *,
+        plugin: ApplicationPlugin | None = None,
+        reason: str | None = None,
+        configuration_endpoint: str | None = None,
+    ) -> None:
+        self.plugins[registration.plugin_id] = PluginRuntimeState(
+            plugin_id=registration.plugin_id,
+            status=status,
+            reason=reason,
+            name=getattr(plugin, "name", None) if plugin is not None else None,
+            version=getattr(plugin, "version", None) if plugin is not None else None,
+            api_version=getattr(plugin, "api_version", None) if plugin is not None else None,
+            configuration_endpoint=configuration_endpoint,
+        )
 
 
 def resolve_plugin(import_path: str) -> ApplicationPlugin:
@@ -208,24 +224,6 @@ def _read_plugin_system_enabled() -> bool:
     return True
 
 
-def _runtime_state(
-    registration: PluginRegistration,
-    status: str,
-    *,
-    plugin: ApplicationPlugin | None = None,
-    reason: str | None = None,
-    configuration_endpoint: str | None = None,
-) -> PluginRuntimeState:
-    return PluginRuntimeState(
-        plugin_id=registration.plugin_id,
-        status=status,
-        reason=reason,
-        name=getattr(plugin, "name", None) if plugin is not None else None,
-        version=getattr(plugin, "version", None) if plugin is not None else None,
-        api_version=getattr(plugin, "api_version", None) if plugin is not None else None,
-        configuration_endpoint=configuration_endpoint,
-    )
-
 
 def initialize_plugins(app: Any) -> PluginRuntime:
     """Load enabled registered plugins at the application startup boundary.
@@ -267,10 +265,7 @@ def initialize_plugins(app: Any) -> PluginRuntime:
 
     for registration in registrations:
         if not registration.enabled:
-            runtime.plugins[registration.plugin_id] = _runtime_state(
-                registration,
-                STATUS_DISABLED,
-            )
+            runtime.set_state(registration, STATUS_DISABLED)
             logger.info(
                 "Plugin %s disabled; runtime loading skipped",
                 registration.plugin_id,
@@ -281,19 +276,13 @@ def initialize_plugins(app: Any) -> PluginRuntime:
         logger.info("Loading application plugin %s", registration.plugin_id)
 
         try:
-            plugin = resolve_plugin(registration.import_path)
-            validate_plugin_contract(plugin)
-            if plugin.plugin_id != registration.plugin_id:
-                raise ValueError(
-                    f"Registered plugin ID {registration.plugin_id!r} does not "
-                    f"match imported plugin ID {plugin.plugin_id!r}"
-                )
-        except PluginCompatibilityError as exc:
-            runtime.plugins[registration.plugin_id] = _runtime_state(
+            plugin = validate_registered_plugin(
                 registration,
-                STATUS_INCOMPATIBLE,
-                plugin=plugin,
-                reason=str(exc),
+                resolve_plugin(registration.import_path),
+            )
+        except PluginCompatibilityError as exc:
+            runtime.set_state(
+                registration, STATUS_INCOMPATIBLE, plugin=plugin, reason=str(exc)
             )
             logger.warning(
                 "Plugin %s is incompatible: %s",
@@ -302,7 +291,7 @@ def initialize_plugins(app: Any) -> PluginRuntime:
             )
             continue
         except Exception:
-            runtime.plugins[registration.plugin_id] = _runtime_state(
+            runtime.set_state(
                 registration,
                 STATUS_ERROR,
                 plugin=plugin,
@@ -321,7 +310,7 @@ def initialize_plugins(app: Any) -> PluginRuntime:
             except Exception:
                 registration.configured = False
                 configuration_changed = True
-                runtime.plugins[registration.plugin_id] = _runtime_state(
+                runtime.set_state(
                     registration,
                     STATUS_ERROR,
                     plugin=plugin,
@@ -336,7 +325,7 @@ def initialize_plugins(app: Any) -> PluginRuntime:
             if not schema_current:
                 registration.configured = False
                 configuration_changed = True
-                runtime.plugins[registration.plugin_id] = _runtime_state(
+                runtime.set_state(
                     registration,
                     STATUS_NEEDS_MIGRATION,
                     plugin=plugin,
@@ -360,7 +349,7 @@ def initialize_plugins(app: Any) -> PluginRuntime:
         except Exception:
             registration.configured = False
             configuration_changed = True
-            runtime.plugins[registration.plugin_id] = _runtime_state(
+            runtime.set_state(
                 registration,
                 STATUS_ERROR,
                 plugin=plugin,
@@ -383,7 +372,7 @@ def initialize_plugins(app: Any) -> PluginRuntime:
             _record_plugin_endpoints(
                 app, runtime, registration.plugin_id, endpoints_before
             )
-            runtime.plugins[registration.plugin_id] = _runtime_state(
+            runtime.set_state(
                 registration,
                 STATUS_ERROR,
                 plugin=plugin,
@@ -407,13 +396,11 @@ def initialize_plugins(app: Any) -> PluginRuntime:
         ):
             registration.configured = False
             configuration_changed = True
-            runtime.plugins[registration.plugin_id] = _runtime_state(
+            runtime.set_state(
                 registration,
                 STATUS_ERROR,
                 plugin=plugin,
-                reason=(
-                    "Plugin configuration endpoint is invalid. Check application logs."
-                ),
+                reason="Plugin configuration endpoint is invalid. Check application logs.",
             )
             logger.error(
                 "Plugin %s declared invalid configuration endpoint=%r",
@@ -425,7 +412,7 @@ def initialize_plugins(app: Any) -> PluginRuntime:
         runtime.instances[registration.plugin_id] = plugin
 
         if not configuration.configured:
-            runtime.plugins[registration.plugin_id] = _runtime_state(
+            runtime.set_state(
                 registration,
                 STATUS_NEEDS_CONFIGURATION,
                 plugin=plugin,
@@ -440,7 +427,7 @@ def initialize_plugins(app: Any) -> PluginRuntime:
             )
             continue
 
-        runtime.plugins[registration.plugin_id] = _runtime_state(
+        runtime.set_state(
             registration,
             STATUS_ACTIVE,
             plugin=plugin,
@@ -460,17 +447,7 @@ def initialize_plugins(app: Any) -> PluginRuntime:
             db.session.rollback()
             logger.exception("Failed to persist plugin configuration status")
 
-    status_counts = {
-        STATUS_ACTIVE: 0,
-        STATUS_DISABLED: 0,
-        STATUS_NEEDS_CONFIGURATION: 0,
-        STATUS_NEEDS_MIGRATION: 0,
-        STATUS_INCOMPATIBLE: 0,
-        STATUS_ERROR: 0,
-    }
-    for state in runtime.plugins.values():
-        if state.status in status_counts:
-            status_counts[state.status] += 1
+    status_counts = Counter(state.status for state in runtime.plugins.values())
 
     logger.info(
         "Application plugin startup complete: active=%d disabled=%d "
