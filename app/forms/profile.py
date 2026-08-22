@@ -89,7 +89,7 @@ class ProfileFieldsForm(FlaskForm):
     )
     first_name = StringField(
         "First Name",
-        validators=[Optional(), Length(max=100)],
+        validators=[Optional(), Length(max=50)],
         filters=[normalize_optional_text],
     )
     last_name = StringField(
@@ -99,7 +99,7 @@ class ProfileFieldsForm(FlaskForm):
     )
     phone = StringField(
         "Phone",
-        validators=[Optional(), Length(max=50)],
+        validators=[Optional(), Length(max=20)],
         filters=[normalize_optional_text],
     )
     alt_phone = StringField(
