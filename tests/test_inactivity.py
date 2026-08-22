@@ -13,12 +13,12 @@ from flask_login import (
     login_user,
 )
 
-from app.core.inactivity import (
+from app.services.sessions import (
     SESSION_ACTIVITY_KEY,
     enforce_inactivity_timeout,
     mark_session_activity,
 )
-from app.core.sessions import session_activity_exempt
+from app.services.sessions import session_activity_exempt
 
 
 class _SessionUser(UserMixin):
@@ -96,7 +96,7 @@ class InactivityTimeoutTests(unittest.TestCase):
 
     def _login(self, timestamp=100.0, remember=False):
         with patch(
-            'app.core.inactivity._current_timestamp',
+            'app.services.sessions._current_timestamp',
             return_value=timestamp,
         ):
             response = self.client.get(
@@ -108,7 +108,7 @@ class InactivityTimeoutTests(unittest.TestCase):
 
     def _request_at(self, timestamp, path='/protected', method='GET'):
         with patch(
-            'app.core.inactivity._current_timestamp',
+            'app.services.sessions._current_timestamp',
             return_value=timestamp,
         ):
             return self.client.open(

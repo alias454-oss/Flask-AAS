@@ -5,7 +5,7 @@ from alembic.migration import MigrationContext
 from sqlalchemy import create_engine, text
 
 from app.core.extensions import migrate
-from app.core.migrations import (
+from app.core.extensions import (
     core_migration_include_name,
     core_migration_include_object,
 )

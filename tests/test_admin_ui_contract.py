@@ -152,7 +152,7 @@ def test_list_users_consumes_internal_profile_image_data_without_media_route():
 def test_user_storage_path_contract_is_explicit_and_not_host_extended():
     settings_template = _read(ADMIN_TEMPLATES / "settings.html")
     seeder = _read(ROOT / "app" / "core" / "seeder.py")
-    avatar = _read(ROOT / "app" / "core" / "avatar.py")
+    avatar = _read(ROOT / "app" / "services" / "avatar.py")
 
     assert '"users_stored_path": "uploads/users"' in seeder
     assert "Relative paths resolve from the project root." in settings_template

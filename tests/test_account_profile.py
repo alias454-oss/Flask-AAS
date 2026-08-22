@@ -13,9 +13,9 @@ from flask_login import LoginManager
 from sqlalchemy.exc import SQLAlchemyError
 from PIL import Image
 
-from app.core.avatar import profile_image_data_uri, profile_image_root
+from app.services.avatar import profile_image_data_uri, profile_image_root
 from app.core.extensions import csrf, db, limiter
-from app.core.sessions import touch_current_session
+from app.services.sessions import touch_current_session
 from app.models import AuditActivity, Country, EnvSettings, User, UserSession, Zone
 from app.routes.account.account import account_bp
 from app.routes.locations import locations_bp
@@ -850,13 +850,13 @@ class AccountProfileRouteTests(unittest.TestCase):
         )
 
         with self.app.test_request_context('/account'), patch(
-            'app.core.sessions.current_user',
+            'app.services.sessions.current_user',
             user,
         ), patch(
-            'app.core.sessions._utc_now',
+            'app.services.sessions._utc_now',
             return_value=now,
         ), patch(
-            'app.core.sessions.UserSession.touch_isolated',
+            'app.services.sessions.UserSession.touch_isolated',
         ) as touch:
             touch_current_session()
 
@@ -872,13 +872,13 @@ class AccountProfileRouteTests(unittest.TestCase):
         )
 
         with self.app.test_request_context('/account'), patch(
-            'app.core.sessions.current_user',
+            'app.services.sessions.current_user',
             user,
         ), patch(
-            'app.core.sessions._utc_now',
+            'app.services.sessions._utc_now',
             return_value=now,
         ), patch(
-            'app.core.sessions.UserSession.touch_isolated',
+            'app.services.sessions.UserSession.touch_isolated',
             return_value=True,
         ) as touch:
             touch_current_session()
@@ -895,13 +895,13 @@ class AccountProfileRouteTests(unittest.TestCase):
         )
 
         with self.app.test_request_context('/account'), patch(
-            'app.core.sessions.current_user',
+            'app.services.sessions.current_user',
             user,
         ), patch(
-            'app.core.sessions.request_advances_session_activity',
+            'app.services.sessions.request_advances_session_activity',
             return_value=False,
         ), patch(
-            'app.core.sessions.UserSession.touch_isolated',
+            'app.services.sessions.UserSession.touch_isolated',
         ) as touch:
             touch_current_session()
 

@@ -24,6 +24,7 @@ from app.plugins.registry import (
     disable_plugin,
     enable_plugin,
     register_plugin,
+    validate_registered_plugin,
 )
 
 
@@ -253,6 +254,15 @@ class PluginContractTests(unittest.TestCase):
                 plugin,
                 import_path="somewhere.else:plugin",
             )
+
+    def test_registered_plugin_validation_rejects_mismatched_identity(self):
+        record = PluginRegistration(
+            plugin_id="registered-plugin",
+            import_path="app.plugins.fake.plugin:plugin",
+        )
+
+        with self.assertRaises(PluginRegistrationError):
+            validate_registered_plugin(record, FakePlugin())
 
     def test_enable_does_not_require_configuration_to_be_valid(self):
         plugin = FakePlugin(managed_secret=False)

@@ -7,7 +7,7 @@ from flask import Flask
 from sqlalchemy import event
 
 from app.core.extensions import db, limiter
-from app.core.locations import (
+from app.services.geo import (
     country_choices,
     country_name,
     zone_choices,

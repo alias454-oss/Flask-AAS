@@ -8,7 +8,7 @@ from cryptography.fernet import Fernet
 from flask import Flask
 from jinja2 import TemplateNotFound
 
-from app.core.mailer import (
+from app.services.mailer import (
     MailConfigurationError,
     decrypt_smtp_password,
     encrypt_smtp_password,
@@ -57,13 +57,13 @@ class MailerTests(unittest.TestCase):
     def test_lifecycle_site_name_falls_back_to_config_without_persisted_name(self):
         self.app.config["SITE_NAME"] = "Config Site"
         with self.app.app_context(), patch(
-            "app.core.mailer.get_mail_env_settings",
+            "app.services.mailer.get_mail_env_settings",
             return_value=SimpleNamespace(site_name=""),
         ), patch(
-            "app.core.mailer.render_email",
+            "app.services.mailer.render_email",
             return_value=("Text body", "<p>HTML body</p>"),
         ), patch(
-            "app.core.mailer.send_email",
+            "app.services.mailer.send_email",
             return_value="queued",
         ) as mock_send:
             status = send_password_changed_email(
@@ -76,7 +76,7 @@ class MailerTests(unittest.TestCase):
 
     def test_missing_recipient_fails_before_policy_lookup(self):
         with self.app.app_context(), patch(
-            "app.core.mailer.get_mail_env_settings"
+            "app.services.mailer.get_mail_env_settings"
         ) as get_settings:
             status = send_email("Subject", None, "Body")
 
@@ -85,7 +85,7 @@ class MailerTests(unittest.TestCase):
 
     def test_empty_message_fails_before_policy_lookup(self):
         with self.app.app_context(), patch(
-            "app.core.mailer.get_mail_env_settings"
+            "app.services.mailer.get_mail_env_settings"
         ) as get_settings:
             status = send_email("Subject", "user@example.test", "", "")
 
@@ -96,9 +96,9 @@ class MailerTests(unittest.TestCase):
         self.app.config["MAIL_DEBUG"] = True
 
         with self.app.app_context(), patch(
-            "app.core.mailer.get_mail_env_settings",
+            "app.services.mailer.get_mail_env_settings",
             return_value=self._settings(use_smtp=False),
-        ), patch("app.core.mailer.threading.Thread") as thread:
+        ), patch("app.services.mailer.threading.Thread") as thread:
             status = send_email("Subject", "user@example.test", "Body")
 
         self.assertEqual(status, "disabled")
@@ -108,9 +108,9 @@ class MailerTests(unittest.TestCase):
         self.app.config["MAIL_DEBUG"] = True
 
         with self.app.app_context(), patch(
-            "app.core.mailer.get_mail_env_settings",
+            "app.services.mailer.get_mail_env_settings",
             return_value=self._settings(),
-        ), patch("app.core.mailer.threading.Thread") as thread:
+        ), patch("app.services.mailer.threading.Thread") as thread:
             status = send_email("Subject", "user@example.test", "Body")
 
         self.assertEqual(status, "queued")
@@ -118,9 +118,9 @@ class MailerTests(unittest.TestCase):
 
     def test_disabled_outbound_email_reports_disabled(self):
         with self.app.app_context(), patch(
-            "app.core.mailer.get_mail_env_settings",
+            "app.services.mailer.get_mail_env_settings",
             return_value=self._settings(use_smtp=False),
-        ), patch("app.core.mailer.threading.Thread") as thread:
+        ), patch("app.services.mailer.threading.Thread") as thread:
             status = send_email("Subject", "user@example.test", "Body")
 
         self.assertEqual(status, "disabled")
@@ -128,9 +128,9 @@ class MailerTests(unittest.TestCase):
 
     def test_policy_lookup_failure_reports_failed(self):
         with self.app.app_context(), patch(
-            "app.core.mailer.get_mail_env_settings",
+            "app.services.mailer.get_mail_env_settings",
             side_effect=RuntimeError("database unavailable"),
-        ), patch("app.core.mailer.threading.Thread") as thread:
+        ), patch("app.services.mailer.threading.Thread") as thread:
             status = send_email("Subject", "user@example.test", "Body")
 
         self.assertEqual(status, "failed")
@@ -138,11 +138,11 @@ class MailerTests(unittest.TestCase):
 
     def test_environment_configuration_queues_background_delivery(self):
         with self.app.app_context(), patch(
-            "app.core.mailer.get_mail_env_settings",
+            "app.services.mailer.get_mail_env_settings",
             return_value=self._settings(),
-        ), patch("app.core.mailer.EmailBackend") as backend, patch(
-            "app.core.mailer.EmailMultiAlternatives"
-        ) as email_message, patch("app.core.mailer.threading.Thread") as thread:
+        ), patch("app.services.mailer.EmailBackend") as backend, patch(
+            "app.services.mailer.EmailMultiAlternatives"
+        ) as email_message, patch("app.services.mailer.threading.Thread") as thread:
             status = send_email(
                 "Subject",
                 "user@example.test",
@@ -190,11 +190,11 @@ class MailerTests(unittest.TestCase):
         )
 
         with self.app.app_context(), patch(
-            "app.core.mailer.get_mail_env_settings",
+            "app.services.mailer.get_mail_env_settings",
             return_value=settings,
-        ), patch("app.core.mailer.EmailBackend") as backend, patch(
-            "app.core.mailer.EmailMultiAlternatives"
-        ), patch("app.core.mailer.threading.Thread") as thread:
+        ), patch("app.services.mailer.EmailBackend") as backend, patch(
+            "app.services.mailer.EmailMultiAlternatives"
+        ), patch("app.services.mailer.threading.Thread") as thread:
             status = send_email("Subject", "user@example.test", "Body")
 
         self.assertEqual(status, "queued")
@@ -219,11 +219,11 @@ class MailerTests(unittest.TestCase):
         )
 
         with self.app.app_context(), patch(
-            "app.core.mailer.get_mail_env_settings",
+            "app.services.mailer.get_mail_env_settings",
             return_value=settings,
-        ), patch("app.core.mailer.EmailBackend") as backend, patch(
-            "app.core.mailer.EmailMultiAlternatives"
-        ), patch("app.core.mailer.threading.Thread"):
+        ), patch("app.services.mailer.EmailBackend") as backend, patch(
+            "app.services.mailer.EmailMultiAlternatives"
+        ), patch("app.services.mailer.threading.Thread"):
             status = send_email("Subject", "user@example.test", "Body")
 
         self.assertEqual(status, "queued")
@@ -248,11 +248,11 @@ class MailerTests(unittest.TestCase):
         )
 
         with self.app.app_context(), patch(
-            "app.core.mailer.get_mail_env_settings",
+            "app.services.mailer.get_mail_env_settings",
             return_value=settings,
-        ), patch("app.core.mailer.EmailBackend") as backend, patch(
-            "app.core.mailer.EmailMultiAlternatives"
-        ), patch("app.core.mailer.threading.Thread"):
+        ), patch("app.services.mailer.EmailBackend") as backend, patch(
+            "app.services.mailer.EmailMultiAlternatives"
+        ), patch("app.services.mailer.threading.Thread"):
             status = send_email("Subject", "user@example.test", "Body")
 
         self.assertEqual(status, "queued")
@@ -263,11 +263,11 @@ class MailerTests(unittest.TestCase):
         settings = self._settings(smtp_host="smtp.partial.test")
 
         with self.app.app_context(), patch(
-            "app.core.mailer.get_mail_env_settings",
+            "app.services.mailer.get_mail_env_settings",
             return_value=settings,
-        ), patch("app.core.mailer.EmailBackend") as backend, patch(
-            "app.core.mailer.EmailMultiAlternatives"
-        ), patch("app.core.mailer.threading.Thread"):
+        ), patch("app.services.mailer.EmailBackend") as backend, patch(
+            "app.services.mailer.EmailMultiAlternatives"
+        ), patch("app.services.mailer.threading.Thread"):
             status = send_email("Subject", "user@example.test", "Body")
 
         self.assertEqual(status, "queued")
@@ -282,9 +282,9 @@ class MailerTests(unittest.TestCase):
         )
 
         with self.app.app_context(), patch(
-            "app.core.mailer.get_mail_env_settings",
+            "app.services.mailer.get_mail_env_settings",
             return_value=self._settings(),
-        ), patch("app.core.mailer.threading.Thread") as thread:
+        ), patch("app.services.mailer.threading.Thread") as thread:
             status = send_email("Subject", "user@example.test", "Body")
 
         self.assertEqual(status, "disabled")
@@ -325,7 +325,7 @@ class MailerTests(unittest.TestCase):
 
     def test_render_email_uses_html_and_text_directories(self):
         with self.app.app_context(), patch(
-            "app.core.mailer.render_template",
+            "app.services.mailer.render_template",
             side_effect=["<p>HTML</p>", "Plain text"],
         ) as render:
             text, html = render_email("welcome", username="example")
@@ -343,7 +343,7 @@ class MailerTests(unittest.TestCase):
 
     def test_missing_html_template_returns_empty_bodies(self):
         with self.app.app_context(), patch(
-            "app.core.mailer.render_template",
+            "app.services.mailer.render_template",
             side_effect=TemplateNotFound("missing"),
         ):
             text, html = render_email("missing")
@@ -352,7 +352,7 @@ class MailerTests(unittest.TestCase):
 
     def test_missing_text_template_uses_fallback(self):
         with self.app.app_context(), patch(
-            "app.core.mailer.render_template",
+            "app.services.mailer.render_template",
             side_effect=["<p>HTML</p>", TemplateNotFound("missing")],
         ):
             text, html = render_email("welcome")
@@ -366,13 +366,13 @@ class MailerTests(unittest.TestCase):
     def test_password_changed_wrapper_returns_dispatch_status(self):
         self.app.config["SITE_NAME"] = "Config Site"
         with self.app.app_context(), patch(
-            "app.core.mailer.get_mail_env_settings",
+            "app.services.mailer.get_mail_env_settings",
             return_value=SimpleNamespace(site_name="Example Site"),
         ), patch(
-            "app.core.mailer.render_email",
+            "app.services.mailer.render_email",
             return_value=("Text body", "<p>HTML body</p>"),
         ) as mock_render, patch(
-            "app.core.mailer.send_email",
+            "app.services.mailer.send_email",
             return_value="queued",
         ) as mock_send:
             status = send_password_changed_email(
@@ -397,19 +397,19 @@ class MailerTests(unittest.TestCase):
         with (
             self.app.app_context(),
             patch(
-                "app.core.mailer.get_mail_env_settings",
+                "app.services.mailer.get_mail_env_settings",
                 return_value=SimpleNamespace(site_name="Example Site"),
             ),
             patch(
-                "app.core.mailer.url_for",
+                "app.services.mailer.url_for",
                 return_value="https://example.test/set-password/test-token",
             ) as mock_url_for,
             patch(
-                "app.core.mailer.render_email",
+                "app.services.mailer.render_email",
                 return_value=("Text body", "<p>HTML body</p>"),
             ) as mock_render,
             patch(
-                "app.core.mailer.send_email",
+                "app.services.mailer.send_email",
                 return_value="queued",
             ) as mock_send,
         ):
@@ -442,15 +442,15 @@ class MailerTests(unittest.TestCase):
         with (
             self.app.app_context(),
             patch(
-                "app.core.mailer.url_for",
+                "app.services.mailer.url_for",
                 return_value="https://example.test/reset-password/test-token",
             ) as mock_url_for,
             patch(
-                "app.core.mailer.render_email",
+                "app.services.mailer.render_email",
                 return_value=("Text body", "<p>HTML body</p>"),
             ) as mock_render,
             patch(
-                "app.core.mailer.send_email",
+                "app.services.mailer.send_email",
                 return_value="queued",
             ) as mock_send,
         ):

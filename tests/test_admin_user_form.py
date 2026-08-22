@@ -6,7 +6,8 @@ from unittest.mock import patch
 from flask import Flask
 from werkzeug.datastructures import MultiDict
 
-from app.routes.admin.users import AdminUserForm, _audit_failure_metadata
+from app.routes.admin.users import AdminUserForm
+from app.services.trackers import audit_failure_metadata
 
 
 def _env():
@@ -61,7 +62,7 @@ def test_admin_user_form_rejects_database_overlength_values():
 def test_admin_audit_failure_metadata_does_not_persist_exception_text():
     exc = RuntimeError("database-password=do-not-store")
 
-    metadata = _audit_failure_metadata(exc)
+    metadata = audit_failure_metadata(exc)
 
     assert metadata == {"outcome": "failed", "error_type": "RuntimeError"}
     assert "do-not-store" not in repr(metadata)

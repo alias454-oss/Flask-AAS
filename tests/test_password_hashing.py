@@ -2,7 +2,7 @@ import unittest
 
 from argon2 import PasswordHasher
 
-from app.core.password_hashing import (
+from app.core.hash import (
     hash_password,
     password_hash_needs_rehash,
     verify_login_password,

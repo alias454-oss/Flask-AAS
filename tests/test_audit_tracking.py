@@ -16,16 +16,16 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.decorators import log_view_action
 from app.core.extensions import db
-from app.core.logger import extract_request_metadata, redact_route_values
+from app.core.security import extract_request_metadata, redact_route_values
 from app.core.security import get_client_ip
-from app.core.trackers import (
+from app.services.trackers import (
     CLEAN_ONLINE_USER_MINUTES,
     expire_stale_online_users,
     get_admin_quick_stats,
     get_total_user_count_statistics,
     log_action,
     log_action_isolated,
-    log_login,
+    persist_login_audit,
     track_online_user,
 )
 from app.models import AuditActivity, AuditLogin, EnvSettings, OnlineUser, User
@@ -211,7 +211,7 @@ class AuditTrackingTests(unittest.TestCase):
         with self.app.test_request_context(
             '/asset/read',
             environ_base={'REMOTE_ADDR': '192.0.2.13'},
-        ), patch('app.core.trackers.datetime') as clock:
+        ), patch('app.services.trackers.datetime') as clock:
             clock.now.return_value = exact_time
             self.assertTrue(
                 log_action_isolated(
@@ -229,7 +229,7 @@ class AuditTrackingTests(unittest.TestCase):
             db.session.add(self._new_user())
 
             self.assertTrue(
-                log_login(
+                persist_login_audit(
                     username='submitted-user',
                     ip='192.0.2.12',
                     user_agent='test-agent',
@@ -250,7 +250,7 @@ class AuditTrackingTests(unittest.TestCase):
     def test_login_audit_requires_a_normalized_failure_reason(self):
         with self.app.test_request_context('/login', environ_base={'REMOTE_ADDR': '192.0.2.12'}):
             with self.assertRaises(ValueError):
-                log_login(
+                persist_login_audit(
                     username='submitted-user',
                     ip='192.0.2.12',
                     user_agent='test-agent',
@@ -260,7 +260,7 @@ class AuditTrackingTests(unittest.TestCase):
                 )
 
             with self.assertRaises(ValueError):
-                log_login(
+                persist_login_audit(
                     username='submitted-user',
                     ip='192.0.2.12',
                     user_agent='test-agent',
@@ -275,14 +275,14 @@ class AuditTrackingTests(unittest.TestCase):
         with self.app.test_request_context('/login', environ_base={'REMOTE_ADDR': '192.0.2.12'}):
             db.session.add(self._new_user())
 
-            with self.assertLogs('app.core.trackers', level='ERROR'):
+            with self.assertLogs('app.services.trackers', level='ERROR'):
                 with patch.object(
                     db.engine,
                     'begin',
                     side_effect=SQLAlchemyError('audit database unavailable'),
                 ):
                     self.assertFalse(
-                        log_login(
+                        persist_login_audit(
                             username='submitted-user',
                             ip='192.0.2.12',
                             user_agent='test-agent',
@@ -312,7 +312,7 @@ class AuditTrackingTests(unittest.TestCase):
         with self.app.test_request_context('/', environ_base={'REMOTE_ADDR': '192.0.2.13'}):
             db.session.add(self._new_user())
 
-            with self.assertLogs('app.core.trackers', level='ERROR'):
+            with self.assertLogs('app.services.trackers', level='ERROR'):
                 with patch.object(
                     db.engine,
                     'begin',

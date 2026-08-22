@@ -6,9 +6,9 @@ from unittest.mock import patch
 from flask import Flask
 from sqlalchemy.exc import OperationalError
 
-from app import update_log_level
+from app.core.application import update_log_level
 from app.core.extensions import db
-from app.core.schema import table_exists
+from app.core.extensions import table_exists
 from app.models import EnvSettings
 
 
@@ -56,14 +56,14 @@ class CoreSchemaTests(unittest.TestCase):
 
     def test_table_exists_fails_closed_when_inspection_is_unavailable(self):
         with patch(
-            "app.core.schema.inspect",
+            "app.core.extensions.inspect",
             side_effect=OperationalError("statement", {}, RuntimeError("offline")),
         ):
             self.assertFalse(table_exists(EnvSettings.__tablename__))
 
     def test_update_log_level_skips_settings_query_before_schema_exists(self):
-        with patch("app.table_exists", return_value=False), patch(
-            "app.safe_get_cached_env_settings"
+        with patch("app.core.application.table_exists", return_value=False), patch(
+            "app.core.application.safe_get_cached_env_settings"
         ) as get_settings:
             update_log_level()
 

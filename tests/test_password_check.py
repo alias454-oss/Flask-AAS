@@ -6,8 +6,8 @@ from unittest.mock import patch
 from flask import Flask
 
 from app.core.extensions import db
-from app.core.passwords import password_validation_errors
-from app.core.pwcheck import (
+from app.services.passwords import password_validation_errors
+from app.services.passwords import (
     LocalPasswordCheckProvider,
     PasswordCheckProvider,
     PasswordCheckResult,
@@ -47,7 +47,7 @@ class PasswordCheckProviderTests(unittest.TestCase):
             def check(self, password):
                 return PasswordCheckResult(password != "reject-me", "Rejected by test")
 
-        with patch.dict("app.core.pwcheck._PASSWORD_CHECK_PROVIDERS", {}, clear=False):
+        with patch.dict("app.services.passwords._PASSWORD_CHECK_PROVIDERS", {}, clear=False):
             register_password_check_provider(ExampleProvider)
 
             self.assertIn(

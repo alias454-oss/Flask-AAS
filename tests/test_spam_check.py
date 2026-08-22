@@ -7,7 +7,7 @@ from flask import Flask
 
 from app.core.extensions import db
 from app.core.seeder import seed_env_settings
-from app.core.spam import (
+from app.services.spam import (
     LocalSpamCheckProvider,
     SpamCheckProvider,
     SpamCheckResult,
@@ -44,7 +44,7 @@ class SpamCheckProviderTests(unittest.TestCase):
             def check(self, message):
                 return SpamCheckResult(message != "reject-me", "Rejected by test")
 
-        with patch.dict("app.core.spam._SPAM_CHECK_PROVIDERS", {}, clear=False):
+        with patch.dict("app.services.spam._SPAM_CHECK_PROVIDERS", {}, clear=False):
             register_spam_check_provider(ExampleProvider)
 
             self.assertIn(
@@ -55,7 +55,7 @@ class SpamCheckProviderTests(unittest.TestCase):
             self.assertFalse(check_spam("reject-me", "test-example").passed)
 
     def test_unknown_provider_fails_open(self):
-        with self.assertLogs("app.core.spam", level="ERROR"):
+        with self.assertLogs("app.services.spam", level="ERROR"):
             result = check_spam("anything", "missing-provider")
 
         self.assertTrue(result.passed)
@@ -68,9 +68,9 @@ class SpamCheckProviderTests(unittest.TestCase):
             def check(self, message):
                 raise RuntimeError("provider failed")
 
-        with patch.dict("app.core.spam._SPAM_CHECK_PROVIDERS", {}, clear=False):
+        with patch.dict("app.services.spam._SPAM_CHECK_PROVIDERS", {}, clear=False):
             register_spam_check_provider(BrokenProvider)
-            with self.assertLogs("app.core.spam", level="ERROR"):
+            with self.assertLogs("app.services.spam", level="ERROR"):
                 result = check_spam("anything", "test-broken")
 
         self.assertTrue(result.passed)
