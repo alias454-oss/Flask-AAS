@@ -418,6 +418,14 @@ mode.
 | `users.remove_profile_image` | POST | `/admin/users/<int:user_id>/profile-image/remove` |
 | `verify.verify_email_token` | GET | `/email/<token>` |
 
+## Source organization
+
+- `app/core/` contains foundational runtime, configuration, extension, and security primitives.
+- `app/services/` contains operational host workflows such as sessions, mail, audit/tracking,
+  profile media, password policy, and geographic references.
+- `app/models/`, `app/routes/`, and `app/plugins/` contain persistence, host HTTP routes, and optional
+  application plugins respectively.
+
 ## Development and testing
 
 Run the complete regression suite with:
