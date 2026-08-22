@@ -36,19 +36,18 @@ from flask_migrate import Migrate
 from datetime import datetime, timedelta, timezone
 
 from app import create_app, db
-from app.core.mailer import get_mail_env_settings, send_email
-from app.core.migrations import (
+from app.services.mailer import get_mail_env_settings, send_email
+from app.core.extensions import (
     core_migration_include_name,
     core_migration_include_object,
 )
 from app.core.seeder import run_all_seeds
-from app.core.trackers import (
+from app.services.trackers import (
     CLEAN_ONLINE_USER_MINUTES,
     expire_stale_online_users,
 )
 from app.models.audit_login import AuditLogin
 
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 

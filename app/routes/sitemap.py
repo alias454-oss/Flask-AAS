@@ -7,7 +7,7 @@ from datetime import datetime
 from flask import Blueprint, current_app, url_for, Response
 
 from app.core.decorators import log_view_action
-from app.core.mailer import contact_form_available
+from app.services.mailer import contact_form_available
 
 logger = logging.getLogger(__name__)
 

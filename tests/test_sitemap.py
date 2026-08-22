@@ -5,7 +5,7 @@ from unittest.mock import patch
 
 from flask import Blueprint, Flask
 
-from app.core.auth import login_required
+from app.core.decorators import login_required
 from app.routes.sitemap import get_all_public_urls, is_protected_view
 
 

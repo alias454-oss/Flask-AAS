@@ -5,7 +5,7 @@ from flask import Blueprint, abort, render_template
 from flask_login import current_user
 from sqlalchemy import func, select
 
-from app.core.auth import login_required
+from app.core.decorators import login_required
 from app.core.extensions import db
 from tests.fixtures.plugin_app.models import ExampleItem, get_example_settings
 from app.plugins.interface import PLUGIN_API_VERSION

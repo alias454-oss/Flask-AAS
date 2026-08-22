@@ -1,4 +1,4 @@
-# app/core/password_hashing.py
+# app/core/hash.py
 """Password-hash primitives and legacy-hash migration support."""
 
 import hashlib

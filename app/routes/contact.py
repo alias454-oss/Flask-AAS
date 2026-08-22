@@ -3,30 +3,29 @@ import logging
 
 from flask import Blueprint, abort, flash, redirect, render_template, request, url_for
 from flask_login import current_user
-from flask_wtf import FlaskForm
 from wtforms import StringField, SubmitField, TextAreaField
 from wtforms.validators import DataRequired, Email, Length
 
 from app.core.cache import get_cached_env_settings
 from app.core.decorators import log_view_action
 from app.core.extensions import limiter
-from app.core.mailer import contact_form_available, send_contact_email
+from app.services.mailer import contact_form_available, send_contact_email
 from app.core.meta import page_metadata
 from app.core.security import get_client_ip, normalize_email, redact_email
-from app.core.spam import check_spam
-from app.core.trackers import (
+from app.services.spam import check_spam
+from app.services.trackers import (
     audit_activity_enabled,
     current_route,
     log_action_isolated,
 )
 
-from .captcha import CaptchaRequired
+from .captcha import CaptchaForm, CaptchaRequired
 
 logger = logging.getLogger(__name__)
 contact_bp = Blueprint("contact", __name__)
 
 
-class ContactForm(FlaskForm):
+class ContactForm(CaptchaForm):
     name = StringField("Name", validators=[DataRequired(), Length(max=50)])
     email = StringField(
         "Email",
@@ -41,15 +40,6 @@ class ContactForm(FlaskForm):
     nobot_check = StringField("Leave empty")  # hidden in template
     submit = SubmitField("Send Message")
 
-    # Always define captcha at the class level but unbind it if disabled
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-
-        env = get_cached_env_settings()
-        if not env or not env.use_captcha:
-            # Remove captcha field if CAPTCHA is disabled
-            del self.captcha
-
 
 @contact_bp.route("/contact", methods=["GET", "POST"])
 @limiter.limit("10 per hour", key_func=get_client_ip)
@@ -59,7 +49,7 @@ def contact():
     if not contact_form_available(env):
         abort(404)
 
-    form = ContactForm()
+    form = ContactForm(captcha_enabled=bool(env and env.use_captcha))
     meta = page_metadata.get("contact", {})
     ip = get_client_ip()
     user_agent = (

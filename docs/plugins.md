@@ -48,6 +48,10 @@ migrations = "migrations"
 Flask-AAS does not currently clone, upload, update, or provide a marketplace for plugin source.
 Acquisition and placement are operator/deployment responsibilities.
 
+Host implementation is organized with foundational/runtime code under `app.core` and operational
+workflows under `app.services`. This source layout is not itself the Plugin API compatibility
+boundary; `PLUGIN_API_VERSION` and the documented plugin contracts remain authoritative.
+
 ## Discovery and registration
 
 Startup discovery is metadata-only.

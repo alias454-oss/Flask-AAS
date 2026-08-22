@@ -1,4 +1,4 @@
-# app/core/avatar.py
+# app/services/avatar.py
 """Local profile-image validation, normalization, storage, and host rendering."""
 
 import base64

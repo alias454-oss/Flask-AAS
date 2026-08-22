@@ -5,7 +5,7 @@ from pathlib import Path
 from flask import Flask
 
 from app.core.extensions import db
-from app.core.passwords import (
+from app.services.passwords import (
     generate_random_password,
     password_policy_errors,
     password_validation_errors,

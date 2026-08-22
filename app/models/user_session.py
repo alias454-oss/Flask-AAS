@@ -177,11 +177,10 @@ class UserSession(db.Model):
         return [record.id for record in records]
 
     @classmethod
-    def touch_isolated(cls, session_id, user_id, *, now=None):
+    def _set_active_timestamp_isolated(cls, session_id, user_id, column, value=None):
         if session_id is None or user_id is None:
             return False
-        if now is None:
-            now = datetime.now(timezone.utc)
+        value = value or datetime.now(timezone.utc)
 
         with db.engine.begin() as connection:
             result = connection.execute(
@@ -192,29 +191,21 @@ class UserSession(db.Model):
                     cls.revoked_at.is_(None),
                     cls.ended_at.is_(None),
                 )
-                .values(last_active_at=now)
+                .values({column: value})
             )
         return bool(result.rowcount)
 
     @classmethod
-    def end_isolated(cls, session_id, user_id, *, ended_at=None):
-        if session_id is None or user_id is None:
-            return False
-        if ended_at is None:
-            ended_at = datetime.now(timezone.utc)
+    def touch_isolated(cls, session_id, user_id, *, now=None):
+        return cls._set_active_timestamp_isolated(
+            session_id, user_id, cls.__table__.c.last_active_at, now
+        )
 
-        with db.engine.begin() as connection:
-            result = connection.execute(
-                update(cls.__table__)
-                .where(
-                    cls.id == session_id,
-                    cls.user_id == user_id,
-                    cls.revoked_at.is_(None),
-                    cls.ended_at.is_(None),
-                )
-                .values(ended_at=ended_at)
-            )
-        return bool(result.rowcount)
+    @classmethod
+    def end_isolated(cls, session_id, user_id, *, ended_at=None):
+        return cls._set_active_timestamp_isolated(
+            session_id, user_id, cls.__table__.c.ended_at, ended_at
+        )
 
     def __repr__(self):
         return (

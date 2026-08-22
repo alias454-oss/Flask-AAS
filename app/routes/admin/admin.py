@@ -3,12 +3,12 @@ import logging
 
 from flask import Blueprint, render_template
 
-from app.core.auth import admin_required, login_required
+from app.core.decorators import admin_required, login_required
 from app.core.decorators import log_view_action
 from app.core.extensions import limiter
 from app.core.meta import page_metadata
 from app.core.security import get_client_ip
-from app.core.trackers import get_admin_quick_stats
+from app.services.trackers import get_admin_quick_stats
 
 logger = logging.getLogger(__name__)
 

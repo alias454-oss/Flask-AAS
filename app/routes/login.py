@@ -5,7 +5,6 @@ from datetime import datetime, timezone
 
 from flask import Blueprint, render_template, redirect, url_for, flash, request, session
 from flask_login import current_user, login_user, logout_user
-from flask_wtf import FlaskForm
 from wtforms import StringField, BooleanField, PasswordField, SubmitField
 from wtforms.validators import DataRequired
 from sqlalchemy.exc import SQLAlchemyError
@@ -14,12 +13,16 @@ from app.core.cache import get_cached_env_settings
 from app.core.decorators import log_view_action
 from app.core.extensions import db, limiter
 from app.core.meta import page_metadata
-from app.core.password_hashing import (
+from app.core.hash import (
     password_hash_needs_rehash,
     verify_login_password,
 )
-from app.core.inactivity import mark_session_activity
-from app.core.sessions import close_current_session, create_login_session
+from app.services.sessions import mark_session_activity
+from app.services.sessions import (
+    clear_browser_session,
+    close_current_session,
+    create_login_session,
+)
 from app.core.security import (
     normalize_username,
     get_client_ip,
@@ -27,52 +30,42 @@ from app.core.security import (
     track_lockout_attempts,
     reset_lockout_attempts,
 )
-from app.core.trackers import (
+from app.services.trackers import (
     LOGIN_FAILURE_INVALID_CREDENTIALS,
     LOGIN_FAILURE_LOCKED_OUT,
     LOGIN_FAILURE_REJECTED,
     audit_activity_enabled,
-    audit_login_enabled,
     current_route,
     log_action,
-    log_login,
+    audit_login_attempt,
 )
 from app.models.user import User
-from .captcha import is_captcha_enabled, CaptchaRequired
+from .captcha import CaptchaForm, CaptchaRequired
 
 logger = logging.getLogger(__name__)
 
 login_bp = Blueprint('login', __name__)
 
 
-class LoginForm(FlaskForm):
+def _rollback_rejected_login(user, username, ip):
+    """Roll back a rejected login transition and audit the failed acceptance."""
+    db.session.rollback()
+    user.clear_session_identity()
+    audit_login_attempt(
+        username,
+        ip,
+        success=False,
+        failure_reason=LOGIN_FAILURE_REJECTED,
+    )
+
+
+class LoginForm(CaptchaForm):
     username = StringField('Username', validators=[DataRequired()])
     password = PasswordField('Password', validators=[DataRequired()])
     remember_me = BooleanField('Remember Me')
     captcha = StringField("Enter CAPTCHA", validators=[CaptchaRequired()])
     submit = SubmitField('Login')
 
-    # Always define captcha at the class level but unbind it if disabled
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-
-        if not is_captcha_enabled():
-            # Remove captcha field if CAPTCHA is disabled
-            del self.captcha
-
-
-def _log_login_result(username, ip, user_agent, referer, success, failure_reason=None):
-    if not audit_login_enabled():
-        return
-
-    log_login(
-        username=username,
-        ip=ip,
-        user_agent=user_agent,
-        referer=referer,
-        success=success,
-        failure_reason=failure_reason,
-    )
 
 
 @login_bp.route('/login', methods=['GET', 'POST'])
@@ -80,11 +73,11 @@ def _log_login_result(username, ip, user_agent, referer, success, failure_reason
 @log_view_action()
 def login():
     meta = page_metadata.get("login", {})
+    env = get_cached_env_settings()
 
-    form = LoginForm()
+    form = LoginForm(captcha_enabled=bool(env and env.use_captcha))
     ip = get_client_ip()
     ua = request.headers.get('User-Agent')
-    ref = request.referrer
 
     if not form.validate_on_submit():
         if request.method == 'POST':
@@ -95,11 +88,9 @@ def login():
     password = form.password.data
 
     if is_locked_out(username, ip):
-        _log_login_result(
+        audit_login_attempt(
             username,
             ip,
-            ua,
-            ref,
             success=False,
             failure_reason=LOGIN_FAILURE_LOCKED_OUT,
         )
@@ -108,7 +99,6 @@ def login():
         return render_template('login.html', form=form, **meta)
 
     user = User.query.filter_by(username=username).first()
-    env = get_cached_env_settings()
 
     # Always perform balanced password-hash work so unknown usernames do not
     # take a shortcut around either supported verification scheme.
@@ -117,11 +107,9 @@ def login():
     credentials_valid = user is not None and password_matches
 
     if not credentials_valid:
-        _log_login_result(
+        audit_login_attempt(
             username,
             ip,
-            ua,
-            ref,
             success=False,
             failure_reason=LOGIN_FAILURE_INVALID_CREDENTIALS,
         )
@@ -132,18 +120,15 @@ def login():
 
     failure_reason = user.login_eligibility_failure
     if failure_reason:
-        _log_login_result(
+        audit_login_attempt(
             username,
             ip,
-            ua,
-            ref,
             success=False,
             failure_reason=failure_reason,
         )
         close_current_session()
         logout_user()
-        session.clear()
-        session['_remember'] = 'clear'
+        clear_browser_session()
         flash("This account is not currently available for sign-in.", "warning")
         return redirect(url_for('login.login'))
 
@@ -156,8 +141,7 @@ def login():
         close_current_session()
         logout_user()
 
-    session.clear()  # Prevent session fixation before authentication continues.
-    session['_remember'] = 'clear'
+    clear_browser_session()  # Prevent session fixation before authentication continues.
 
     # MFA users are not accepted by Flask-Login until the second factor succeeds.
     if env.use_mfa and user.mfa_enabled:
@@ -166,11 +150,9 @@ def login():
                 db.session.commit()
             except SQLAlchemyError:
                 db.session.rollback()
-                _log_login_result(
+                audit_login_attempt(
                     username,
                     ip,
-                    ua,
-                    ref,
                     success=False,
                     failure_reason=LOGIN_FAILURE_REJECTED,
                 )
@@ -199,16 +181,7 @@ def login():
             user_agent=ua,
         )
     except SQLAlchemyError:
-        db.session.rollback()
-        user.clear_session_identity()
-        _log_login_result(
-            username,
-            ip,
-            ua,
-            ref,
-            success=False,
-            failure_reason=LOGIN_FAILURE_REJECTED,
-        )
+        _rollback_rejected_login(user, username, ip)
         logger.exception(
             "Could not create a login session for user '%s' from %s",
             username,
@@ -223,16 +196,7 @@ def login():
         fresh=True,
     )
     if not accepted:
-        db.session.rollback()
-        user.clear_session_identity()
-        _log_login_result(
-            username,
-            ip,
-            ua,
-            ref,
-            success=False,
-            failure_reason=LOGIN_FAILURE_REJECTED,
-        )
+        _rollback_rejected_login(user, username, ip)
         logger.warning(f"Flask-Login rejected user '{username}' from {ip}")
         flash('Invalid credentials.', 'error')
         return render_template('login.html', form=form, **meta)
@@ -257,14 +221,11 @@ def login():
     except SQLAlchemyError:
         db.session.rollback()
         logout_user()
-        session.clear()
-        session['_remember'] = 'clear'
+        clear_browser_session()
         user.clear_session_identity()
-        _log_login_result(
+        audit_login_attempt(
             username,
             ip,
-            ua,
-            ref,
             success=False,
             failure_reason=LOGIN_FAILURE_REJECTED,
         )
@@ -278,11 +239,9 @@ def login():
 
     reset_lockout_attempts(username, ip)
 
-    _log_login_result(
+    audit_login_attempt(
         username,
         ip,
-        ua,
-        ref,
         success=True,
     )
 

@@ -8,9 +8,9 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.decorators import log_view_action
 from app.core.extensions import db, limiter
-from app.core.logger import redact_route_values
+from app.core.security import redact_route_values
 from app.core.security import confirm_token, get_client_ip, redact_email
-from app.core.trackers import audit_activity_enabled, log_action
+from app.services.trackers import audit_activity_enabled, log_action
 from app.models.user import User
 
 logger = logging.getLogger(__name__)

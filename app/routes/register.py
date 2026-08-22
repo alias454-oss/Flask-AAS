@@ -3,20 +3,19 @@ import logging
 from datetime import datetime, timedelta, timezone
 from flask import Blueprint, current_app, render_template, redirect, url_for, flash, abort
 from flask_login import current_user
-from flask_wtf import FlaskForm
 from wtforms import BooleanField, PasswordField, SelectField, StringField, SubmitField
 from wtforms.validators import DataRequired, Email, Optional, Length
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
 from app.core.cache import get_cached_env_settings
 from app.core.extensions import db, limiter
-from app.core.passwords import generate_random_password, password_policy
+from app.services.passwords import generate_random_password, password_policy
 from app.core.security import generate_token, normalize_username, normalize_email, get_client_ip, is_locked_out, track_lockout_attempts, reset_lockout_attempts
 from app.core.meta import page_metadata
+from app.core.profile import configure_profile_location_fields, form_field_data
 from app.core.decorators import log_view_action
-from app.core.trackers import current_route, log_action, log_action_isolated, audit_activity_enabled
-from app.core.locations import configure_location_choices
-from app.core.mailer import (
+from app.services.trackers import current_route, log_action, log_action_isolated, audit_activity_enabled
+from app.services.mailer import (
     get_mail_configuration_state,
     send_password_setup_email,
     send_verification_email,
@@ -24,9 +23,21 @@ from app.core.mailer import (
 )
 from app.models import PasswordResetToken, User, Role
 from app.models.password_reset_token import TOKEN_PURPOSE_SETUP
-from .captcha import CaptchaRequired
+from .captcha import CaptchaForm, CaptchaRequired
 
 logger = logging.getLogger(__name__)
+
+
+def _send_welcome(user):
+    status = send_welcome_email(user.email, user.username)
+    if status != "queued":
+        logger.warning(
+            "Welcome email dispatch status=%s for user_id=%s",
+            status,
+            user.id,
+        )
+    return status
+
 
 register_bp = Blueprint('register', __name__)
 
@@ -35,7 +46,7 @@ EMAIL_VERIFY_SALT = "app.tokens.email.verify"
 PASSWORD_SETUP_TOKEN_LIFETIME = timedelta(hours=48)
 
 # Form class for registration
-class RegisterForm(FlaskForm):
+class RegisterForm(CaptchaForm):
     username = StringField('Username', validators=[DataRequired(), Length(min=3, max=50)])
     email = StringField('Email', validators=[DataRequired(), Email()])
     password = PasswordField('Password', validators=[password_policy])  # Blank permits admin-issued password setup.
@@ -53,24 +64,9 @@ class RegisterForm(FlaskForm):
     nobot_check = StringField('Leave empty')  # hidden in template
     submit = SubmitField('Register')
 
-    # Always define captcha at the class level but unbind it if disabled
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-
-        env = get_cached_env_settings()
-        if not env.use_captcha:
-            # Remove captcha field if CAPTCHA is disabled
-            del self.captcha
-
-        if not env.use_user_location:
-            # Remove location fields if location is disabled
-            del self.country_code
-            del self.address
-            del self.city
-            del self.zone_code
-            del self.postal_code
-        else:
-            configure_location_choices(self)
+        configure_profile_location_fields(self, get_cached_env_settings())
 
 @register_bp.route('/register', methods=['GET', 'POST'])
 @limiter.limit("5 per hour", key_func=get_client_ip)
@@ -88,7 +84,7 @@ def register():
 
     meta = page_metadata.get("register", {})
 
-    form = RegisterForm()
+    form = RegisterForm(captcha_enabled=bool(env and env.use_captcha))
     errors = []
     error_flags = {}
 
@@ -190,28 +186,15 @@ def register():
                     **meta,
                 )
 
-        # Safely get optional fields — check if attribute exists first
-        def get_field_data(field_name):
-            field = getattr(form, field_name, None)
-            return field.data if field else None
-
         user = User(
             username=username,
             ip_address=ip,
             email=email,
-            company_name=get_field_data('company_name'),
-            first_name=get_field_data('first_name'),
-            last_name=get_field_data('last_name'),
-            phone=get_field_data('phone'),
-            country_code=get_field_data('country_code'),
-            address=get_field_data('address'),
-            city=get_field_data('city'),
-            zone_code=get_field_data('zone_code'),
-            postal_code=get_field_data('postal_code'),
             reg_date=datetime.now(timezone.utc),
             last_active=datetime.now(timezone.utc),
             activated=False,
-            approved=False
+            approved=False,
+            **form_field_data(form),
         )
         user.set_password(raw_password)
         user.must_change_password = bool(is_admin)
@@ -298,13 +281,7 @@ def register():
 
                 mail_state = get_mail_configuration_state(env)
                 if mail_state.enabled:
-                    mail_status = send_welcome_email(user.email, user.username)
-                    if mail_status != "queued":
-                        logger.warning(
-                            "Welcome email dispatch status=%s for user_id=%s",
-                            mail_status,
-                            user.id,
-                        )
+                    _send_welcome(user)
 
                 flash(f"User {user.username} created successfully.", "success")
                 return redirect(url_for("register.register"))
@@ -352,13 +329,7 @@ def register():
                 return redirect(url_for("login.login"))
 
             # PATH C: Public User (No Verification)
-            mail_status = send_welcome_email(user.email, user.username)
-            if mail_status != "queued":
-                logger.warning(
-                    "Welcome email dispatch status=%s for user_id=%s",
-                    mail_status,
-                    user.id,
-                )
+            _send_welcome(user)
             flash("Account created successfully. Please log in.", "success")
             return redirect(url_for("login.login"))
 

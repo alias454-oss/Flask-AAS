@@ -5,14 +5,13 @@ from datetime import datetime, timezone
 from flask import Blueprint, flash, redirect, render_template, request, url_for
 from flask_login import current_user
 
-from app.core.auth import login_required
+from app.core.decorators import login_required
 from flask_wtf import FlaskForm
 from flask_wtf.file import FileField, FileRequired
 from sqlalchemy.exc import SQLAlchemyError
-from wtforms import SelectField, StringField, SubmitField
-from wtforms.validators import Length, Optional
+from wtforms import SubmitField
 
-from app.core.avatar import (
+from app.services.avatar import (
     ProfileImageError,
     delete_profile_image,
     max_upload_request_bytes,
@@ -22,10 +21,15 @@ from app.core.avatar import (
 from app.core.cache import get_cached_env_settings
 from app.core.decorators import log_view_action
 from app.core.extensions import db, limiter
-from app.core.locations import configure_location_choices
 from app.core.meta import page_metadata
+from app.core.profile import (
+    PROFILE_FIELD_NAMES,
+    ProfileFieldsForm,
+    apply_form_fields,
+    configure_profile_location_fields,
+)
 from app.core.security import get_client_ip
-from app.core.trackers import (
+from app.services.trackers import (
     audit_activity_enabled,
     current_route,
     log_action,
@@ -35,43 +39,6 @@ from app.models import UserSession
 logger = logging.getLogger(__name__)
 
 account_bp = Blueprint('account', __name__)
-
-PROFILE_FIELD_NAMES = (
-    'company_name',
-    'first_name',
-    'last_name',
-    'phone',
-    'alt_phone',
-    'fax',
-    'country_code',
-    'address',
-    'city',
-    'zone_code',
-    'postal_code',
-)
-
-LOCATION_FIELD_NAMES = (
-    'country_code',
-    'address',
-    'city',
-    'zone_code',
-    'postal_code',
-)
-
-
-def normalize_optional_text(value):
-    if value is None:
-        return None
-
-    normalized = (
-        str(value)
-        .replace('\x00', '')
-        .replace('\r', ' ')
-        .replace('\n', ' ')
-        .strip()
-    )
-    return normalized or None
-
 
 class ProfileImageForm(FlaskForm):
     image = FileField(
@@ -84,73 +51,26 @@ class RemoveProfileImageForm(FlaskForm):
     pass
 
 
-class ProfileForm(FlaskForm):
-    company_name = StringField(
-        'Company Name',
-        validators=[Optional(), Length(max=255)],
-        filters=[normalize_optional_text],
-    )
-    first_name = StringField(
-        'First Name',
-        validators=[Optional(), Length(max=100)],
-        filters=[normalize_optional_text],
-    )
-    last_name = StringField(
-        'Last Name',
-        validators=[Optional(), Length(max=100)],
-        filters=[normalize_optional_text],
-    )
-    phone = StringField(
-        'Phone',
-        validators=[Optional(), Length(max=50)],
-        filters=[normalize_optional_text],
-    )
-    alt_phone = StringField(
-        'Alternate Phone',
-        validators=[Optional(), Length(max=50)],
-        filters=[normalize_optional_text],
-    )
-    fax = StringField(
-        'Fax',
-        validators=[Optional(), Length(max=50)],
-        filters=[normalize_optional_text],
-    )
-    country_code = SelectField(
-        'Country',
-        choices=[],
-        validators=[Optional()],
-    )
-    address = StringField(
-        'Address',
-        validators=[Optional(), Length(max=255)],
-        filters=[normalize_optional_text],
-    )
-    city = StringField(
-        'City',
-        validators=[Optional(), Length(max=100)],
-        filters=[normalize_optional_text],
-    )
-    zone_code = SelectField(
-        'Region / Subdivision',
-        choices=[],
-        validators=[Optional()],
-    )
-    postal_code = StringField(
-        'Postal Code',
-        validators=[Optional(), Length(max=20)],
-        filters=[normalize_optional_text],
-    )
+def _current_session_id():
+    session_id = current_user.session_record_id
+    if session_id is None:
+        logger.warning(
+            'Authenticated user_id=%s has no current session record',
+            current_user.id,
+        )
+        flash(
+            'Your current session could not be identified. Please log in again.',
+            'danger',
+        )
+    return session_id
+
+
+class ProfileForm(ProfileFieldsForm):
     submit = SubmitField('Save Profile')
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-
-        env = get_cached_env_settings()
-        if not env or not env.use_user_location:
-            for field_name in LOCATION_FIELD_NAMES:
-                del self[field_name]
-        else:
-            configure_location_choices(self)
+        configure_profile_location_fields(self, get_cached_env_settings())
 
 
 @account_bp.route('/account', methods=['GET', 'POST'])
@@ -175,20 +95,25 @@ def account():
         current_session_id,
     )
 
+    template_context = {
+        "form": form,
+        "image_form": image_form,
+        "remove_image_form": remove_image_form,
+        "profile_image": profile_image,
+        "active_sessions": active_sessions,
+        "current_session_id": current_session_id,
+        "other_sessions": other_sessions,
+        "previous_login_at": previous_login_at,
+        **meta,
+    }
+
     if form.validate_on_submit():
-        changed_fields = []
-
-        for field_name in PROFILE_FIELD_NAMES:
-            if field_name not in form or field_name not in request.form:
-                continue
-
-            field = form[field_name]
-            new_value = field.data
-            if getattr(current_user, field_name) == new_value:
-                continue
-
-            setattr(current_user, field_name, new_value)
-            changed_fields.append(field_name)
+        changed_fields = apply_form_fields(
+            current_user,
+            form,
+            PROFILE_FIELD_NAMES,
+            submitted_fields=request.form,
+        )
 
         if not changed_fields:
             flash("No profile changes were detected.", "info")
@@ -211,34 +136,12 @@ def account():
                 current_user.id,
             )
             flash("Your profile could not be updated. Please try again.", "danger")
-            return render_template(
-                "account/account.html",
-                form=form,
-                image_form=image_form,
-                remove_image_form=remove_image_form,
-                profile_image=profile_image,
-                active_sessions=active_sessions,
-                current_session_id=current_session_id,
-                other_sessions=other_sessions,
-                previous_login_at=previous_login_at,
-                **meta,
-            )
+            return render_template("account/account.html", **template_context)
 
         flash("Your profile has been updated.", "success")
         return redirect(url_for('account.account'))
 
-    return render_template(
-        "account/account.html",
-        form=form,
-        image_form=image_form,
-        remove_image_form=remove_image_form,
-        profile_image=profile_image,
-        active_sessions=active_sessions,
-        current_session_id=current_session_id,
-        other_sessions=other_sessions,
-        previous_login_at=previous_login_at,
-        **meta,
-    )
+    return render_template("account/account.html", **template_context)
 
 
 @account_bp.route('/account/profile-image', methods=['POST'])
@@ -345,13 +248,8 @@ def remove_profile_image():
 @limiter.limit("10 per minute", exempt_when=lambda: not current_user.is_authenticated)
 @login_required
 def revoke_session(session_id):
-    current_session_id = current_user.session_record_id
+    current_session_id = _current_session_id()
     if current_session_id is None:
-        logger.warning(
-            'Authenticated user_id=%s has no current session record',
-            current_user.id,
-        )
-        flash('Your current session could not be identified. Please log in again.', 'danger')
         return redirect(url_for('login.login'))
 
     if session_id == current_session_id:
@@ -398,13 +296,8 @@ def revoke_session(session_id):
 @limiter.limit('5 per minute', exempt_when=lambda: not current_user.is_authenticated)
 @login_required
 def revoke_other_sessions():
-    current_session_id = current_user.session_record_id
+    current_session_id = _current_session_id()
     if current_session_id is None:
-        logger.warning(
-            'Authenticated user_id=%s has no current session record',
-            current_user.id,
-        )
-        flash('Your current session could not be identified. Please log in again.', 'danger')
         return redirect(url_for('login.login'))
 
     revoked_at = datetime.now(timezone.utc)

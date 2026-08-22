@@ -8,8 +8,8 @@ from flask import Blueprint, Flask
 from flask_login import LoginManager
 
 from app.core.extensions import cache, db, limiter
-from app.core.mailer import decrypt_smtp_password, encrypt_smtp_password
-from app.core.passwords import password_policy_errors
+from app.services.mailer import decrypt_smtp_password, encrypt_smtp_password
+from app.services.passwords import password_policy_errors
 from app.core.seeder import initial_outbound_email_enabled
 from app.models import EnvSettings, Role, User
 from app.routes.admin.settings import settings_bp

@@ -1,4 +1,4 @@
-# app/core/locations.py
+# app/services/geo.py
 from sqlalchemy import select
 
 from app.core.extensions import db

@@ -1,13 +1,13 @@
 # routes/logout.py
 import logging
 
-from flask import Blueprint, redirect, session, url_for
+from flask import Blueprint, redirect, url_for
 from flask_login import current_user, logout_user
 
-from app.core.auth import login_required
+from app.core.decorators import login_required
 
-from app.core.sessions import close_current_session
-from app.core.trackers import audit_activity_enabled, current_route, log_action_isolated
+from app.services.sessions import clear_browser_session, close_current_session
+from app.services.trackers import audit_activity_enabled, current_route, log_action_isolated
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +28,5 @@ def logout():
 
     close_current_session()
     logout_user()
-    session.clear()
-    session['_remember'] = 'clear'
+    clear_browser_session()
     return redirect(url_for('login.login'))

@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from sqlalchemy import select
 
 from flask import current_app
-from app import create_app, db
+from app.core.extensions import db
 from app.models.country import Country
 from app.models.zone import Zone
 from app.models.env_settings import EnvSettings
@@ -16,7 +16,7 @@ from app.models.user import User
 from app.models.role import Role
 from app.models.plugin import PluginRegistration
 from app.plugins.bundled import bundled_plugin_registrations
-from app.core.mailer import environment_mail_configuration
+from app.services.mailer import environment_mail_configuration
 
 logger = logging.getLogger(__name__)
 
@@ -418,9 +418,3 @@ def run_all_seeds():
         db.session.rollback()
         logger.error(f"Database Hydration Failed: {str(e)}")
         raise
-
-
-if __name__ == "__main__":
-    app = create_app()
-    with app.app_context():
-        run_all_seeds()

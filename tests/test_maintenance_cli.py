@@ -4,7 +4,7 @@ from unittest.mock import patch
 from click.testing import CliRunner
 from sqlalchemy.exc import SQLAlchemyError
 
-from app.core.trackers import CLEAN_ONLINE_USER_MINUTES
+from app.services.trackers import CLEAN_ONLINE_USER_MINUTES
 from manage import cleanup_online_users
 
 

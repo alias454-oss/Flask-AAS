@@ -12,7 +12,7 @@ from flask import Blueprint, Flask
 from flask_login import LoginManager
 from sqlalchemy.exc import SQLAlchemyError
 
-from app.core.auth import enforce_required_password_change
+from app.core.decorators import enforce_required_password_change
 from app.core.extensions import cache, db, limiter
 from app.models import (
     AuditActivity,

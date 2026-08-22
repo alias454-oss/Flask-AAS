@@ -1,4 +1,4 @@
-# app/core/trackers.py
+# app/services/trackers.py
 import logging
 from datetime import datetime, timedelta, timezone
 from ipaddress import ip_address
@@ -51,6 +51,15 @@ def audit_login_enabled():
 
 def current_route():
     return request.endpoint or request.path
+
+
+def audit_failure_metadata(exc, **extra_data):
+    """Return bounded failure facts safe for authoritative audit metadata."""
+    return {
+        **extra_data,
+        "outcome": "failed",
+        "error_type": type(exc).__name__,
+    }
 
 
 def _truncate(value, max_length):
@@ -128,7 +137,7 @@ def _normalize_login_failure_reason(success, failure_reason):
     return failure_reason
 
 
-def log_login(
+def persist_login_audit(
     username,
     ip,
     user_agent,
@@ -158,6 +167,20 @@ def log_login(
     except SQLAlchemyError:
         logger.exception("Database error while recording login audit event")
         return False
+
+
+def audit_login_attempt(username, ip, success, failure_reason=None):
+    """Audit the current request login attempt when authoritative login auditing is enabled."""
+    if not username or not audit_login_enabled():
+        return False
+    return persist_login_audit(
+        username=username,
+        ip=ip,
+        user_agent=request.headers.get('User-Agent'),
+        referer=request.referrer,
+        success=success,
+        failure_reason=failure_reason,
+    )
 
 
 def log_action(user_id=None, action=None, target=None, extra_data=None):

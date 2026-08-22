@@ -1,4 +1,5 @@
 # plugins/migrations.py
+from contextlib import contextmanager
 from pathlib import Path
 import shutil
 import tempfile
@@ -47,6 +48,14 @@ def downgrade() -> None:
 
 class PluginMigrationError(RuntimeError):
     """Raised when plugin-owned migration state cannot be handled safely."""
+
+
+@contextmanager
+def _translate_command_errors():
+    try:
+        yield
+    except CommandError as exc:
+        raise PluginMigrationError(str(exc)) from exc
 
 
 class PluginMigrationManager:
@@ -158,10 +167,8 @@ class PluginMigrationManager:
         return config
 
     def head_revision(self) -> str | None:
-        try:
+        with _translate_command_errors():
             return ScriptDirectory.from_config(self._config()).get_current_head()
-        except CommandError as exc:
-            raise PluginMigrationError(str(exc)) from exc
 
     def current_revision(self) -> str | None:
         with db.engine.connect() as connection:
@@ -169,10 +176,8 @@ class PluginMigrationManager:
                 connection,
                 opts={"version_table": self.manifest.version_table},
             )
-            try:
+            with _translate_command_errors():
                 return context.get_current_revision()
-            except CommandError as exc:
-                raise PluginMigrationError(str(exc)) from exc
 
     def schema_current(self) -> bool:
         head = self.head_revision()
@@ -223,7 +228,7 @@ class PluginMigrationManager:
     def upgrade(self, revision: str = "head") -> str | None:
         """Upgrade or bootstrap this plugin without touching another schema owner."""
 
-        try:
+        with _translate_command_errors():
             with db.engine.begin() as connection:
                 inspector = inspect(connection)
                 version_table_present = inspector.has_table(self.manifest.version_table)
@@ -247,24 +252,18 @@ class PluginMigrationManager:
                         self._config(connection=connection),
                         revision,
                     )
-        except PluginMigrationError:
-            raise
-        except CommandError as exc:
-            raise PluginMigrationError(str(exc)) from exc
 
         return self.current_revision()
 
     def downgrade(self, revision: str = "-1") -> str | None:
         """Explicitly downgrade this plugin's migration history."""
 
-        try:
+        with _translate_command_errors():
             with db.engine.begin() as connection:
                 command.downgrade(
                     self._config(connection=connection),
                     revision,
                 )
-        except CommandError as exc:
-            raise PluginMigrationError(str(exc)) from exc
 
         return self.current_revision()
 
@@ -275,15 +274,13 @@ class PluginMigrationManager:
         if not message:
             raise PluginMigrationError("Migration message must not be empty")
 
-        try:
+        with _translate_command_errors():
             with db.engine.begin() as connection:
                 script = command.revision(
                     self._config(connection=connection),
                     message=message,
                     autogenerate=True,
                 )
-        except CommandError as exc:
-            raise PluginMigrationError(str(exc)) from exc
 
         revision = getattr(script, "revision", None)
         if not isinstance(revision, str) or not revision:

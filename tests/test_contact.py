@@ -10,7 +10,7 @@ from flask_login import LoginManager
 from app import create_app
 from app.core.config import settings
 from app.core.extensions import limiter
-from app.core.mailer import contact_form_available, send_contact_email
+from app.services.mailer import contact_form_available, send_contact_email
 from app.routes.captcha import captcha_bp
 from app.routes.contact import contact_bp
 from app.routes.sitemap import get_all_public_urls
@@ -321,13 +321,13 @@ class ContactMailerTests(unittest.TestCase):
         )
 
         with self.app.app_context(), patch(
-            "app.core.mailer.get_mail_env_settings",
+            "app.services.mailer.get_mail_env_settings",
             return_value=env,
         ), patch(
-            "app.core.mailer.render_email",
+            "app.services.mailer.render_email",
             return_value=("text body", "html body"),
         ) as render, patch(
-            "app.core.mailer.send_email",
+            "app.services.mailer.send_email",
             return_value="queued",
         ) as send:
             status = send_contact_email(
@@ -360,10 +360,10 @@ class ContactMailerTests(unittest.TestCase):
         )
 
         with self.app.app_context(), patch(
-            "app.core.mailer.get_mail_env_settings",
+            "app.services.mailer.get_mail_env_settings",
             return_value=env,
-        ), patch("app.core.mailer.render_email") as render, patch(
-            "app.core.mailer.send_email",
+        ), patch("app.services.mailer.render_email") as render, patch(
+            "app.services.mailer.send_email",
         ) as send:
             status = send_contact_email(
                 name="Example User",
@@ -383,10 +383,10 @@ class ContactMailerTests(unittest.TestCase):
         )
 
         with self.app.app_context(), patch(
-            "app.core.mailer.get_mail_env_settings",
+            "app.services.mailer.get_mail_env_settings",
             return_value=env,
-        ), patch("app.core.mailer.render_email") as render, patch(
-            "app.core.mailer.send_email",
+        ), patch("app.services.mailer.render_email") as render, patch(
+            "app.services.mailer.send_email",
         ) as send:
             status = send_contact_email(
                 name="Example User",

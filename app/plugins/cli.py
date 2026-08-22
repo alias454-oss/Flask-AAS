@@ -11,12 +11,10 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.extensions import db
 from app.models.plugin import PluginRegistration
-from app.plugins.interface import (
-    PluginCompatibilityError,
-    validate_plugin_contract,
-)
+from app.plugins.interface import PluginCompatibilityError
 from app.plugins.loader import resolve_plugin
 from app.plugins.migrations import PluginMigrationError, PluginMigrationManager
+from app.plugins.registry import PluginRegistrationError, validate_registered_plugin
 
 logger = logging.getLogger(__name__)
 
@@ -41,21 +39,17 @@ def _registered_plugin(plugin_id: str):
         raise click.ClickException(f"Plugin {plugin_id!r} is not registered.")
 
     try:
-        plugin = resolve_plugin(registration.import_path)
-        validate_plugin_contract(plugin)
-    except PluginCompatibilityError as exc:
+        plugin = validate_registered_plugin(
+            registration,
+            resolve_plugin(registration.import_path),
+        )
+    except (PluginCompatibilityError, PluginRegistrationError) as exc:
         raise click.ClickException(str(exc)) from exc
     except Exception as exc:
         logger.exception("Failed to load plugin %s for CLI dispatch", plugin_id)
         raise click.ClickException(
             f"Plugin {plugin_id!r} could not be loaded. Check application logs."
         ) from exc
-
-    if plugin.plugin_id != registration.plugin_id:
-        raise click.ClickException(
-            f"Registered plugin ID {registration.plugin_id!r} does not match "
-            f"imported plugin ID {plugin.plugin_id!r}."
-        )
 
     return plugin
 
@@ -67,8 +61,13 @@ def _plugin_migration_commands(plugin) -> click.Group | None:
     if manifest is None or manifest.migration_path is None:
         return None
 
-    def migration_manager() -> PluginMigrationManager:
-        return PluginMigrationManager(manifest)
+    manager = PluginMigrationManager(manifest)
+
+    def run_migration(operation, *args):
+        try:
+            return operation(*args)
+        except PluginMigrationError as exc:
+            raise click.ClickException(str(exc)) from exc
 
     @click.group("db")
     def database_commands():
@@ -78,10 +77,7 @@ def _plugin_migration_commands(plugin) -> click.Group | None:
     def database_init():
         """Initialize the plugin-owned Alembic migration environment."""
 
-        try:
-            path = migration_manager().initialize()
-        except PluginMigrationError as exc:
-            raise click.ClickException(str(exc)) from exc
+        path = run_migration(manager.initialize)
 
         click.echo(
             f"Initialized {plugin.name} migration environment at {path}."
@@ -91,12 +87,8 @@ def _plugin_migration_commands(plugin) -> click.Group | None:
     def database_current():
         """Show the current and head plugin schema revisions."""
 
-        try:
-            manager = migration_manager()
-            current = manager.current_revision()
-            head = manager.head_revision()
-        except PluginMigrationError as exc:
-            raise click.ClickException(str(exc)) from exc
+        current = run_migration(manager.current_revision)
+        head = run_migration(manager.head_revision)
 
         click.echo(f"current={current or '<base>'}")
         click.echo(f"head={head or '<none>'}")
@@ -106,10 +98,7 @@ def _plugin_migration_commands(plugin) -> click.Group | None:
     def database_upgrade(revision: str):
         """Upgrade the plugin schema, bootstrapping a fresh namespace at head."""
 
-        try:
-            current = migration_manager().upgrade(revision)
-        except PluginMigrationError as exc:
-            raise click.ClickException(str(exc)) from exc
+        current = run_migration(manager.upgrade, revision)
 
         click.echo(f"{plugin.name} schema revision={current or '<base>'}")
 
@@ -118,10 +107,7 @@ def _plugin_migration_commands(plugin) -> click.Group | None:
     def database_downgrade(revision: str):
         """Explicitly downgrade the plugin-owned schema."""
 
-        try:
-            current = migration_manager().downgrade(revision)
-        except PluginMigrationError as exc:
-            raise click.ClickException(str(exc)) from exc
+        current = run_migration(manager.downgrade, revision)
 
         click.echo(f"{plugin.name} schema revision={current or '<base>'}")
 
@@ -135,10 +121,7 @@ def _plugin_migration_commands(plugin) -> click.Group | None:
     def database_migrate(message: str):
         """Autogenerate a new plugin-owned migration revision."""
 
-        try:
-            revision = migration_manager().migrate(message)
-        except PluginMigrationError as exc:
-            raise click.ClickException(str(exc)) from exc
+        revision = run_migration(manager.migrate, message)
 
         click.echo(f"Generated {plugin.name} migration {revision}.")
 

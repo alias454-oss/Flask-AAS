@@ -783,7 +783,7 @@ class PluginAdminRouteTests(unittest.TestCase):
         )
         runtime.instances["admin-plugin"] = plugin
 
-        with patch("app.routes.admin.plugins.log_action") as audit:
+        with patch("app.routes.admin.plugins.log_action_isolated") as audit:
             response = self.client.post(
                 f"/admin/plugins/{record.id}/datasets/reference/run",
                 follow_redirects=False,
@@ -898,7 +898,7 @@ class PluginAdminRouteTests(unittest.TestCase):
         ), patch(
             "app.routes.admin.plugins.PluginMigrationManager"
         ) as manager_cls, patch(
-            "app.routes.admin.plugins.log_action"
+            "app.routes.admin.plugins.log_action_isolated"
         ) as log_action_mock:
             response = self.client.post(
                 f"/admin/plugins/{record.id}/upgrade-schema",
@@ -928,7 +928,7 @@ class PluginAdminRouteTests(unittest.TestCase):
             "app.routes.admin.plugins.PluginMigrationManager",
             return_value=manager,
         ), patch(
-            "app.routes.admin.plugins.log_action"
+            "app.routes.admin.plugins.log_action_isolated"
         ) as log_action_mock:
             response = self.client.post(
                 f"/admin/plugins/{record.id}/upgrade-schema",

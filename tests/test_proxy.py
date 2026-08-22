@@ -4,7 +4,7 @@ import unittest
 from flask import Flask, jsonify, request
 
 from app.core.extensions import _client_ip_key
-from app.core.proxy import TrustedProxyFix
+from app.core.security import TrustedProxyFix
 from app.core.security import get_client_ip
 
 

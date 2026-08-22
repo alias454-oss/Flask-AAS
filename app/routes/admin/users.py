@@ -3,10 +3,8 @@
 import logging
 from flask import Blueprint, render_template, redirect, request, url_for, flash
 from flask_login import current_user
-from flask_wtf import FlaskForm
 from wtforms import (
     BooleanField,
-    SelectField,
     SelectMultipleField,
     StringField,
     SubmitField,
@@ -16,15 +14,22 @@ from wtforms.widgets import ListWidget, CheckboxInput
 from wtforms.validators import DataRequired, Email, Length, Optional
 from sqlalchemy.exc import SQLAlchemyError
 
-from app.core.avatar import delete_profile_image, profile_image_data_uri
+from app.services.avatar import delete_profile_image, profile_image_data_uri
 from app.core.cache import get_cached_env_settings, get_cached_roles
 from app.core.extensions import db, limiter
+from app.core.profile import (
+    PROFILE_FIELD_NAMES,
+    ProfileFieldsForm,
+    apply_form_fields,
+    configure_profile_location_fields,
+    normalize_optional_text,
+)
 from app.core.security import get_client_ip, normalize_email, normalize_username
-from app.core.auth import login_required, admin_required
-from app.core.locations import configure_location_choices
+from app.core.decorators import login_required, admin_required
 from app.core.meta import page_metadata
 from app.core.decorators import log_view_action
-from app.core.trackers import (
+from app.services.trackers import (
+    audit_failure_metadata,
     get_admin_quick_stats,
     log_action,
     log_action_isolated,
@@ -35,41 +40,18 @@ logger = logging.getLogger(__name__)
 
 users_bp = Blueprint('users', __name__, url_prefix='/admin/users')
 
-def _normalize_optional_text(value):
-    """Normalize optional single-line profile text before persistence.
-
-    :param value: Raw form value.
-    :return: Normalized text or ``None`` when empty.
-    """
-    if value is None:
-        return None
-
-    normalized = (
-        str(value)
-        .replace("\x00", "")
-        .replace("\r", " ")
-        .replace("\n", " ")
-        .strip()
-    )
-    return normalized or None
+ADMIN_EDITABLE_FIELD_NAMES = (
+    "username",
+    "email",
+    *PROFILE_FIELD_NAMES,
+    "activated",
+    "approved",
+    "notes",
+    "admin_notes",
+)
 
 
-def _audit_failure_metadata(exc):
-    """Return bounded failure metadata suitable for authoritative audit rows.
-
-    Full exception details remain in operational logs; audit records retain only
-    stable failure facts so database/driver messages are not persisted.
-
-    :param exc: Exception raised by the failed administrative operation.
-    :return: Stable failure metadata.
-    """
-    return {
-        "outcome": "failed",
-        "error_type": type(exc).__name__,
-    }
-
-
-class AdminUserForm(FlaskForm):
+class AdminUserForm(ProfileFieldsForm):
     """Validate and canonicalize administrator-managed user profile fields."""
 
     username = StringField(
@@ -82,59 +64,18 @@ class AdminUserForm(FlaskForm):
         validators=[DataRequired(), Email(), Length(max=255)],
         filters=[normalize_email],
     )
-    company_name = StringField(
-        'Company Name',
-        validators=[Optional(), Length(max=255)],
-        filters=[_normalize_optional_text],
-    )
-    first_name = StringField(
-        'First Name',
-        validators=[Optional(), Length(max=100)],
-        filters=[_normalize_optional_text],
-    )
-    last_name = StringField(
-        'Last Name',
-        validators=[Optional(), Length(max=100)],
-        filters=[_normalize_optional_text],
-    )
-    phone = StringField(
-        'Phone',
-        validators=[Optional(), Length(max=50)],
-        filters=[_normalize_optional_text],
-    )
+    # Preserve the historical administrator-facing label.
     alt_phone = StringField(
         'Alt Phone',
         validators=[Optional(), Length(max=50)],
-        filters=[_normalize_optional_text],
-    )
-    fax = StringField(
-        'Fax',
-        validators=[Optional(), Length(max=50)],
-        filters=[_normalize_optional_text],
+        filters=[normalize_optional_text],
     )
     roles = SelectMultipleField(
         "Assigned Roles",
-        choices=[],  # Will populate in your view
+        choices=[],
         coerce=int,
         option_widget=CheckboxInput(),
         widget=ListWidget(prefix_label=False),
-    )
-    country_code = SelectField('Country', choices=[], validators=[Optional()])
-    address = StringField(
-        'Address',
-        validators=[Optional(), Length(max=255)],
-        filters=[_normalize_optional_text],
-    )
-    city = StringField(
-        'City',
-        validators=[Optional(), Length(max=100)],
-        filters=[_normalize_optional_text],
-    )
-    zone_code = SelectField('Region / Subdivision', choices=[], validators=[Optional()])
-    postal_code = StringField(
-        'Postal Code',
-        validators=[Optional(), Length(max=20)],
-        filters=[_normalize_optional_text],
     )
     activated = BooleanField('Activated')
     approved = BooleanField('Approved')
@@ -142,28 +83,25 @@ class AdminUserForm(FlaskForm):
     admin_notes = TextAreaField('Admin Notes')
     submit = SubmitField('Update')
 
-    # Always define form fields at the class level but unbind fields if disabled
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-
         env = get_cached_env_settings()
         if not env.use_user_approval:
-            # Remove approval fields if user_approval is disabled
             del self.approved
-
         if not env.use_verify_email:
-            # Remove activated field if user_verify_email is disabled
             del self.activated
+        configure_profile_location_fields(self, env)
 
-        if not env.use_user_location:
-            # Remove location fields if location is disabled
-            del self.country_code
-            del self.address
-            del self.city
-            del self.zone_code
-            del self.postal_code
-        else:
-            configure_location_choices(self)
+
+def _render_edit_user(form, user, meta):
+    return render_template(
+        "admin/edit_user.html",
+        form=form,
+        user=user,
+        quick_stats=get_admin_quick_stats(),
+        **meta,
+    )
+
 
 @users_bp.route("/", methods=["GET"])
 @limiter.limit("20 per minute", key_func=get_client_ip)
@@ -223,7 +161,7 @@ def remove_profile_image(user_id):
             action="admin_profile_image_remove_failed",
             user_id=current_user.id,
             target=f"user:{user_id}",
-            extra_data=_audit_failure_metadata(exc),
+            extra_data=audit_failure_metadata(exc),
         )
         flash("The profile image could not be removed.", "error")
         return redirect(url_for("users.list_users"))
@@ -297,7 +235,7 @@ def delete_user(user_id):
             action="delete_user_failed",
             user_id=current_user.id,
             target=f"user:{user_id}",
-            extra_data=_audit_failure_metadata(e)
+            extra_data=audit_failure_metadata(e)
         )
 
     return redirect(url_for("users.list_users"))
@@ -340,30 +278,13 @@ def edit_user(user_id):
             admin_role = next((role for role in all_roles if role.name == 'admin'), None)
             if user.id == 1 and admin_role.id not in selected_role_ids:
                 flash("You cannot remove the admin role from the primary admin user.", "danger")
-                quick_stats = get_admin_quick_stats()
-                return render_template(
-                    "admin/edit_user.html",
-                    form=form,
-                    user=user,
-                    quick_stats=quick_stats,
-                    **meta,
-                )
+                return _render_edit_user(form, user, meta)
 
-            # Detect changed fields BEFORE applying updates
-            changed_fields = []
-            for field_name, field in form._fields.items():
-                # Skip non-model fields
-                if field_name in ("roles", "submit", "csrf_token"):
-                    continue
-                old_value = getattr(user, field_name, None)
-                new_value = form[field_name].data
-                if new_value != old_value:
-                    changed_fields.append(field_name)
-
-            # Update user fields except roles
-            for field_name, field in form._fields.items():
-                if field_name != 'roles':
-                    setattr(user, field_name, form[field_name].data)
+            changed_fields = apply_form_fields(
+                user,
+                form,
+                ADMIN_EDITABLE_FIELD_NAMES,
+            )
 
             # Update roles relationship explicitly with Role objects
             selected_roles = Role.query.filter(Role.id.in_(selected_role_ids)).all()
@@ -394,15 +315,8 @@ def edit_user(user_id):
                     action="edit_user_failed",
                     user_id=current_user.id,
                     target=f"user:{user_id}",
-                    extra_data=_audit_failure_metadata(e)
+                    extra_data=audit_failure_metadata(e)
                 )
 
     # Render form with errors or initial data
-    quick_stats = get_admin_quick_stats()
-    return render_template(
-        "admin/edit_user.html",
-        form=form,
-        user=user,
-        quick_stats=quick_stats,
-        **meta,
-    )
+    return _render_edit_user(form, user, meta)
