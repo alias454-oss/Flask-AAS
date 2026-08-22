@@ -106,11 +106,6 @@ def zone_choices(country_code):
     return [("", placeholder)] + [(record["code"], record["label"]) for record in records]
 
 
-def configure_location_choices(form):
-    form.country_code.choices = country_choices()
-    form.zone_code.choices = zone_choices(form.country_code.data)
-
-
 def country_name(country_code):
     normalized = normalize_country_code(country_code)
     if not normalized:
