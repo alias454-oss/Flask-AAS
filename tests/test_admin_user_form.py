@@ -6,7 +6,7 @@ from unittest.mock import patch
 from flask import Flask
 from werkzeug.datastructures import MultiDict
 
-from app.routes.admin.users import AdminUserForm
+from app.forms.users import AdminUserForm
 from app.services.trackers import audit_failure_metadata
 
 
@@ -30,7 +30,7 @@ def _form(**overrides):
     values.update(overrides)
 
     with app.test_request_context(method="POST"), patch(
-        "app.routes.admin.users.get_cached_env_settings",
+        "app.forms.users.get_cached_env_settings",
         return_value=_env(),
     ):
         form = AdminUserForm(formdata=MultiDict(values))
@@ -84,7 +84,7 @@ def test_admin_user_form_exposes_activation_and_approval_independently():
             use_user_location=False,
         )
         with app.test_request_context(), patch(
-            "app.routes.admin.users.get_cached_env_settings",
+            "app.forms.users.get_cached_env_settings",
             return_value=env,
         ):
             form = AdminUserForm()

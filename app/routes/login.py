@@ -5,8 +5,6 @@ from datetime import datetime, timezone
 
 from flask import Blueprint, render_template, redirect, url_for, flash, request, session
 from flask_login import current_user, login_user, logout_user
-from wtforms import StringField, BooleanField, PasswordField, SubmitField
-from wtforms.validators import DataRequired
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.cache import get_cached_env_settings
@@ -40,7 +38,7 @@ from app.services.trackers import (
     audit_login_attempt,
 )
 from app.models.user import User
-from .captcha import CaptchaForm, CaptchaRequired
+from app.forms.login import LoginForm
 
 logger = logging.getLogger(__name__)
 
@@ -57,15 +55,6 @@ def _rollback_rejected_login(user, username, ip):
         success=False,
         failure_reason=LOGIN_FAILURE_REJECTED,
     )
-
-
-class LoginForm(CaptchaForm):
-    username = StringField('Username', validators=[DataRequired()])
-    password = PasswordField('Password', validators=[DataRequired()])
-    remember_me = BooleanField('Remember Me')
-    captcha = StringField("Enter CAPTCHA", validators=[CaptchaRequired()])
-    submit = SubmitField('Login')
-
 
 
 @login_bp.route('/login', methods=['GET', 'POST'])

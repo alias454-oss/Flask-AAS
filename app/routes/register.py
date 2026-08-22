@@ -3,16 +3,15 @@ import logging
 from datetime import datetime, timedelta, timezone
 from flask import Blueprint, current_app, render_template, redirect, url_for, flash, abort
 from flask_login import current_user
-from wtforms import BooleanField, PasswordField, SelectField, StringField, SubmitField
-from wtforms.validators import DataRequired, Email, Optional, Length
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
 from app.core.cache import get_cached_env_settings
 from app.core.extensions import db, limiter
-from app.services.passwords import generate_random_password, password_policy
+from app.services.passwords import generate_random_password
 from app.core.security import generate_token, normalize_username, normalize_email, get_client_ip, is_locked_out, track_lockout_attempts, reset_lockout_attempts
 from app.core.meta import page_metadata
-from app.core.profile import configure_profile_location_fields, form_field_data
+from app.forms.profile import form_field_data
+from app.forms.register import RegisterForm
 from app.core.decorators import log_view_action
 from app.services.trackers import current_route, log_action, log_action_isolated, audit_activity_enabled
 from app.services.mailer import (
@@ -23,7 +22,6 @@ from app.services.mailer import (
 )
 from app.models import PasswordResetToken, User, Role
 from app.models.password_reset_token import TOKEN_PURPOSE_SETUP
-from .captcha import CaptchaForm, CaptchaRequired
 
 logger = logging.getLogger(__name__)
 
@@ -44,29 +42,6 @@ register_bp = Blueprint('register', __name__)
 # === Token Management ===
 EMAIL_VERIFY_SALT = "app.tokens.email.verify"
 PASSWORD_SETUP_TOKEN_LIFETIME = timedelta(hours=48)
-
-# Form class for registration
-class RegisterForm(CaptchaForm):
-    username = StringField('Username', validators=[DataRequired(), Length(min=3, max=50)])
-    email = StringField('Email', validators=[DataRequired(), Email()])
-    password = PasswordField('Password', validators=[password_policy])  # Blank permits admin-issued password setup.
-    company_name = StringField('Company Name', validators=[Optional(), Length(max=100)])
-    first_name = StringField('First Name', validators=[Optional(), Length(max=50)])
-    last_name = StringField('Last Name', validators=[Optional(), Length(max=50)])
-    phone = StringField('Phone', validators=[Optional(), Length(max=20)])
-    country_code = SelectField('Country', choices=[], validators=[Optional()])
-    address = StringField('Address', validators=[Optional(), Length(max=150)])
-    city = StringField('City', validators=[Optional(), Length(max=50)])
-    zone_code = SelectField('Region / Subdivision', choices=[], validators=[Optional()])
-    postal_code = StringField('Postal Code', validators=[Optional(), Length(max=20)])
-    agree = BooleanField('I agree to the terms of service', validators=[DataRequired()])
-    captcha = StringField("Enter CAPTCHA", validators=[CaptchaRequired()])
-    nobot_check = StringField('Leave empty')  # hidden in template
-    submit = SubmitField('Register')
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        configure_profile_location_fields(self, get_cached_env_settings())
 
 @register_bp.route('/register', methods=['GET', 'POST'])
 @limiter.limit("5 per hour", key_func=get_client_ip)

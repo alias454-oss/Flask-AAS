@@ -6,10 +6,7 @@ from flask import Blueprint, flash, redirect, render_template, request, url_for
 from flask_login import current_user
 
 from app.core.decorators import login_required
-from flask_wtf import FlaskForm
-from flask_wtf.file import FileField, FileRequired
 from sqlalchemy.exc import SQLAlchemyError
-from wtforms import SubmitField
 
 from app.services.avatar import (
     ProfileImageError,
@@ -18,16 +15,11 @@ from app.services.avatar import (
     profile_image_data_uri,
     store_profile_image,
 )
-from app.core.cache import get_cached_env_settings
 from app.core.decorators import log_view_action
 from app.core.extensions import db, limiter
 from app.core.meta import page_metadata
-from app.core.profile import (
-    PROFILE_FIELD_NAMES,
-    ProfileFieldsForm,
-    apply_form_fields,
-    configure_profile_location_fields,
-)
+from app.forms.account import ProfileForm, ProfileImageForm, RemoveProfileImageForm
+from app.forms.profile import PROFILE_FIELD_NAMES, apply_form_fields
 from app.core.security import get_client_ip
 from app.services.trackers import (
     audit_activity_enabled,
@@ -39,16 +31,6 @@ from app.models import UserSession
 logger = logging.getLogger(__name__)
 
 account_bp = Blueprint('account', __name__)
-
-class ProfileImageForm(FlaskForm):
-    image = FileField(
-        'Profile Image',
-        validators=[FileRequired(message='Select an image to upload.')],
-    )
-
-
-class RemoveProfileImageForm(FlaskForm):
-    pass
 
 
 def _current_session_id():
@@ -63,14 +45,6 @@ def _current_session_id():
             'danger',
         )
     return session_id
-
-
-class ProfileForm(ProfileFieldsForm):
-    submit = SubmitField('Save Profile')
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        configure_profile_location_fields(self, get_cached_env_settings())
 
 
 @account_bp.route('/account', methods=['GET', 'POST'])

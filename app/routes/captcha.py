@@ -9,7 +9,6 @@ import random
 import secrets
 from datetime import datetime, timezone
 from flask import Blueprint, current_app, session, send_file, abort
-from flask_wtf import FlaskForm
 from wtforms.validators import ValidationError
 from PIL import Image, ImageChops, ImageDraw, ImageFont, ImageFilter
 from PIL.Image import Resampling
@@ -34,14 +33,6 @@ CAPTCHA_CACHE_PREFIX = "captcha:"
 def is_captcha_enabled():
     settings = get_cached_env_settings()
     return settings.use_captcha if settings else False
-
-class CaptchaForm(FlaskForm):
-    """Base form that removes the CAPTCHA field when the feature is disabled."""
-
-    def __init__(self, *args, captcha_enabled, **kwargs):
-        super().__init__(*args, **kwargs)
-        if not captcha_enabled:
-            del self.captcha
 
 
 def get_fonts_dir():

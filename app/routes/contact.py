@@ -3,8 +3,6 @@ import logging
 
 from flask import Blueprint, abort, flash, redirect, render_template, request, url_for
 from flask_login import current_user
-from wtforms import StringField, SubmitField, TextAreaField
-from wtforms.validators import DataRequired, Email, Length
 
 from app.core.cache import get_cached_env_settings
 from app.core.decorators import log_view_action
@@ -19,26 +17,10 @@ from app.services.trackers import (
     log_action_isolated,
 )
 
-from .captcha import CaptchaForm, CaptchaRequired
+from app.forms.contact import ContactForm
 
 logger = logging.getLogger(__name__)
 contact_bp = Blueprint("contact", __name__)
-
-
-class ContactForm(CaptchaForm):
-    name = StringField("Name", validators=[DataRequired(), Length(max=50)])
-    email = StringField(
-        "Email",
-        validators=[DataRequired(), Email(), Length(max=120)],
-    )
-    subject = StringField("Subject", validators=[Length(max=100)])
-    message = TextAreaField(
-        "Message",
-        validators=[DataRequired(), Length(max=2000)],
-    )
-    captcha = StringField("Enter CAPTCHA", validators=[CaptchaRequired()])
-    nobot_check = StringField("Leave empty")  # hidden in template
-    submit = SubmitField("Send Message")
 
 
 @contact_bp.route("/contact", methods=["GET", "POST"])

@@ -6,17 +6,13 @@ from flask import Blueprint, flash, redirect, render_template, request, url_for
 from flask_login import current_user, login_fresh, logout_user
 
 from app.core.decorators import login_required
-from flask_wtf import FlaskForm
 from sqlalchemy.exc import SQLAlchemyError
-from wtforms import PasswordField, StringField, SubmitField
-from wtforms.validators import DataRequired, Email, EqualTo
 
 from app.core.decorators import log_view_action
 from app.core.extensions import db, limiter
 from app.core.security import redact_route_values
 from app.services.mailer import send_password_changed_email, send_password_reset_email
 from app.core.meta import page_metadata
-from app.services.passwords import password_policy
 from app.core.security import (
     get_client_ip,
     is_locked_out,
@@ -28,6 +24,7 @@ from app.core.security import (
 )
 from app.services.sessions import clear_browser_session
 from app.services.trackers import audit_activity_enabled, log_action, log_action_isolated
+from app.forms.reset import ChangePasswordForm, ForgotPasswordForm, ResetPasswordForm
 from app.models import PasswordResetToken, User, UserSession
 from app.models.password_reset_token import TOKEN_PURPOSE_RESET, TOKEN_PURPOSE_SETUP
 
@@ -36,28 +33,6 @@ logger = logging.getLogger(__name__)
 reset_bp = Blueprint("reset", __name__)
 
 RESET_TOKEN_LIFETIME = timedelta(hours=1)
-
-
-class ForgotPasswordForm(FlaskForm):
-    email = StringField("Enter Your Email", validators=[DataRequired(), Email()])
-    submit = SubmitField("Email Password")
-
-
-class NewPasswordForm(FlaskForm):
-    password = PasswordField("New Password", validators=[DataRequired(), password_policy])
-    confirm = PasswordField(
-        "Confirm New Password",
-        validators=[DataRequired(), EqualTo("password")],
-    )
-
-
-class ResetPasswordForm(NewPasswordForm):
-    submit = SubmitField("Reset Password")
-
-
-class ChangePasswordForm(NewPasswordForm):
-    old_password = PasswordField("Current Password", validators=[DataRequired()])
-    submit = SubmitField("Update Password")
 
 
 def _force_full_login():

@@ -1,0 +1,1 @@
+"""Flask-WTF form definitions."""
