@@ -1,15 +1,17 @@
 # app/core/security.py
 """Security helpers for request trust, authentication, tokens, and redaction."""
 
+import base64
 import hashlib
 import ipaddress
 import logging
+import os
 import re
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 from urllib.parse import quote, quote_plus
 
-from flask import current_app, request
+from flask import current_app, g, request
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 import jwt
 from werkzeug.middleware.proxy_fix import ProxyFix
@@ -22,6 +24,53 @@ from app.core.hash import verify_password_hash
 logger = logging.getLogger(__name__)
 
 REDACTED_ROUTE_VALUE = "<redacted>"
+
+
+def initialize_request_security():
+    """Create request-scoped security state used by response policy."""
+    g.nonce = base64.b64encode(os.urandom(16)).decode("utf-8")
+
+
+def _csp_sources(*sources):
+    return " ".join(dict.fromkeys(source for source in sources if source))
+
+
+def add_security_headers(response):
+    """Apply the host response-security header policy."""
+    nonce = getattr(g, "nonce", "")
+
+    connect_sources = _csp_sources(
+        "'self'",
+        *current_app.config.get("CSP_CONNECT_SRC", []),
+    )
+    image_sources = _csp_sources(
+        "'self'",
+        "data:",
+        *current_app.config.get("CSP_IMG_SRC", []),
+    )
+    media_sources = _csp_sources(
+        "'self'",
+        *current_app.config.get("CSP_MEDIA_SRC", []),
+    )
+
+    response.headers["Content-Security-Policy"] = (
+        f"default-src 'self'; "
+        f"script-src 'self' 'nonce-{nonce}'; "
+        f"style-src 'self' 'nonce-{nonce}'; "
+        f"img-src {image_sources}; "
+        f"media-src {media_sources}; "
+        f"connect-src {connect_sources};"
+    )
+    response.headers["X-Frame-Options"] = "SAMEORIGIN"
+    response.headers["Strict-Transport-Security"] = (
+        "max-age=31536000; includeSubDomains"
+    )
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["Referrer-Policy"] = "no-referrer-when-downgrade"
+    response.headers["Permissions-Policy"] = (
+        "geolocation=(), microphone=(), camera=(), payment=()"
+    )
+    return response
 
 
 def normalize_ip(value):

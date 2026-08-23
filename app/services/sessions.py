@@ -10,7 +10,7 @@ from flask import current_app, flash, redirect, request, session, url_for
 from flask_login import current_user, logout_user
 from sqlalchemy.exc import SQLAlchemyError
 
-from app.models import UserSession
+from app.models import User, UserSession
 
 logger = logging.getLogger(__name__)
 
@@ -18,6 +18,11 @@ SESSION_ACTIVITY_TOUCH_INTERVAL = timedelta(seconds=10)
 _SESSION_ACTIVITY_EXEMPT_ATTR = "_flask_aas_session_activity_exempt"
 SESSION_ACTIVITY_KEY = "last_activity_at"
 LEGACY_SESSION_ACTIVITY_KEY = "last_active"
+
+
+def load_user(session_id):
+    """Resolve a Flask-Login identity through the durable session record."""
+    return User.load_from_session_id(session_id, require_session_record=True)
 
 
 def _utc_now():

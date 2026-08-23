@@ -1,9 +1,16 @@
 # app/core/content.py
-"""Small, allowlisted HTML sanitizer for editable core page content."""
+"""Host HTML, template-context, and response-content helpers."""
 
+import time
 from html import escape
 from html.parser import HTMLParser
 from urllib.parse import urlsplit
+
+from flask import g
+from flask_login import current_user
+import minify_html
+
+from app.core.cache import safe_get_cached_env_settings
 
 
 ALLOWED_TAGS = {
@@ -119,3 +126,51 @@ def sanitize_page_html(value) -> str:
     parser.feed(str(value))
     parser.close()
     return "".join(parser.output)
+
+
+def host_template_context():
+    """Return the common host template context for the current request."""
+    env = safe_get_cached_env_settings()
+    if (
+        current_user.is_authenticated
+        and env
+        and getattr(env, "allow_custom_themes", False)
+    ):
+        template = (
+            getattr(current_user, "template", None)
+            or env.template
+            or "default"
+        )
+    else:
+        template = (env.template if env else None) or "default"
+    return {
+        "tpl_path": f"themes/{template}",
+        "sidebar_position": "right",
+        "env": env,
+        "nonce": getattr(g, "nonce", ""),
+    }
+
+
+def start_page_timer():
+    """Start request timing used by the HTML response marker."""
+    g.start_time = time.time()
+
+
+def minify_response(response):
+    """Minify HTML responses and append the page-generation timing marker."""
+    if response.content_type == "text/html; charset=utf-8":
+        html = minify_html.minify(
+            response.get_data(as_text=True),
+            keep_closing_tags=True,
+            keep_html_and_head_opening_tags=True,
+        )
+
+        if hasattr(g, "start_time"):
+            closing_body = html.rfind("</body>")
+            if closing_body != -1:
+                page_gen_time = round((time.time() - g.start_time) * 1000, 2)
+                marker = f"<!-- PageGen in {page_gen_time} ms -->"
+                html = f"{html[:closing_body]}{marker}{html[closing_body:]}"
+
+        response.set_data(html)
+    return response

@@ -53,7 +53,7 @@ def client(app):
 
 
 def _get(client, path):
-    with patch("app.core.application.visitor_tracking_enabled", return_value=False):
+    with patch("app.services.trackers.visitor_tracking_enabled", return_value=False):
         return client.get(path)
 
 

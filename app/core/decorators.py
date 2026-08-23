@@ -3,9 +3,10 @@
 
 from functools import wraps
 
-from flask import flash, make_response, redirect, request, url_for
+from flask import flash, make_response, redirect, request, session, url_for
 from flask_login import current_user
 
+from app.core.cache import safe_get_cached_env_settings
 from app.core.security import extract_request_metadata
 from app.services.trackers import audit_activity_enabled, current_route, log_action_isolated
 
@@ -16,6 +17,36 @@ REQUIRED_PASSWORD_CHANGE_EXEMPT_ENDPOINTS = {
     "reset.change_password",
     "static",
 }
+
+MFA_EXEMPT_ENDPOINTS = {
+    "favicon.favicon",
+    "robots.robots",
+    "login.login",
+    "logout.logout",
+    "mfa.mfa_verify",
+    "mfa.mfa_setup",
+    "mfa.mfa_disable",
+    "mfa.mfa_reauth",
+    "mfa.mfa_replace",
+    "mfa.mfa_recovery_codes",
+    "register.register",
+    "reset.forgot_password",
+    "reset.reset_password",
+    "static",
+}
+
+
+def enforce_mfa():
+    """Require configured MFA completion before ordinary route handling."""
+    if request.endpoint in MFA_EXEMPT_ENDPOINTS:
+        return None
+
+    if current_user.is_authenticated:
+        env = safe_get_cached_env_settings()
+        if env.use_mfa and current_user.mfa_enabled:
+            if not session.get("mfa_verified", False):
+                return redirect(url_for("mfa.mfa_verify"))
+    return None
 
 
 def enforce_required_password_change():

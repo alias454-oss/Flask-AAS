@@ -41,6 +41,12 @@ def visitor_tracking_enabled():
     return bool(get_cached_env_settings().visitor_tracking)
 
 
+def track_online_request():
+    """Track the current request when online-presence tracking is enabled."""
+    if visitor_tracking_enabled():
+        track_online_user()
+
+
 def audit_activity_enabled():
     return bool(get_cached_env_settings().enable_logging)
 
