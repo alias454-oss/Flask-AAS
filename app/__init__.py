@@ -4,20 +4,19 @@ import logging
 from flask import Flask
 from flask_login import LoginManager
 
-from app.core.application import (
-    apply_persisted_site_url,
-    initialize_runtime_state,
-    register_login_loader,
-    register_request_hooks,
-    register_response_hooks,
-    register_template_context,
-)
-from app.core.config import settings
+from app.core.cache import add_cache_headers
+from app.core.config import apply_persisted_log_level, settings
+from app.core.content import host_template_context, minify_response, sanitize_page_html, start_page_timer
+from app.core.decorators import enforce_mfa, enforce_required_password_change
 from app.core.extensions import cache, csrf, db, limiter, mail, migrate
-from app.core.security import TrustedProxyFix
-from app.core.site import site_url_flask_config
+from app.core.security import TrustedProxyFix, add_security_headers, initialize_request_security
+from app.core.site import apply_persisted_site_url, site_url_flask_config
 from app.plugins.cli import plugin_cli
+from app.plugins.loader import enforce_plugin_access, initialize_plugins
+from app.plugins.navigation import visible_plugin_navigation
 from app.routes import register_all_routes
+from app.services.sessions import enforce_inactivity_timeout, load_user, touch_current_session
+from app.services.trackers import track_online_request
 
 logging.basicConfig(level=logging.INFO)
 
@@ -63,11 +62,31 @@ def create_app():
 
     # Optional plugins and DB-backed runtime settings fail closed while a fresh
     # database is being created or migrated.
-    initialize_runtime_state(app)
+    with app.app_context():
+        initialize_plugins(app)
+        apply_persisted_log_level()
 
-    register_request_hooks(app)
-    register_template_context(app)
-    register_login_loader(login_manager)
-    register_response_hooks(app)
+    # Request hook order is deliberate. Session validity/activity enforcement
+    # runs before request bookkeeping and the remaining authentication guards.
+    app.before_request(enforce_inactivity_timeout)
+    app.before_request(touch_current_session)
+    app.before_request(start_page_timer)
+    app.before_request(initialize_request_security)
+    app.before_request(track_online_request)
+    app.before_request(enforce_mfa)
+    app.before_request(enforce_required_password_change)
+    app.before_request(enforce_plugin_access)
+
+    app.context_processor(host_template_context)
+    app.jinja_env.globals["plugin_navigation"] = visible_plugin_navigation
+    app.jinja_env.filters["sanitize_page_html"] = sanitize_page_html
+
+    login_manager.user_loader(load_user)
+
+    # Flask executes after-request callbacks in reverse registration order. Keep
+    # this sequence aligned with the established minify -> cache -> security flow.
+    app.after_request(add_security_headers)
+    app.after_request(add_cache_headers)
+    app.after_request(minify_response)
 
     return app

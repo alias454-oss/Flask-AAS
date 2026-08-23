@@ -6,7 +6,7 @@ from unittest.mock import patch
 from flask import Flask
 from sqlalchemy.exc import OperationalError
 
-from app.core.application import update_log_level
+from app.core.config import apply_persisted_log_level
 from app.core.extensions import db
 from app.core.extensions import table_exists
 from app.models import EnvSettings
@@ -61,10 +61,10 @@ class CoreSchemaTests(unittest.TestCase):
         ):
             self.assertFalse(table_exists(EnvSettings.__tablename__))
 
-    def test_update_log_level_skips_settings_query_before_schema_exists(self):
-        with patch("app.core.application.table_exists", return_value=False), patch(
-            "app.core.application.safe_get_cached_env_settings"
+    def test_apply_persisted_log_level_skips_settings_query_before_schema_exists(self):
+        with patch("app.core.config.table_exists", return_value=False), patch(
+            "app.core.config.safe_get_cached_env_settings"
         ) as get_settings:
-            update_log_level()
+            apply_persisted_log_level()
 
         get_settings.assert_not_called()

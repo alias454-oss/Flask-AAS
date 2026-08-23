@@ -420,13 +420,22 @@ mode.
 
 ## Source organization
 
-- `app/core/` contains foundational runtime, configuration, extension, and security primitives.
+- `app/__init__.py` is the explicit application-factory wiring point. It establishes startup and
+  request/response hook order while registering implementations from their owning modules; there is
+  no separate application-helper layer.
+- `app/core/` contains foundational runtime, configuration, extension, content, and security primitives.
 - `app/forms/` contains host WTForms definitions plus form-local validation and configuration.
 - `app/services/` contains operational host workflows such as sessions, mail, audit/tracking,
   profile media, password policy, CAPTCHA state/validation, and geographic references.
 - `app/models/`, `app/routes/`, and `app/plugins/` contain persistence, host HTTP routes, and optional
   application plugins respectively. Route modules coordinate HTTP workflows rather than owning
   FlaskForm declarations.
+
+Request and response callbacks remain local to the subsystem that owns their behavior. For example,
+cache response policy lives with cache helpers, CSP/nonce handling with security helpers, HTML
+minification/template context with content helpers, durable login loading with session services, and
+online-request tracking with tracking services. `create_app()` wires those callbacks together without
+re-implementing them.
 
 ## Development and testing
 
@@ -436,7 +445,7 @@ Run the complete regression suite with:
 python -m pytest
 ```
 
-Latest user-confirmed regression baseline after the completed structural/forms consolidation:
+Latest user-confirmed regression baseline after the completed structural/forms consolidation and application-locality cleanup:
 
 ```text
 Flask-AAS:   455 passed, 13 warnings, 34 subtests passed

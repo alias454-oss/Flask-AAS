@@ -1,6 +1,13 @@
 # app/core/site.py
 import ipaddress
+import logging
 from urllib.parse import urlsplit
+
+from app.core.cache import safe_get_cached_env_settings
+from app.core.extensions import table_exists
+from app.models import EnvSettings
+
+logger = logging.getLogger("app")
 
 DEFAULT_SITE_URL = "http://127.0.0.1:5000"
 LEGACY_SITE_URL_PLACEHOLDERS = {"https://yoursite.com"}
@@ -88,3 +95,26 @@ def site_url_flask_config(site_url: str) -> dict[str, object]:
         "PREFERRED_URL_SCHEME": parsed.scheme,
         "TRUSTED_HOSTS": trusted_hosts,
     }
+
+
+def apply_persisted_site_url(app):
+    """Apply persisted Site URL trust settings after extensions are ready."""
+    with app.app_context():
+        env = (
+            safe_get_cached_env_settings()
+            if table_exists(EnvSettings.__tablename__)
+            else None
+        )
+        persisted_site_url = getattr(env, "site_url", None) if env else None
+        if not persisted_site_url or persisted_site_url in LEGACY_SITE_URL_PLACEHOLDERS:
+            return
+
+        try:
+            normalized_site_url = normalize_site_url(persisted_site_url)
+            app.config.update(site_url_flask_config(normalized_site_url))
+        except ValueError as exc:
+            logger.error(
+                "Ignoring invalid persisted Site URL %r: %s",
+                persisted_site_url,
+                exc,
+            )

@@ -10,6 +10,9 @@ from pydantic_settings import BaseSettings
 from pydantic import field_validator, model_validator
 
 from app.core.site import DEFAULT_SITE_URL, normalize_site_url
+from app.core.cache import safe_get_cached_env_settings
+from app.core.extensions import table_exists
+from app.models import EnvSettings
 
 logger = logging.getLogger(__name__)
 
@@ -219,3 +222,31 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+
+def apply_persisted_log_level():
+    """Apply the persisted log level once the core schema is available."""
+    app_logger = logging.getLogger("app")
+
+    if not table_exists(EnvSettings.__tablename__):
+        app_logger.info("Core schema not initialized; using default log level")
+        app_logger.setLevel(logging.INFO)
+        return
+
+    env = safe_get_cached_env_settings()
+    if not env:
+        app_logger.info("DB not ready, using default log level")
+        app_logger.setLevel(logging.INFO)
+        return
+
+    log_level_str = getattr(env, "log_level", "INFO").upper()
+
+    try:
+        app_logger.setLevel(getattr(logging, log_level_str))
+        app_logger.info("Log level set to %s", log_level_str)
+    except AttributeError:
+        app_logger.warning(
+            "Invalid log level: %s. Falling back to INFO.",
+            log_level_str,
+        )
+        app_logger.setLevel(logging.INFO)

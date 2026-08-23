@@ -48,10 +48,13 @@ migrations = "migrations"
 Flask-AAS does not currently clone, upload, update, or provide a marketplace for plugin source.
 Acquisition and placement are operator/deployment responsibilities.
 
-Host implementation is organized with foundational/runtime code under `app.core`, host forms under
-`app.forms`, and operational workflows under `app.services`. Application plugins own their own form
-definitions rather than importing host route/form internals. This source layout is not itself the Plugin
-API compatibility boundary; `PLUGIN_API_VERSION` and the documented plugin contracts remain authoritative.
+Host application wiring is explicit in `app/__init__.py`, while implementations remain with their
+owning subsystems: foundational/runtime code under `app.core`, host forms under `app.forms`, and
+operational workflows under `app.services`. The application factory registers those subsystem-owned
+callbacks directly rather than routing them through a generic application-helper layer. Application
+plugins own their own form definitions rather than importing host route/form internals. This source
+layout is not itself the Plugin API compatibility boundary; `PLUGIN_API_VERSION` and the documented
+plugin contracts remain authoritative.
 
 ## Discovery and registration
 
