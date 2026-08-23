@@ -32,6 +32,8 @@ administrative resets, and security-setting changes.
   password sets it?
 - Does a hash-format-only password upgrade preserve existing `must_change_password` state?
 - Are passwords treated as exact secret values without stripping or truncation?
+- If form fields are feature-gated, are they excluded or rejected server-side when disabled rather than
+  merely hidden in the template?
 - Are identifier lookups resistant to ownership bypass?
 - Are retries and duplicate submissions safe?
 - Are uploaded names, media types, and contents treated as untrusted?

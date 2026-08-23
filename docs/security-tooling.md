@@ -87,6 +87,10 @@ state, transaction ownership, token replay resistance, authorization, or deploym
 - Globally disabled MFA denies direct access to MFA management endpoints rather than relying on hidden UI.
 - Public registration lockdown denies both direct GET and POST registration attempts while preserving the
   separate administrator account-creation workflow.
+- Disabled host user-location collection removes the corresponding fields from server-side forms so forged
+  POST values cannot mutate stored profile location.
+- CAPTCHA challenge validation, expiry, and attempt state remain server-side even though login,
+  registration, and contact forms share the common CAPTCHA form contract.
 - Email activation and administrator approval remain independently enforceable eligibility controls.
 - Forced full-login paths clear remembered authentication state.
 - Accepted TOTP counters cannot be replayed.

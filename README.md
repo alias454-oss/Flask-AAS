@@ -421,10 +421,12 @@ mode.
 ## Source organization
 
 - `app/core/` contains foundational runtime, configuration, extension, and security primitives.
+- `app/forms/` contains host WTForms definitions plus form-local validation and configuration.
 - `app/services/` contains operational host workflows such as sessions, mail, audit/tracking,
-  profile media, password policy, and geographic references.
+  profile media, password policy, CAPTCHA state/validation, and geographic references.
 - `app/models/`, `app/routes/`, and `app/plugins/` contain persistence, host HTTP routes, and optional
-  application plugins respectively.
+  application plugins respectively. Route modules coordinate HTTP workflows rather than owning
+  FlaskForm declarations.
 
 ## Development and testing
 
@@ -432,6 +434,13 @@ Run the complete regression suite with:
 
 ```bash
 python -m pytest
+```
+
+Latest user-confirmed regression baseline after the completed structural/forms consolidation:
+
+```text
+Flask-AAS:   455 passed, 13 warnings, 34 subtests passed
+AutoGrid360: 372 passed, 20 warnings, 276 subtests passed
 ```
 
 Useful focused suites include:
@@ -451,6 +460,8 @@ python -m pytest \
 
 python -m pytest \
   tests/test_account_profile.py \
+  tests/test_admin_user_form.py \
+  tests/test_profile_form_contract.py \
   tests/test_admin_ui_contract.py \
   tests/test_theme_contract.py
 ```
