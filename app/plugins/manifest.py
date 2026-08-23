@@ -1,4 +1,4 @@
-# plugins/manifiest.py
+# plugins/manifest.py
 from __future__ import annotations
 
 from dataclasses import dataclass

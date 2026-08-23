@@ -48,9 +48,10 @@ migrations = "migrations"
 Flask-AAS does not currently clone, upload, update, or provide a marketplace for plugin source.
 Acquisition and placement are operator/deployment responsibilities.
 
-Host implementation is organized with foundational/runtime code under `app.core` and operational
-workflows under `app.services`. This source layout is not itself the Plugin API compatibility
-boundary; `PLUGIN_API_VERSION` and the documented plugin contracts remain authoritative.
+Host implementation is organized with foundational/runtime code under `app.core`, host forms under
+`app.forms`, and operational workflows under `app.services`. Application plugins own their own form
+definitions rather than importing host route/form internals. This source layout is not itself the Plugin
+API compatibility boundary; `PLUGIN_API_VERSION` and the documented plugin contracts remain authoritative.
 
 ## Discovery and registration
 
@@ -111,6 +112,11 @@ The host migration manager:
   head;
 - runs normal Alembic history for an existing versioned plugin;
 - fails closed when plugin-owned tables already exist without the expected plugin version table.
+
+Flask-AAS does not maintain a separate static registry of plugin model-module import paths. Metadata
+discovery stops at `plugin.toml`; after explicit enablement crosses the native-code trust boundary, the
+trusted plugin implementation is imported and its plugin-owned SQLAlchemy models become available to
+runtime/migration handling through normal model metadata.
 
 Do not manually stamp ambiguous existing tables.
 

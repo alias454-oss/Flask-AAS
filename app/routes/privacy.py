@@ -1,4 +1,4 @@
-# routes/index.py
+# routes/privacy.py
 import logging
 from flask import Blueprint, render_template
 

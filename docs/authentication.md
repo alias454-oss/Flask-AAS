@@ -86,6 +86,27 @@ Email activation and administrator approval are independent account-eligibility 
 require either, both, or neither. Administrative user controls and status presentation follow each enabled
 policy independently rather than treating approval as a side effect of email verification.
 
+### Shared profile-input contract
+
+Registration, self-service profile editing, and administrator user editing use the same server-side
+contract for the profile fields they share. Current user-facing maximum lengths are:
+
+| Field | Maximum |
+|---|---:|
+| Company name | 255 |
+| First name | 50 |
+| Last name | 100 |
+| Phone | 20 |
+| Address | 255 |
+| City/locality | 100 |
+| Postal code | 20 |
+
+Optional profile text is normalized consistently before validation/persistence.
+
+When host user-location support is disabled, country, address, city, zone/subdivision, and postal-code
+fields are removed from the instantiated WTForms form as well as omitted from templates. Forging those
+fields into a POST therefore does not make disabled location collection writable.
+
 ## Session tracking and revocation
 
 Flask-AAS keeps durable `UserSession` state in addition to browser-session state.

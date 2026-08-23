@@ -1,4 +1,4 @@
-"""Administrative user-management routes and forms."""
+"""Administrative user-management routes."""
 
 import logging
 from flask import Blueprint, render_template, redirect, request, url_for, flash
