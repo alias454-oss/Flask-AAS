@@ -21,20 +21,6 @@ class BundledPluginRegistration:
     def import_path(self) -> str:
         return self.manifest.entrypoint
 
-    @property
-    def model_modules(self) -> tuple[str, ...]:
-        """Return the conventional model module for explicit setup tooling.
-
-        This remains a temporary bridge until plugin-owned Alembic migration
-        environments replace direct model-table preparation.
-        """
-
-        module_name, _, _ = self.import_path.partition(":")
-        package_name, separator, _ = module_name.rpartition(".")
-        if not separator:
-            return ()
-        return (f"{package_name}.models",)
-
 
 def bundled_plugin_registrations() -> tuple[BundledPluginRegistration, ...]:
     """Discover in-tree plugin manifests without importing plugin code."""
@@ -45,20 +31,4 @@ def bundled_plugin_registrations() -> tuple[BundledPluginRegistration, ...]:
             Path(__file__).resolve().parent.glob("*/plugin.toml")
         )
         if manifest_path.is_file()
-    )
-
-
-def bundled_plugin_model_modules() -> tuple[str, ...]:
-    """Return trusted model-module declarations without importing them.
-
-    Normal Flask-AAS startup must not import model or application code for a
-    disabled plugin. These static module names are retained for explicit
-    install/migration tooling, where Python execution is an intentional trust
-    boundary.
-    """
-
-    return tuple(
-        module_name
-        for bundled in bundled_plugin_registrations()
-        for module_name in bundled.model_modules
     )

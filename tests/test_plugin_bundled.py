@@ -8,10 +8,7 @@ from flask import Flask
 from app.core.extensions import db
 from app.core.seeder import seed_bundled_plugins
 from app.models.plugin import PluginRegistration
-from app.plugins.bundled import (
-    bundled_plugin_model_modules,
-    bundled_plugin_registrations,
-)
+from app.plugins.bundled import bundled_plugin_registrations
 
 
 class BundledPluginSeedTests(unittest.TestCase):
@@ -77,12 +74,6 @@ class BundledPluginSeedTests(unittest.TestCase):
         self.assertEqual(bundled[0].plugin_id, "downstream")
         self.assertEqual(bundled[0].import_path, "downstream.plugin:plugin")
         self.assertEqual(bundled[0].manifest.name, "Downstream Application")
-
-    def test_model_module_declaration_is_derived_from_entrypoint(self):
-        with patch("app.plugins.bundled.__file__", self.bundled_file):
-            modules = bundled_plugin_model_modules()
-
-        self.assertEqual(modules, ("downstream.models",))
 
     def test_seed_registers_discovered_plugins_disabled_by_default(self):
         with patch("app.plugins.bundled.__file__", self.bundled_file):

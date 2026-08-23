@@ -14,17 +14,15 @@ from sqlalchemy.exc import OperationalError, ProgrammingError
 from app.core.decorators import enforce_required_password_change
 from app.core.cache import get_cached_env_settings
 from app.core.content import sanitize_page_html
-from app.services.sessions import enforce_inactivity_timeout
 from app.core.extensions import table_exists
-from app.services.sessions import touch_current_session
+from app.services.sessions import enforce_inactivity_timeout, touch_current_session
 from app.core.site import (
     LEGACY_SITE_URL_PLACEHOLDERS,
     normalize_site_url,
     site_url_flask_config,
 )
 from app.services.trackers import track_online_user, visitor_tracking_enabled
-from app.models.plugin import PluginRegistration  # noqa: F401 - register model metadata
-from app.models.user import EnvSettings, User
+from app.models import EnvSettings, User
 from app.plugins.loader import enforce_plugin_access, initialize_plugins
 from app.plugins.navigation import visible_plugin_navigation
 
