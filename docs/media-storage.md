@@ -41,6 +41,13 @@ The normalization pipeline:
 
 The database stores only the generated basename, not a user-supplied path.
 
+Profile-image uploads are bounded before multipart form parsing begins. The source-image byte limit
+defaults to 5 MiB, the decoded-image limit defaults to 24,000,000 pixels, and the multipart request
+limit is the source-image limit plus 256 KiB of form overhead. The request limit is installed during
+URL preprocessing so Flask-WTF CSRF processing cannot parse an oversized upload before the limit
+applies. The existing source-byte and decoded-pixel checks remain independent defense-in-depth
+controls after form parsing succeeds.
+
 ## Transaction and cleanup behavior
 
 Profile-image replacement/removal makes the database decision durable before deleting the superseded

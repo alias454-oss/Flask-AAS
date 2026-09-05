@@ -548,6 +548,30 @@ class AccountProfileRouteTests(unittest.TestCase):
         self.assertIsNone(db.session.get(User, self.user_id).image)
         self.assertEqual(list(self.image_root.iterdir()), [])
 
+    def test_profile_image_request_limit_precedes_csrf_form_parsing(self):
+        original_limit = self.app.config.get('USER_IMAGE_MAX_BYTES')
+        original_csrf = self.app.config.get('WTF_CSRF_ENABLED')
+        self.app.config['USER_IMAGE_MAX_BYTES'] = 32
+        self.app.config['WTF_CSRF_ENABLED'] = True
+        try:
+            response = self.client.post(
+                '/account/profile-image',
+                data={'image': (io.BytesIO(b'x' * 300_000), 'oversized.jpg')},
+                content_type='multipart/form-data',
+                follow_redirects=False,
+            )
+        finally:
+            if original_limit is None:
+                self.app.config.pop('USER_IMAGE_MAX_BYTES', None)
+            else:
+                self.app.config['USER_IMAGE_MAX_BYTES'] = original_limit
+            self.app.config['WTF_CSRF_ENABLED'] = original_csrf
+
+        self.assertEqual(response.status_code, 413)
+        db.session.expire_all()
+        self.assertIsNone(db.session.get(User, self.user_id).image)
+        self.assertEqual(list(self.image_root.iterdir()), [])
+
     def test_replacing_and_removing_profile_image_cleans_generated_files(self):
         first_response = self._upload_profile_image()
         self.assertEqual(first_response.status_code, 302)
