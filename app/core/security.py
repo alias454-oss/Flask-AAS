@@ -25,6 +25,11 @@ logger = logging.getLogger(__name__)
 
 REDACTED_ROUTE_VALUE = "<redacted>"
 
+_CAPABILITY_PATH_RE = re.compile(
+    r"(/(?:reset-password|set-password|email)/)[^/?#]+"
+)
+_TOKEN_QUERY_RE = re.compile(r"(^|[?&])(token=)[^&#]*", re.IGNORECASE)
+
 
 def initialize_request_security():
     """Create request-scoped security state used by response policy."""
@@ -66,7 +71,11 @@ def add_security_headers(response):
         "max-age=31536000; includeSubDomains"
     )
     response.headers["X-Content-Type-Options"] = "nosniff"
-    response.headers["Referrer-Policy"] = "no-referrer-when-downgrade"
+    response.headers["Referrer-Policy"] = (
+        "strict-origin"
+        if _CAPABILITY_PATH_RE.search(request.path)
+        else "no-referrer-when-downgrade"
+    )
     response.headers["Permissions-Policy"] = (
         "geolocation=(), microphone=(), camera=(), payment=()"
     )
@@ -317,6 +326,23 @@ def _route_redaction_values(redact_params):
     ]
 
 
+def redact_capability_url(value):
+    """Redact known authentication capability tokens from URLs and query strings."""
+    if value is None:
+        return None
+
+    redacted = _CAPABILITY_PATH_RE.sub(
+        lambda match: f"{match.group(1)}{REDACTED_ROUTE_VALUE}",
+        str(value),
+    )
+    return _TOKEN_QUERY_RE.sub(
+        lambda match: (
+            f"{match.group(1)}{match.group(2)}{REDACTED_ROUTE_VALUE}"
+        ),
+        redacted,
+    )
+
+
 def redact_route_values(value, redact_params=None):
     """Redact explicitly declared route parameter values from request-derived text."""
     if value is None:
@@ -344,7 +370,7 @@ def extract_request_metadata(sanitize_headers=True, redact_params=None):
             headers.pop(sensitive_key, None)
 
     headers = {
-        key: redact_route_values(value, redact_params)
+        key: redact_capability_url(redact_route_values(value, redact_params))
         for key, value in headers.items()
     }
 
@@ -354,7 +380,9 @@ def extract_request_metadata(sanitize_headers=True, redact_params=None):
             request.headers.get("User-Agent"),
             redact_params,
         ),
-        "referrer": redact_route_values(request.referrer, redact_params),
+        "referrer": redact_capability_url(
+            redact_route_values(request.referrer, redact_params)
+        ),
         "method": request.method,
         "path": redact_route_values(request.path, redact_params),
         "query_string": redact_route_values(

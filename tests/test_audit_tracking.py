@@ -9,15 +9,20 @@ from unittest.mock import patch
 os.environ.setdefault('ADMIN_SECRET', 'test-admin-secret')
 os.environ.setdefault('SQLALCHEMY_DATABASE_URI', 'sqlite://')
 
-from flask import Flask, g, request
+from flask import Flask, abort, g, request
 from flask_login import LoginManager
 from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.decorators import log_view_action
 from app.core.extensions import db
-from app.core.security import extract_request_metadata, redact_route_values
+from app.core.security import (
+    add_security_headers,
+    extract_request_metadata,
+    redact_route_values,
+)
 from app.core.security import get_client_ip
+from app.routes import register_error_handlers
 from app.services.trackers import (
     CLEAN_ONLINE_USER_MINUTES,
     expire_stale_online_users,
@@ -56,12 +61,16 @@ class AuditTrackingTests(unittest.TestCase):
 
         @cls.app.route('/reset-password/<token>')
         def reset_password_test(token):
+            if request.args.get('abort') == '400':
+                abort(400)
             return token
 
         @cls.app.route('/sensitive/<token>')
         @log_view_action(redact_params={'token'})
         def sensitive_route_test(token):
             return token
+
+        register_error_handlers(cls.app)
 
     @classmethod
     def tearDownClass(cls):
@@ -526,6 +535,78 @@ class AuditTrackingTests(unittest.TestCase):
         )
         self.assertEqual(metadata['headers']['X-Audit-Context'], 'token=<redacted>')
         self.assertEqual(target, '/reset-password/<redacted>')
+
+    def test_request_metadata_redacts_known_capability_referrer_without_route_context(self):
+        reset_token = 'LIVE-RESET-CAPABILITY-123'
+        query_token = 'LIVE-QUERY-CAPABILITY-456'
+        referrer = (
+            f'https://example.test/reset-password/{reset_token}'
+            f'?next=login&token={query_token}'
+        )
+
+        with self.app.test_request_context(
+            '/login',
+            headers={'Referer': referrer},
+            environ_base={'REMOTE_ADDR': '192.0.2.42'},
+        ):
+            self.app.preprocess_request()
+            metadata = extract_request_metadata()
+
+        serialized = json.dumps(metadata)
+        self.assertNotIn(reset_token, serialized)
+        self.assertNotIn(query_token, serialized)
+        self.assertEqual(
+            metadata['referrer'],
+            'https://example.test/reset-password/<redacted>?next=login&token=<redacted>',
+        )
+        self.assertEqual(metadata['headers']['Referer'], metadata['referrer'])
+
+    def test_login_audit_redacts_known_capability_referrer(self):
+        token = 'LIVE-LOGIN-REFERRER-TOKEN-123'
+
+        self.assertTrue(
+            persist_login_audit(
+                username='submitted-user',
+                ip='192.0.2.12',
+                user_agent='test-agent',
+                referer=f'https://example.test/reset-password/{token}',
+                success=False,
+                failure_reason='invalid_credentials',
+            )
+        )
+
+        event = AuditLogin.query.one()
+        self.assertNotIn(token, event.referer)
+        self.assertEqual(
+            event.referer,
+            'https://example.test/reset-password/<redacted>',
+        )
+
+    def test_early_error_log_redacts_known_capability_path(self):
+        token = 'LIVE-EARLY-ERROR-TOKEN-123'
+
+        with patch('app.routes.logger') as route_logger:
+            response = self.app.test_client().get(
+                f'/reset-password/{token}?abort=400',
+                headers={'Accept': 'application/json'},
+            )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertNotIn(token, str(route_logger.info.call_args))
+        self.assertEqual(
+            response.get_json()['path'],
+            '/reset-password/<redacted>',
+        )
+
+    def test_token_page_security_header_uses_origin_only_referrer_policy(self):
+        token = 'LIVE-HEADER-TOKEN-123'
+
+        with self.app.test_request_context(f'/reset-password/{token}'):
+            response = self.app.make_response('token page')
+            response.headers['Referrer-Policy'] = 'no-referrer'
+            response = add_security_headers(response)
+
+        self.assertEqual(response.headers['Referrer-Policy'], 'strict-origin')
 
     def test_sensitive_route_prevents_referrer_propagation(self):
         with patch('app.core.decorators.audit_activity_enabled', return_value=False):
