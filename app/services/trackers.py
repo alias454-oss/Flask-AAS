@@ -10,7 +10,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.cache import get_cached_env_settings
 from app.core.extensions import db
-from app.core.security import get_client_ip
+from app.core.security import get_client_ip, redact_capability_url
 from app.models import AuditActivity, AuditLogin, OnlineUser, User
 from app.models.audit_activity import serialize_extra_data
 
@@ -157,7 +157,7 @@ def persist_login_audit(
         'username': _truncate(username or 'unknown', 60),
         'ip_address': _normalize_ip(ip),
         'user_agent': _truncate(user_agent, 255),
-        'referer': _truncate(referer, 255),
+        'referer': _truncate(redact_capability_url(referer), 255),
         'success': normalized_success,
         'failure_reason': _normalize_login_failure_reason(
             normalized_success,

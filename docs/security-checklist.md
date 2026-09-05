@@ -72,8 +72,16 @@ Audit helpers must not silently own business transaction boundaries.
   validity and timeout behavior?
 - Are one-time tokens actually single-use?
 - Can the request or token be replayed?
-- Do password/MFA changes invalidate older authentication state?
+- Is security-authoritative pre-authentication state server-side, or can replaying an older valid signed
+  browser session restore an earlier attempt budget or challenge state?
+- Are pending authentication capabilities bound to the credential/authentication generation that created
+  them so password or factor changes invalidate stale proof?
+- Do password changes, authenticator replacement, MFA disable, recovery-code rotation, and required
+  account-eligibility withdrawal invalidate older authentication state where required?
+- Does durable session restoration re-check current login eligibility, and can reactivation/reapproval ever
+  resurrect a browser session that was already invalidated?
 - Are temporary pre-authentication states bounded by time and attempts?
+- Are attempt counters updated atomically when concurrent requests could otherwise exceed the budget?
 
 ## 6. Abuse controls
 
@@ -90,6 +98,10 @@ Audit helpers must not silently own business transaction boundaries.
 - Are secret-bearing route/query parameters explicitly redacted from audit metadata?
 - Are authorization and cookie headers excluded from captured metadata?
 - Are audit targets stable resource identifiers rather than secret-bearing URLs?
+- Can a capability token leak through an incoming `Referer`, a later request, or an early error path before
+  route-level redaction executes?
+- Do token-bearing responses use a referrer policy that strips the secret-bearing path without breaking the
+  application's HTTPS CSRF/origin validation contract?
 - Are runtime-managed secrets encrypted with a key stored outside the database?
 - Are blank-update and explicit-clear semantics defined?
 - Are plugin-managed persisted secrets cleared atomically when required?

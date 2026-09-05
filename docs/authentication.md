@@ -86,6 +86,11 @@ Email activation and administrator approval are independent account-eligibility 
 require either, both, or neither. Administrative user controls and status presentation follow each enabled
 policy independently rather than treating approval as a side effect of email verification.
 
+Current eligibility is re-checked whenever a durable authenticated identity is restored. If an administrator
+changes required activation or approval state so the account is no longer login-eligible, Flask-AAS rotates
+the user's authentication version and revokes existing durable sessions in the same transaction. Later
+reactivation or reapproval does not make an earlier browser session valid again.
+
 ### Shared profile-input contract
 
 Registration, self-service profile editing, and administrator user editing use the same server-side
@@ -117,10 +122,15 @@ Durable session records support:
 - explicit session revocation;
 - revoke-other-sessions behavior;
 - password-change/reset invalidation;
+- MFA factor/recovery-code change invalidation;
+- account-eligibility withdrawal invalidation;
 - normal logout/session termination.
 
 Changing a password rotates the user's authentication version so older active sessions and remember
-cookies are invalidated across clients.
+cookies are invalidated across clients. Authenticator replacement, MFA disable, and recovery-code
+rotation also rotate the authentication version, revoke all durable browser sessions, clear the
+initiating browser's authenticated state, and require a complete login. Initial MFA enrollment does
+not use this factor-replacement invalidation path.
 
 ## Sliding inactivity timeout
 
@@ -188,11 +198,18 @@ in templates is not the enforcement boundary.
 
 Flask-AAS supports TOTP enrollment and authenticator replacement when MFA is enabled.
 
-Temporary MFA state is bounded by timestamps and attempt limits. Terminal MFA failure returns the
-user to a complete login and removes remembered authentication state.
+Pending MFA login uses a purpose-bound `UserAuthToken`. The browser carries an opaque challenge
+secret, while security-authoritative challenge state remains server-side: expiration, failed-attempt
+count, and the `User.auth_version` under which password authentication completed. Failed attempts are
+updated atomically so replaying an older valid signed browser session cannot restore an earlier MFA
+attempt budget.
 
-The accepted TOTP counter is persisted so the same accepted code cannot be replayed.
+The accepted TOTP counter is persisted so the same accepted code cannot be replayed. The pending MFA
+challenge is consumed atomically and its authentication version must still match before a durable
+`UserSession` is issued. A password reset or other authentication-version change therefore invalidates
+pending password proof rather than allowing it to complete under newer credentials.
 
+Terminal MFA failure returns the user to a complete login and removes remembered authentication state.
 Final MFA login state is only treated as successful after required persistence succeeds.
 
 ## Recovery codes
@@ -208,11 +225,28 @@ Recovery codes are:
 An unused recovery code may be accepted where the MFA workflow permits it, such as sensitive MFA
 reauthentication/disable.
 
+Rotating recovery codes invalidates the previous set and is treated as an authentication-state change:
+the user's authentication version advances, all durable sessions are revoked, the initiating browser is
+logged out, and the next authenticated action requires a complete login. Authenticator replacement and
+MFA disable use the same session-invalidation rule.
+
+## User authentication tokens
+
+Password reset/setup links and pending MFA login challenges share the bounded `UserAuthToken`
+mechanism. Tokens are purpose-domain-separated so a capability issued for one authentication workflow
+cannot be accepted as another. Password reset/setup tokens remain high-entropy opaque secrets; MFA
+login tokens additionally carry server-side authentication-version and failed-attempt state.
+
+Known token-bearing reset/setup/verification URLs are treated as sensitive capabilities even outside the
+route that issued them. Their concrete path/query tokens are redacted from audit metadata, login referrers,
+and early error logging, and token-page responses use an origin-only referrer policy so the secret-bearing
+path is not sent on a subsequent request while HTTPS CSRF origin checks continue to work.
+
 ## Password reset
 
 Password reset uses high-entropy opaque secrets.
 
-The live token is not stored. The database stores a SHA-256 hash plus explicit:
+The live token is not stored. The database stores a purpose-separated SHA-256 hash plus explicit:
 
 - expiry;
 - consumption;
@@ -227,7 +261,7 @@ A successful reset:
 
 1. changes the password;
 2. consumes the used reset token;
-3. revokes other outstanding reset tokens;
+3. revokes other outstanding user-authentication tokens, including pending MFA login challenges;
 4. rotates authentication state;
 5. invalidates earlier sessions/remember cookies;
 6. requires a complete login.

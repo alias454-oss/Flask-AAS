@@ -12,36 +12,14 @@ class UserSession(db.Model):
     __tablename__ = 'user_sessions'
 
     id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(
-        db.Integer,
-        db.ForeignKey('users.id', name='fk_user_sessions_user_id_users'),
-        nullable=False,
-        index=True,
-    )
-    token_hash = db.Column(
-        db.String(64),
-        nullable=False,
-        unique=True,
-        index=True,
-    )
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id', name='fk_user_sessions_user_id_users'), nullable=False, index=True)
+    token_hash = db.Column(db.String(64), nullable=False, unique=True, index=True)
     ip_address = db.Column(db.String(45), nullable=True)
     user_agent = db.Column(db.String(255), nullable=True)
-    remembered = db.Column(
-        db.Boolean,
-        nullable=False,
-        default=False,
-        server_default=db.false(),
-    )
-    created_at = db.Column(
-        db.DateTime(timezone=True),
-        nullable=False,
-        server_default=db.func.now(),
-    )
-    last_active_at = db.Column(
-        db.DateTime(timezone=True),
-        nullable=False,
-        server_default=db.func.now(),
-    )
+    remembered = db.Column(db.Boolean, nullable=False, default=False, server_default=db.false())
+    mfa_failed_attempts = db.Column(db.Integer, nullable=False, default=0, server_default="0")
+    created_at = db.Column(db.DateTime(timezone=True), nullable=False, server_default=db.func.now())
+    last_active_at = db.Column(db.DateTime(timezone=True), nullable=False, server_default=db.func.now())
     revoked_at = db.Column(db.DateTime(timezone=True), nullable=True)
     ended_at = db.Column(db.DateTime(timezone=True), nullable=True)
 
@@ -132,6 +110,67 @@ class UserSession(db.Model):
             .order_by(cls.created_at.desc(), cls.id.desc())
             .all()
         )
+
+    @classmethod
+    def mfa_failed_attempts_for(cls, session_id, user_id):
+        if session_id is None or user_id is None:
+            return None
+
+        return db.session.scalar(
+            select(cls.mfa_failed_attempts)
+            .where(
+                cls.id == session_id,
+                cls.user_id == user_id,
+                cls.revoked_at.is_(None),
+                cls.ended_at.is_(None),
+            )
+            .limit(1)
+        )
+
+    @classmethod
+    def record_mfa_failure(cls, session_id, user_id, *, max_attempts):
+        if session_id is None or user_id is None:
+            return None
+        if max_attempts <= 0:
+            raise ValueError("Maximum MFA attempts must be positive.")
+
+        updated = (
+            cls.query
+            .filter(
+                cls.id == session_id,
+                cls.user_id == user_id,
+                cls.revoked_at.is_(None),
+                cls.ended_at.is_(None),
+                cls.mfa_failed_attempts < max_attempts,
+            )
+            .update(
+                {cls.mfa_failed_attempts: cls.mfa_failed_attempts + 1},
+                synchronize_session=False,
+            )
+        )
+        if updated != 1:
+            return None
+        return cls.mfa_failed_attempts_for(session_id, user_id)
+
+    @classmethod
+    def reset_mfa_failures(cls, session_id, user_id):
+        if session_id is None or user_id is None:
+            return False
+
+        updated = (
+            cls.query
+            .filter(
+                cls.id == session_id,
+                cls.user_id == user_id,
+                cls.revoked_at.is_(None),
+                cls.ended_at.is_(None),
+            )
+            .update(
+                {cls.mfa_failed_attempts: 0},
+                synchronize_session=False,
+            )
+        )
+        return updated == 1
 
     @classmethod
     def previous_login_at(cls, user_id, current_session_id):

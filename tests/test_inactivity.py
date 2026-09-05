@@ -270,15 +270,13 @@ class InactivityTimeoutTests(unittest.TestCase):
 
     def test_unauthenticated_pending_mfa_state_is_ignored(self):
         with self.client.session_transaction() as login_session:
-            login_session['pre_2fa_user_id'] = 42
-            login_session['pre_2fa_time'] = 100.0
+            login_session['mfa_login_token'] = 'pending-auth-capability'
 
         response = self._request_at(500.0, path='/public')
 
         self.assertEqual(response.status_code, 200)
         with self.client.session_transaction() as login_session:
-            self.assertEqual(login_session['pre_2fa_user_id'], 42)
-            self.assertEqual(login_session['pre_2fa_time'], 100.0)
+            self.assertEqual(login_session['mfa_login_token'], 'pending-auth-capability')
             self.assertNotIn(SESSION_ACTIVITY_KEY, login_session)
 
     def test_activity_exempt_request_does_not_refresh_activity(self):

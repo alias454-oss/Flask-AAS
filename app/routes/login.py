@@ -1,7 +1,6 @@
 # routes/login.py
 import logging
-import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from flask import Blueprint, render_template, redirect, url_for, flash, request, session
 from flask_login import current_user, login_user, logout_user
@@ -37,7 +36,8 @@ from app.services.trackers import (
     log_action,
     audit_login_attempt,
 )
-from app.models.user import User
+from app.models import User, UserAuthToken
+from app.models.user_auth_token import TOKEN_PURPOSE_MFA_LOGIN
 from app.forms.login import LoginForm
 
 logger = logging.getLogger(__name__)
@@ -121,10 +121,8 @@ def login():
         flash("This account is not currently available for sign-in.", "warning")
         return redirect(url_for('login.login'))
 
-    password_hash_upgraded = False
     if password_hash_needs_rehash(user.hashed_password):
         user.set_password(password)
-        password_hash_upgraded = True
 
     if current_user.is_authenticated:
         close_current_session()
@@ -133,31 +131,37 @@ def login():
     clear_browser_session()  # Prevent session fixation before authentication continues.
 
     # MFA users are not accepted by Flask-Login until the second factor succeeds.
+    # The browser carries only the opaque challenge capability; attempt state and
+    # password-proof versioning remain authoritative in the database.
     if env.use_mfa and user.mfa_enabled:
-        if password_hash_upgraded:
-            try:
-                db.session.commit()
-            except SQLAlchemyError:
-                db.session.rollback()
-                audit_login_attempt(
-                    username,
-                    ip,
-                    success=False,
-                    failure_reason=LOGIN_FAILURE_REJECTED,
-                )
-                logger.exception(
-                    "Password-hash upgrade failed for user '%s' from %s",
-                    username,
-                    ip,
-                )
-                flash('Login could not be completed. Please try again.', 'danger')
-                return render_template('login.html', form=form, **meta)
+        try:
+            _, challenge_token = UserAuthToken.issue_for_user(
+                user,
+                purpose=TOKEN_PURPOSE_MFA_LOGIN,
+                lifetime=timedelta(minutes=5),
+                auth_version=user.auth_version,
+            )
+            db.session.commit()
+        except SQLAlchemyError:
+            db.session.rollback()
+            audit_login_attempt(
+                username,
+                ip,
+                success=False,
+                failure_reason=LOGIN_FAILURE_REJECTED,
+            )
+            logger.exception(
+                "MFA login challenge could not be issued for user '%s' from %s",
+                username,
+                ip,
+            )
+            flash('Login could not be completed. Please try again.', 'danger')
+            return render_template('login.html', form=form, **meta)
 
-        session['pre_2fa_user_id'] = user.id
-        session['pre_2fa_username'] = username
-        session['pre_2fa_ip'] = ip
-        session['remember_me'] = bool(form.remember_me.data)
-        session['pre_2fa_time'] = time.time()
+        session['mfa_login_token'] = challenge_token
+        session['mfa_login_username'] = username
+        session['mfa_login_ip'] = ip
+        session['mfa_login_remembered'] = bool(form.remember_me.data)
         session['mfa_verified'] = False
         flash("Enter your 2FA code to complete login.", "info")
         return redirect(url_for('mfa.mfa_verify'))

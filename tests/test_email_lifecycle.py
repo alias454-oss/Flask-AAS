@@ -16,14 +16,17 @@ from app.core.security import generate_token
 from app.models import (
     AuditActivity,
     EnvSettings,
-    PasswordResetToken,
+    UserAuthToken,
     Role,
     User,
     UserSession,
 )
 from app.routes.register import EMAIL_VERIFY_SALT, PASSWORD_SETUP_TOKEN_LIFETIME, register_bp
 from app.routes.reset import reset_bp
-from app.models.password_reset_token import TOKEN_PURPOSE_RESET, TOKEN_PURPOSE_SETUP
+from app.models.user_auth_token import (
+    TOKEN_PURPOSE_PASSWORD_RESET,
+    TOKEN_PURPOSE_PASSWORD_SETUP,
+)
 from app.routes.verify import verify_bp
 
 
@@ -333,18 +336,18 @@ class EmailLifecycleRouteTests(unittest.TestCase):
         send_welcome.assert_not_called()
         send_setup.assert_called_once()
         plaintext_token = send_setup.call_args.args[2]
-        token_record = PasswordResetToken.query.filter_by(
-            token_hash=PasswordResetToken.hash_token(
+        token_record = UserAuthToken.query.filter_by(
+            token_hash=UserAuthToken.hash_token(
                 plaintext_token,
-                purpose=TOKEN_PURPOSE_SETUP,
+                purpose=TOKEN_PURPOSE_PASSWORD_SETUP,
             )
         ).one()
         self.assertIsNone(token_record.consumed_at)
         self.assertIsNone(token_record.revoked_at)
         self.assertIsNone(
-            PasswordResetToken.find_active(
+            UserAuthToken.find_active(
                 plaintext_token,
-                purpose=TOKEN_PURPOSE_RESET,
+                purpose=TOKEN_PURPOSE_PASSWORD_RESET,
             )
         )
 
@@ -374,7 +377,7 @@ class EmailLifecycleRouteTests(unittest.TestCase):
         self.assertTrue(user.check_password("admin-selected-secure-password"))
         self.assertTrue(user.must_change_password)
         self.assertEqual(
-            PasswordResetToken.query.filter_by(user_id=user.id).count(),
+            UserAuthToken.query.filter_by(user_id=user.id).count(),
             0,
         )
         send_welcome.assert_called_once_with(user.email, user.username)
@@ -429,7 +432,7 @@ class EmailLifecycleRouteTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 302)
         user = User.query.filter_by(email="setup-dispatch-failed@example.com").one()
-        token_record = PasswordResetToken.query.filter_by(user_id=user.id).one()
+        token_record = UserAuthToken.query.filter_by(user_id=user.id).one()
         self.assertIsNotNone(token_record.revoked_at)
         self.assertIn("could not be queued", self._flash_text())
 
@@ -464,9 +467,9 @@ class EmailLifecycleRouteTests(unittest.TestCase):
     def test_setup_token_is_purpose_bound_and_uses_48_hour_lifetime(self):
         user = self._save_user("setup-purpose@example.com")
         issued_at = datetime(2026, 8, 9, 12, 0, tzinfo=timezone.utc)
-        token_record, plaintext_token = PasswordResetToken.issue_for_user(
+        token_record, plaintext_token = UserAuthToken.issue_for_user(
             user,
-            purpose=TOKEN_PURPOSE_SETUP,
+            purpose=TOKEN_PURPOSE_PASSWORD_SETUP,
             lifetime=PASSWORD_SETUP_TOKEN_LIFETIME,
             now=issued_at,
         )
@@ -477,16 +480,16 @@ class EmailLifecycleRouteTests(unittest.TestCase):
         db.session.commit()
 
         self.assertIsNotNone(
-            PasswordResetToken.find_active(
+            UserAuthToken.find_active(
                 plaintext_token,
-                purpose=TOKEN_PURPOSE_SETUP,
+                purpose=TOKEN_PURPOSE_PASSWORD_SETUP,
                 now=issued_at,
             )
         )
         self.assertIsNone(
-            PasswordResetToken.find_active(
+            UserAuthToken.find_active(
                 plaintext_token,
-                purpose=TOKEN_PURPOSE_RESET,
+                purpose=TOKEN_PURPOSE_PASSWORD_RESET,
                 now=issued_at,
             )
         )
@@ -495,9 +498,9 @@ class EmailLifecycleRouteTests(unittest.TestCase):
         user = self._save_user("setup-user@example.com")
         user.must_change_password = True
         old_auth_version = user.auth_version
-        token_record, plaintext_token = PasswordResetToken.issue_for_user(
+        token_record, plaintext_token = UserAuthToken.issue_for_user(
             user,
-            purpose=TOKEN_PURPOSE_SETUP,
+            purpose=TOKEN_PURPOSE_PASSWORD_SETUP,
             lifetime=PASSWORD_SETUP_TOKEN_LIFETIME,
         )
         db.session.commit()
@@ -516,7 +519,7 @@ class EmailLifecycleRouteTests(unittest.TestCase):
         self.assertEqual(urlparse(response.location).path, "/login")
         db.session.expire_all()
         stored_user = db.session.get(User, user.id)
-        stored_token = db.session.get(PasswordResetToken, token_record.id)
+        stored_token = db.session.get(UserAuthToken, token_record.id)
         self.assertTrue(stored_user.check_password("new-secure-setup-password"))
         self.assertFalse(stored_user.must_change_password)
         self.assertEqual(stored_user.auth_version, old_auth_version + 1)
@@ -524,9 +527,9 @@ class EmailLifecycleRouteTests(unittest.TestCase):
 
     def test_password_reset_endpoint_rejects_setup_token(self):
         user = self._save_user("setup-wrong-endpoint@example.com")
-        token_record, plaintext_token = PasswordResetToken.issue_for_user(
+        token_record, plaintext_token = UserAuthToken.issue_for_user(
             user,
-            purpose=TOKEN_PURPOSE_SETUP,
+            purpose=TOKEN_PURPOSE_PASSWORD_SETUP,
             lifetime=PASSWORD_SETUP_TOKEN_LIFETIME,
         )
         db.session.commit()
@@ -544,9 +547,9 @@ class EmailLifecycleRouteTests(unittest.TestCase):
 
     def test_setup_endpoint_rejects_reset_token(self):
         user = self._save_user("reset-wrong-endpoint@example.com")
-        token_record, plaintext_token = PasswordResetToken.issue_for_user(
+        token_record, plaintext_token = UserAuthToken.issue_for_user(
             user,
-            purpose=TOKEN_PURPOSE_RESET,
+            purpose=TOKEN_PURPOSE_PASSWORD_RESET,
         )
         db.session.commit()
 
@@ -591,8 +594,8 @@ class EmailLifecycleRouteTests(unittest.TestCase):
                 self.assertEqual(urlparse(response.location).path, "/login")
                 send_reset.assert_called_once()
                 plaintext_token = send_reset.call_args.args[1]
-                stored_token = PasswordResetToken.query.filter_by(
-                    token_hash=PasswordResetToken.hash_token(plaintext_token)
+                stored_token = UserAuthToken.query.filter_by(
+                    token_hash=UserAuthToken.hash_token(plaintext_token)
                 ).one()
                 self.assertNotEqual(stored_token.token_hash, plaintext_token)
                 self.assertIn(expected_public_message, self._flash_text())
@@ -644,11 +647,11 @@ class EmailLifecycleRouteTests(unittest.TestCase):
             self.client.post("/forgot-password", data={"email": user.email})
         second_plaintext = second_send.call_args.args[1]
 
-        first = PasswordResetToken.query.filter_by(
-            token_hash=PasswordResetToken.hash_token(first_plaintext)
+        first = UserAuthToken.query.filter_by(
+            token_hash=UserAuthToken.hash_token(first_plaintext)
         ).one()
-        second = PasswordResetToken.query.filter_by(
-            token_hash=PasswordResetToken.hash_token(second_plaintext)
+        second = UserAuthToken.query.filter_by(
+            token_hash=UserAuthToken.hash_token(second_plaintext)
         ).one()
         self.assertIsNone(first.revoked_at)
         self.assertIsNone(first.consumed_at)
@@ -657,7 +660,7 @@ class EmailLifecycleRouteTests(unittest.TestCase):
 
     def test_reset_rejects_password_below_policy_minimum_without_consuming_token(self):
         user = self._save_user("short-reset@example.com")
-        token_record, plaintext_token = PasswordResetToken.issue_for_user(user)
+        token_record, plaintext_token = UserAuthToken.issue_for_user(user)
         db.session.commit()
 
         with self._request_patches():
@@ -673,7 +676,7 @@ class EmailLifecycleRouteTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         db.session.expire_all()
         stored_user = db.session.get(User, user.id)
-        stored_token = db.session.get(PasswordResetToken, token_record.id)
+        stored_token = db.session.get(UserAuthToken, token_record.id)
         self.assertTrue(stored_user.check_password("test-password"))
         self.assertIsNone(stored_token.consumed_at)
         self.assertIsNone(stored_token.revoked_at)
@@ -682,8 +685,8 @@ class EmailLifecycleRouteTests(unittest.TestCase):
         user = self._save_user("single-use-reset@example.com")
         user.must_change_password = True
         old_session_id = user.get_id()
-        token_record, plaintext_token = PasswordResetToken.issue_for_user(user)
-        other_token, _ = PasswordResetToken.issue_for_user(user)
+        token_record, plaintext_token = UserAuthToken.issue_for_user(user)
+        other_token, _ = UserAuthToken.issue_for_user(user)
         active_session = UserSession.issue_for_user(
             user,
             ip_address='192.0.2.50',
@@ -709,8 +712,8 @@ class EmailLifecycleRouteTests(unittest.TestCase):
         self.assertEqual(urlparse(response.location).path, "/login")
         db.session.expire_all()
         stored_user = db.session.get(User, user.id)
-        stored_token = db.session.get(PasswordResetToken, token_record.id)
-        stored_other_token = db.session.get(PasswordResetToken, other_token.id)
+        stored_token = db.session.get(UserAuthToken, token_record.id)
+        stored_other_token = db.session.get(UserAuthToken, other_token.id)
         self.assertTrue(stored_user.check_password("new-secure-password-ok"))
         self.assertFalse(stored_user.must_change_password)
         self.assertNotEqual(stored_user.get_id(), old_session_id)
@@ -736,14 +739,14 @@ class EmailLifecycleRouteTests(unittest.TestCase):
         expired_plaintext = "expired-reset-token"
         revoked_plaintext = "revoked-reset-token"
         db.session.add_all([
-            PasswordResetToken(
+            UserAuthToken(
                 user_id=user.id,
-                token_hash=PasswordResetToken.hash_token(expired_plaintext),
+                token_hash=UserAuthToken.hash_token(expired_plaintext),
                 expires_at=now - timedelta(minutes=1),
             ),
-            PasswordResetToken(
+            UserAuthToken(
                 user_id=user.id,
-                token_hash=PasswordResetToken.hash_token(revoked_plaintext),
+                token_hash=UserAuthToken.hash_token(revoked_plaintext),
                 expires_at=now + timedelta(hours=1),
                 revoked_at=now,
             ),
@@ -762,7 +765,7 @@ class EmailLifecycleRouteTests(unittest.TestCase):
     def test_reset_commit_failure_preserves_password_and_token(self):
         user = self._save_user("reset-rollback@example.com")
         old_auth_version = user.auth_version
-        token_record, plaintext_token = PasswordResetToken.issue_for_user(user)
+        token_record, plaintext_token = UserAuthToken.issue_for_user(user)
         active_session = UserSession.issue_for_user(
             user,
             ip_address='192.0.2.51',
@@ -790,7 +793,7 @@ class EmailLifecycleRouteTests(unittest.TestCase):
         self.assertEqual(urlparse(response.location).path, "/forgot-password")
         db.session.expire_all()
         stored_user = db.session.get(User, user.id)
-        stored_token = db.session.get(PasswordResetToken, token_record.id)
+        stored_token = db.session.get(UserAuthToken, token_record.id)
         self.assertTrue(stored_user.check_password("test-password"))
         self.assertEqual(stored_user.auth_version, old_auth_version)
         self.assertIsNone(stored_token.consumed_at)
@@ -800,9 +803,9 @@ class EmailLifecycleRouteTests(unittest.TestCase):
         )
         send_changed.assert_not_called()
 
-    def test_user_delete_removes_reset_tokens_on_sqlite(self):
+    def test_user_delete_removes_auth_tokens_on_sqlite(self):
         user = self._save_user("delete-reset-user@example.com")
-        PasswordResetToken.issue_for_user(user)
+        UserAuthToken.issue_for_user(user)
         UserSession.issue_for_user(
             user,
             ip_address='192.0.2.52',
@@ -811,13 +814,13 @@ class EmailLifecycleRouteTests(unittest.TestCase):
         db.session.commit()
         user_id = user.id
 
-        db.session.expire(user, ["password_reset_tokens"])
+        db.session.expire(user, ["auth_tokens"])
         db.session.delete(user)
         db.session.commit()
 
         self.assertIsNone(db.session.get(User, user_id))
         self.assertEqual(
-            PasswordResetToken.query.filter_by(user_id=user_id).count(),
+            UserAuthToken.query.filter_by(user_id=user_id).count(),
             0,
         )
         self.assertEqual(

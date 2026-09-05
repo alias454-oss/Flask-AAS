@@ -58,7 +58,7 @@ class User(db.Model):
 
     roles = db.relationship('Role', secondary='user_roles', back_populates='users')
     mfa_recovery_codes = db.relationship('MfaRecoveryCode', cascade='all, delete-orphan')
-    password_reset_tokens = db.relationship('PasswordResetToken', back_populates='user', cascade='all, delete-orphan')
+    auth_tokens = db.relationship('UserAuthToken', back_populates='user', cascade='all, delete-orphan')
     user_sessions = db.relationship('UserSession', back_populates='user', cascade='all, delete-orphan')
 
     def __repr__(self):
@@ -168,6 +168,8 @@ class User(db.Model):
 
         user = db.session.get(cls, user_id)
         if user is None or user.auth_version != auth_version:
+            return None
+        if user.login_eligibility_failure is not None:
             return None
 
         if not require_session_record:

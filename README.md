@@ -55,17 +55,26 @@ session behavior.
 - Fresh reauthentication before sensitive MFA changes.
 - Hashed, display-once, single-use recovery codes.
 - Recovery-code rotation.
-- Bounded pending MFA state and attempt limits.
+- Purpose-bound, server-side pending MFA challenge state with durable attempt limits and
+  authentication-version binding.
+- Replay-resistant MFA failure budgets; restoring an older valid signed browser session cannot reset
+  the authoritative attempt count.
+- Authenticator replacement, MFA disable, and recovery-code rotation invalidate existing sessions and
+  require a complete login.
 - Full-login fallback after terminal MFA failures.
 - Persistent TOTP-counter replay protection.
 
 ### Password reset and session invalidation
 
-- High-entropy reset secrets stored only as SHA-256 hashes.
+- Purpose-bound `UserAuthToken` capabilities for password reset/setup and pending MFA login state.
+- High-entropy reset secrets stored only as purpose-separated SHA-256 hashes.
 - Explicit expiry, consumption, and revocation state.
 - Atomic one-time token consumption.
-- Revocation of outstanding reset links after password changes.
+- Password changes revoke outstanding user-authentication capabilities, including pending MFA login
+  challenges.
 - Authentication-version rotation that invalidates older sessions and remember cookies.
+- Durable session restoration re-checks current account eligibility; withdrawing a required activation or
+  approval state invalidates existing browser sessions, and later restoration does not resurrect them.
 - Password-change notification after the database transaction commits.
 
 ### Audit logging
@@ -445,10 +454,11 @@ Run the complete regression suite with:
 python -m pytest
 ```
 
-Latest user-confirmed regression baseline after the completed structural/forms consolidation and application-locality cleanup:
+Latest user-confirmed regression baseline after the current authentication-state invalidation and
+token-handling security pass:
 
 ```text
-Flask-AAS:   455 passed, 13 warnings, 34 subtests passed
+Flask-AAS:   466 passed, 18 warnings, 34 subtests passed
 AutoGrid360: 372 passed, 20 warnings, 276 subtests passed
 ```
 
@@ -508,7 +518,8 @@ Important project boundaries include:
 - forwarding headers are ignored unless proxy trust is explicitly configured;
 - host validation and client-IP trust are separate controls;
 - sensitive state changes use CSRF protection and stronger reauthentication where required;
-- token-bearing routes define audit redaction;
+- known authentication-capability URLs are redacted from audit/referrer/error-path metadata, and token
+  responses use an origin-only referrer policy so secret-bearing paths are not propagated;
 - audit helpers do not silently own caller business transactions;
 - passwords, tokens, cookies, SMTP credentials, and plugin-managed secrets are not intended for logs;
 - disabled plugins remain inert during ordinary startup;
