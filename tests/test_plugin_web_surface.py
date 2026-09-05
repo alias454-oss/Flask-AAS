@@ -9,6 +9,7 @@ from flask_login import LoginManager
 from jinja2 import ChoiceLoader, DictLoader
 
 from app.core.extensions import db
+from app.routes.favicon import favicon_bp
 from app.models import EnvSettings, PluginRegistration, Role, User
 from tests.fixtures.plugin_app import plugin as example_plugin
 from tests.fixtures.plugin_app.models import ExampleItem, ExampleSettings
@@ -37,6 +38,7 @@ class ExamplePluginWebSurfaceTests(unittest.TestCase):
             SQLALCHEMY_TRACK_MODIFICATIONS=False,
         )
         db.init_app(self.app)
+        self.app.register_blueprint(favicon_bp)
 
         self.login_manager = LoginManager()
         self.login_manager.login_view = "login.login"

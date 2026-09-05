@@ -18,6 +18,7 @@ from app.core.extensions import csrf, db, limiter
 from app.services.sessions import touch_current_session
 from app.models import AuditActivity, Country, EnvSettings, User, UserSession, Zone
 from app.routes.account.account import account_bp
+from app.routes.favicon import favicon_bp
 from app.routes.locations import locations_bp
 
 
@@ -116,6 +117,7 @@ class AccountProfileRouteTests(unittest.TestCase):
 
         cls.app.register_blueprint(account_bp)
         cls.app.register_blueprint(locations_bp)
+        cls.app.register_blueprint(favicon_bp)
         cls.app.register_blueprint(login_bp)
         cls.app.register_blueprint(index_bp)
         cls.app.register_blueprint(about_bp)
