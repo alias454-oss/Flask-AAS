@@ -20,8 +20,8 @@ from app.services.mailer import (
     send_verification_email,
     send_welcome_email,
 )
-from app.models import PasswordResetToken, User, Role
-from app.models.password_reset_token import TOKEN_PURPOSE_SETUP
+from app.models import UserAuthToken, User, Role
+from app.models.user_auth_token import TOKEN_PURPOSE_PASSWORD_SETUP
 
 logger = logging.getLogger(__name__)
 
@@ -193,9 +193,9 @@ def register():
             setup_token_record = None
             setup_plaintext_token = None
             if password_setup_required:
-                setup_token_record, setup_plaintext_token = PasswordResetToken.issue_for_user(
+                setup_token_record, setup_plaintext_token = UserAuthToken.issue_for_user(
                     user,
-                    purpose=TOKEN_PURPOSE_SETUP,
+                    purpose=TOKEN_PURPOSE_PASSWORD_SETUP,
                     lifetime=PASSWORD_SETUP_TOKEN_LIFETIME,
                 )
 

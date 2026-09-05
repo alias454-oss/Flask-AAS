@@ -25,8 +25,11 @@ from app.core.security import (
 from app.services.sessions import clear_browser_session
 from app.services.trackers import audit_activity_enabled, log_action, log_action_isolated
 from app.forms.reset import ChangePasswordForm, ForgotPasswordForm, ResetPasswordForm
-from app.models import PasswordResetToken, User, UserSession
-from app.models.password_reset_token import TOKEN_PURPOSE_RESET, TOKEN_PURPOSE_SETUP
+from app.models import UserAuthToken, User, UserSession
+from app.models.user_auth_token import (
+    TOKEN_PURPOSE_PASSWORD_RESET,
+    TOKEN_PURPOSE_PASSWORD_SETUP,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -103,7 +106,7 @@ def _replace_password_credentials(
     user.set_password(password)
     user.must_change_password = False
     user.rotate_authentication_version()
-    PasswordResetToken.revoke_for_user(
+    UserAuthToken.revoke_for_user(
         user.id,
         revoked_at=changed_at,
         exclude_id=exclude_token_id,
@@ -115,21 +118,21 @@ def _replace_password_credentials(
 @limiter.limit("10 per hour", key_func=get_client_ip)
 @log_view_action(redact_params={"token"})
 def reset_password(token):
-    return _password_token_form(token, purpose=TOKEN_PURPOSE_RESET)
+    return _password_token_form(token, purpose=TOKEN_PURPOSE_PASSWORD_RESET)
 
 
 @reset_bp.route("/set-password/<token>", methods=["GET", "POST"])
 @limiter.limit("10 per hour", key_func=get_client_ip)
 @log_view_action(redact_params={"token"})
 def set_password(token):
-    return _password_token_form(token, purpose=TOKEN_PURPOSE_SETUP)
+    return _password_token_form(token, purpose=TOKEN_PURPOSE_PASSWORD_SETUP)
 
 
 def _password_token_form(token, *, purpose):
     if current_user.is_authenticated:
         return redirect(url_for("dashboard.dashboard"))
 
-    is_setup = purpose == TOKEN_PURPOSE_SETUP
+    is_setup = purpose == TOKEN_PURPOSE_PASSWORD_SETUP
     meta = page_metadata.get("reset", {})
     ip = get_client_ip()
     form = ResetPasswordForm()
@@ -137,7 +140,7 @@ def _password_token_form(token, *, purpose):
         form.submit.label.text = "Set Password"
     plaintext_token = token or request.form.get("token")
 
-    token_record = PasswordResetToken.find_active(
+    token_record = UserAuthToken.find_active(
         plaintext_token,
         purpose=purpose,
     )
@@ -167,7 +170,7 @@ def _password_token_form(token, *, purpose):
         return _render_password_token_form(form, plaintext_token, meta, is_setup=is_setup)
 
     changed_at = datetime.now(timezone.utc)
-    consumed_token = PasswordResetToken.consume(
+    consumed_token = UserAuthToken.consume(
         plaintext_token,
         purpose=purpose,
         now=changed_at,
@@ -261,9 +264,9 @@ def forgot_password():
             )
 
         try:
-            token_record, plaintext_token = PasswordResetToken.issue_for_user(
+            token_record, plaintext_token = UserAuthToken.issue_for_user(
                 user,
-                purpose=TOKEN_PURPOSE_RESET,
+                purpose=TOKEN_PURPOSE_PASSWORD_RESET,
                 lifetime=RESET_TOKEN_LIFETIME,
             )
             db.session.commit()
