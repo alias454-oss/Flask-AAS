@@ -33,6 +33,17 @@ logger = logging.getLogger(__name__)
 account_bp = Blueprint('account', __name__)
 
 
+@account_bp.url_value_preprocessor
+def _apply_profile_image_request_limit(endpoint, _values):
+    """Bound profile-image multipart parsing before CSRF touches form data."""
+
+    if (
+        request.method == "POST"
+        and endpoint == f"{account_bp.name}.upload_profile_image"
+    ):
+        request.max_content_length = max_upload_request_bytes()
+
+
 def _current_session_id():
     session_id = current_user.session_record_id
     if session_id is None:
@@ -122,7 +133,6 @@ def account():
 @limiter.limit("5 per minute", exempt_when=lambda: not current_user.is_authenticated)
 @login_required
 def upload_profile_image():
-    request.max_content_length = max_upload_request_bytes()
     form = ProfileImageForm()
     if not form.validate_on_submit():
         message = next(
