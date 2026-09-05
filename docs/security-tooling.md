@@ -92,7 +92,14 @@ state, transaction ownership, token replay resistance, authorization, or deploym
 - CAPTCHA challenge validation, expiry, and attempt state remain server-side even though login,
   registration, and contact forms share the common CAPTCHA form contract.
 - Email activation and administrator approval remain independently enforceable eligibility controls.
+- Durable authenticated identities are rejected when the account is no longer login-eligible; withdrawing a
+  required activation/approval state revokes existing durable sessions, and restoring eligibility does not
+  resurrect an older browser identity.
 - Forced full-login paths clear remembered authentication state.
+- Pending MFA login challenge expiry, failure counts, and authentication-version binding remain
+  server-side; replaying an older valid signed browser session cannot restore the attempt budget.
+- Pending MFA login capabilities are consumed atomically and cannot complete after the user's
+  authentication version changes.
 - Accepted TOTP counters cannot be replayed.
 - Remembered inactivity downgrades to non-fresh authentication and stops the boundary-crossing
   mutation.
@@ -100,19 +107,31 @@ state, transaction ownership, token replay resistance, authorization, or deploym
   still enforcing normal authentication/session validity and timeout behavior.
 - Durable session-activity persistence may be coalesced without changing the browser inactivity
   boundary; mutable `UserSession.last_active_at` is not used as a substitute for exact audit events.
-- Password changes invalidate earlier session identities and outstanding reset links.
+- Password changes invalidate earlier session identities, outstanding reset/setup capabilities, and
+  pending MFA login challenges.
+- Authenticator replacement, MFA disable, and recovery-code rotation advance the authentication version,
+  revoke existing durable sessions, and require a complete login.
+- Authenticated MFA reauthentication attempt budgets are durable session state and cannot be reset by
+  replaying an older browser cookie.
 - Administrator-selected credentials require owner replacement after complete authentication/MFA.
 - Production bootstrap credentials set `must_change_password`; development/testing bootstrap avoids
   that ceremony without weakening administrator-created-user behavior.
 - User-selected passwords clear provisioned-credential state, while hash-format-only upgrades preserve
   it.
 - Forced password-change state cannot be bypassed through unrelated authenticated routes.
-- Password-reset tokens are hashed at rest and accepted only once.
+- `UserAuthToken` capabilities are purpose-domain-separated, hashed at rest, expiry/revocation bounded,
+  and accepted only for their intended authentication workflow.
+- Password reset/setup token behavior remains single-use while MFA login tokens additionally enforce
+  authentication-version and failed-attempt state.
 
 ### Audit and secrets
 
 - Token-bearing routes declare redaction.
 - Concrete reset/verification tokens never appear in stored audit rows.
+- Known authentication-capability URLs are redacted from incoming referrers, login audit fields, and early
+  error-path logging even when route-level token redaction has not run.
+- Token-bearing responses use an origin-only referrer policy so secret-bearing paths are not propagated while
+  HTTPS CSRF origin/referrer validation remains usable.
 - Audit helpers do not end caller-owned business transactions.
 - Authoritative audit metadata does not persist raw database exception strings.
 - SMTP credentials, passwords, tokens, cookies, and authorization headers do not appear in logs or
