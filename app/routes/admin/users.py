@@ -20,7 +20,7 @@ from app.services.trackers import (
     log_action,
     log_action_isolated,
 )
-from app.models import User, Role
+from app.models import User, UserSession, Role
 
 logger = logging.getLogger(__name__)
 
@@ -224,11 +224,22 @@ def edit_user(user_id):
                 flash("You cannot remove the admin role from the primary admin user.", "danger")
                 return _render_edit_user(form, user, meta)
 
+            eligibility_before = user.login_eligibility_failure
             changed_fields = apply_form_fields(
                 user,
                 form,
                 ADMIN_EDITABLE_FIELD_NAMES,
             )
+            eligibility_after = user.login_eligibility_failure
+
+            eligibility_fields_changed = bool(
+                {"activated", "approved"}.intersection(changed_fields)
+            )
+            if eligibility_fields_changed and (
+                eligibility_before is not None or eligibility_after is not None
+            ):
+                user.rotate_authentication_version()
+                UserSession.revoke_for_user(user.id)
 
             # Update roles relationship explicitly with Role objects
             selected_roles = Role.query.filter(Role.id.in_(selected_role_ids)).all()

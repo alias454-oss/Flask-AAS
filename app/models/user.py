@@ -169,6 +169,8 @@ class User(db.Model):
         user = db.session.get(cls, user_id)
         if user is None or user.auth_version != auth_version:
             return None
+        if user.login_eligibility_failure is not None:
+            return None
 
         if not require_session_record:
             return user
