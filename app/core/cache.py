@@ -78,5 +78,5 @@ def invalidate_role_cache(mapper, connection, target):
 
 def get_cached_roles():
     if not hasattr(g, '_roles'):
-        g._roles = Role.get_cached_instance()
+        g._roles = Role.query.all()
     return g._roles
