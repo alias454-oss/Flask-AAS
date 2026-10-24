@@ -96,7 +96,7 @@ def _load_and_normalize(payload: bytes) -> Image.Image:
     try:
         with warnings.catch_warnings():
             warnings.simplefilter("error", Image.DecompressionBombWarning)
-            source = Image.open(io.BytesIO(payload))
+            source = Image.open(io.BytesIO(payload), formats=sorted(ALLOWED_IMAGE_FORMATS))
 
             if source.format not in ALLOWED_IMAGE_FORMATS:
                 raise ProfileImageError("Only JPEG, PNG, and WebP images are supported.")
